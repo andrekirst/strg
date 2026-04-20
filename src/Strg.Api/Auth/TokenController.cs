@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using System.Net.Mime;
 using System.Security.Claims;
 
 namespace Strg.Api.Auth;
@@ -18,7 +19,7 @@ public sealed class TokenController : ControllerBase
     [HttpPost("~/connect/token")]
     [AllowAnonymous]
     [IgnoreAntiforgeryToken]
-    [Produces("application/json")]
+    [Produces(MediaTypeNames.Application.Json)]
     public async Task<IActionResult> Exchange()
     {
         var request = HttpContext.GetOpenIddictServerRequest()

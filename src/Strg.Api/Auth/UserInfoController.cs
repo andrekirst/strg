@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using System.Net.Mime;
 using System.Security.Claims;
 
 namespace Strg.Api.Auth;
@@ -12,7 +13,7 @@ public sealed class UserInfoController : ControllerBase
 {
     [HttpGet("~/connect/userinfo")]
     [HttpPost("~/connect/userinfo")]
-    [Produces("application/json")]
+    [Produces(MediaTypeNames.Application.Json)]
     public IActionResult GetUserInfo()
     {
         var claims = new Dictionary<string, object>(StringComparer.Ordinal);

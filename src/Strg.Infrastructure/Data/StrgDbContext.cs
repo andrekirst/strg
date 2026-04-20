@@ -8,7 +8,8 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     : DbContext(options)
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
-    // Additional DbSets will be added in STRG-011, STRG-025, STRG-031, STRG-046
+    public DbSet<User> Users => Set<User>();
+    // Additional DbSets will be added in STRG-025, STRG-031, STRG-046
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

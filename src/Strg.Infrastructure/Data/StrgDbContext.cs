@@ -9,7 +9,10 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
-    // Additional DbSets will be added in STRG-025, STRG-031, STRG-046
+    public DbSet<Drive> Drives => Set<Drive>();
+    public DbSet<FileItem> Files => Set<FileItem>();
+    public DbSet<FileVersion> FileVersions => Set<FileVersion>();
+    public DbSet<Tag> Tags => Set<Tag>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

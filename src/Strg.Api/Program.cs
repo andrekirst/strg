@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Strg.Api.Auth;
+using Strg.Api.Endpoints;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
@@ -11,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 
 builder.Services.AddDbContext<StrgDbContext>(options =>
 {
@@ -59,5 +61,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapDriveEndpoints();
 
 app.Run();

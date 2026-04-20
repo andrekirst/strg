@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 
@@ -7,6 +8,9 @@ namespace Strg.Infrastructure.Data;
 public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tenantContext)
     : DbContext(options)
 {
+    private static readonly MethodInfo BuildTenantFilterMethod = typeof(StrgDbContext)
+        .GetMethod(nameof(BuildTenantFilter), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Drive> Drives => Set<Drive>();
@@ -24,8 +28,10 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
         {
             if (entityType.ClrType.IsAssignableTo(typeof(TenantedEntity)))
             {
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasQueryFilter(BuildCombinedFilter(entityType.ClrType));
+                var filter = (LambdaExpression)BuildTenantFilterMethod
+                    .MakeGenericMethod(entityType.ClrType)
+                    .Invoke(this, null)!;
+                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(filter);
             }
         }
     }
@@ -45,22 +51,10 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
         }
     }
 
-    private LambdaExpression BuildCombinedFilter(Type entityClrType)
-    {
-        var param = Expression.Parameter(entityClrType, "e");
-
-        // TenantId == tenantContext.TenantId  (evaluated at query time)
-        var tenantIdProp = Expression.Property(param, nameof(TenantedEntity.TenantId));
-        var tenantContextConst = Expression.Constant(tenantContext);
-        var tenantIdValue = Expression.Property(tenantContextConst, nameof(ITenantContext.TenantId));
-        var tenantFilter = Expression.Equal(tenantIdProp, tenantIdValue);
-
-        // !DeletedAt.HasValue  (IsDeleted is a computed property, use DeletedAt instead)
-        var deletedAtProp = Expression.Property(param, nameof(TenantedEntity.DeletedAt));
-        var hasValueProp = Expression.Property(deletedAtProp, nameof(Nullable<DateTimeOffset>.HasValue));
-        var notDeleted = Expression.Not(hasValueProp);
-
-        var combined = Expression.AndAlso(tenantFilter, notDeleted);
-        return Expression.Lambda(combined, param);
-    }
+    // Written as a generic C# lambda (not a hand-built expression tree) so EF Core recognises
+    // `tenantContext.TenantId` as a closure reference to `this.tenantContext` and re-evaluates it
+    // against the current DbContext instance at query time. A hand-built Expression.Constant(instance)
+    // would freeze the first DbContext's tenantContext into the cached model.
+    private Expression<Func<T, bool>> BuildTenantFilter<T>() where T : TenantedEntity
+        => e => e.TenantId == tenantContext.TenantId && !e.DeletedAt.HasValue;
 }

@@ -1,0 +1,20 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/Strg.Api/Strg.Api.csproj" />
+    <Project Path="src/Strg.Core/Strg.Core.csproj" />
+    <Project Path="src/Strg.GraphQL/Strg.GraphQL.csproj" />
+    <Project Path="src/Strg.Infrastructure/Strg.Infrastructure.csproj" />
+    <Project Path="src/Strg.WebDav/Strg.WebDav.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Strg.Api.Tests/Strg.Api.Tests.csproj" />
+    <Project Path="tests/Strg.Core.Tests/Strg.Core.Tests.csproj" />
+    <Project Path="tests/Strg.GraphQL.Tests/Strg.GraphQL.Tests.csproj" />
+    <Project Path="tests/Strg.Integration.Tests/Strg.Integration.Tests.csproj" />
+  </Folder>
+</Solution>

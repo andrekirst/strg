@@ -3,7 +3,7 @@ id: STRG-001
 title: Scaffold .NET 9 solution structure
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: infrastructure
 labels: [setup, core, dotnet]
 depends_on: []
@@ -89,16 +89,16 @@ Standard C# rules: 4-space indent, `var` preference, braces required, file-scope
 
 ## Acceptance Criteria
 
-- [ ] `strg.sln` exists at repo root and includes all 8 projects
-- [ ] `dotnet build` succeeds with zero warnings and zero errors
-- [ ] `dotnet test` runs (zero tests, but exits 0)
-- [ ] `Strg.Core` has zero external NuGet package references
-- [ ] `Strg.Infrastructure` does NOT reference `Strg.GraphQL` or `Strg.WebDav`
-- [ ] All projects target `net9.0`
-- [ ] `Nullable` and `ImplicitUsings` enabled globally via `Directory.Build.props`
-- [ ] `TreatWarningsAsErrors` is `true`
-- [ ] `.editorconfig` exists with C# formatting rules
-- [ ] `Directory.Packages.props` (central package management) exists at repo root
+- [x] `strg.sln` exists at repo root and includes all 8 projects
+- [x] `dotnet build` succeeds with zero warnings and zero errors
+- [x] `dotnet test` runs (zero tests, but exits 0)
+- [x] `Strg.Core` has zero external NuGet package references
+- [x] `Strg.Infrastructure` does NOT reference `Strg.GraphQL` or `Strg.WebDav`
+- [x] All projects target `net9.0`
+- [x] `Nullable` and `ImplicitUsings` enabled globally via `Directory.Build.props`
+- [x] `TreatWarningsAsErrors` is `true`
+- [x] `.editorconfig` exists with C# formatting rules
+- [x] `Directory.Packages.props` (central package management) exists at repo root
 
 ## Test Cases
 
@@ -109,30 +109,30 @@ Standard C# rules: 4-space indent, `var` preference, braces required, file-scope
 
 ## Implementation Tasks
 
-- [ ] Run `dotnet new sln -n strg`
-- [ ] Create each project with `dotnet new classlib` / `dotnet new webapi` / `dotnet new xunit`
-- [ ] Add all projects to solution: `dotnet sln add ...`
-- [ ] Configure project-to-project references
-- [ ] Create `Directory.Build.props` with global properties
-- [ ] Create `Directory.Packages.props` for central package version management
-- [ ] Create `.editorconfig`
-- [ ] Create placeholder `README.md` files in each project explaining its responsibility
-- [ ] Verify `dotnet build` and `dotnet test` pass
+- [x] Run `dotnet new sln -n strg`
+- [x] Create each project with `dotnet new classlib` / `dotnet new webapi` / `dotnet new xunit`
+- [x] Add all projects to solution: `dotnet sln add ...`
+- [x] Configure project-to-project references
+- [x] Create `Directory.Build.props` with global properties
+- [x] Create `Directory.Packages.props` for central package version management
+- [x] Create `.editorconfig`
+- [x] Create placeholder `README.md` files in each project explaining its responsibility
+- [x] Verify `dotnet build` and `dotnet test` pass
 
 ## Security Review Checklist
 
-- [ ] No secrets or credentials in any project file
-- [ ] `TreatWarningsAsErrors=true` is set (catches many security-relevant warnings)
+- [x] No secrets or credentials in any project file
+- [x] `TreatWarningsAsErrors=true` is set (catches many security-relevant warnings)
 
 ## Code Review Checklist
 
-- [ ] Dependency graph matches architecture spec in `docs/architecture/01-system-overview.md`
-- [ ] All projects use `net9.0`
-- [ ] `Directory.Build.props` applies globally
+- [x] Dependency graph matches architecture spec in `docs/architecture/01-system-overview.md`
+- [x] All projects use `net9.0`
+- [x] `Directory.Build.props` applies globally
 
 ## Definition of Done
 
-- [ ] All 8 projects created and buildable
-- [ ] `dotnet build && dotnet test` passes from repo root
-- [ ] Architecture dependency rules verified (core has no infra deps)
-- [ ] CLAUDE.md updated with solution structure section
+- [x] All 8 projects created and buildable
+- [x] `dotnet build && dotnet test` passes from repo root
+- [x] Architecture dependency rules verified (core has no infra deps)
+- [x] CLAUDE.md updated with solution structure section

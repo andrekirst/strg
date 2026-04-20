@@ -19,15 +19,29 @@ public sealed class AuditLogQueries
         IQueryable<AuditEntry> query = db.AuditEntries.OrderByDescending(e => e.PerformedAt);
 
         if (filter?.UserId.HasValue == true)
+        {
             query = query.Where(e => e.UserId == filter.UserId.Value);
+        }
+
         if (filter?.Action is not null)
+        {
             query = query.Where(e => e.Action == filter.Action);
+        }
+
         if (filter?.ResourceType is not null)
+        {
             query = query.Where(e => e.ResourceType == filter.ResourceType);
+        }
+
         if (filter?.From.HasValue == true)
+        {
             query = query.Where(e => e.PerformedAt >= filter.From.Value);
+        }
+
         if (filter?.To.HasValue == true)
+        {
             query = query.Where(e => e.PerformedAt <= filter.To.Value);
+        }
 
         return query;
     }
@@ -41,6 +55,6 @@ public sealed class AuditLogQueries
     public Task<User?> GetUser(
         Guid id,
         [Service] StrgDbContext db,
-        CancellationToken ct)
-        => db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        CancellationToken cancellationToken)
+        => db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 }

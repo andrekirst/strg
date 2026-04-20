@@ -155,6 +155,15 @@ var userId = request.UserId;
 
 ## Code Conventions
 
+### C# Style (full rules in `.claude/skills/csharp-strg.md`)
+
+- `CancellationToken` parameters are named `cancellationToken` — never `ct`, never `token`.
+- Braces required for every `if`/`else`/`for`/`foreach`/`while`/`do`/`using`/`lock` body (enforced by `.editorconfig` + `EnforceCodeStyleInBuild`).
+- Target framework is `net10.0` (LTS); SDK pinned in `global.json`.
+- Solution file is `strg.slnx` — never reintroduce `strg.sln`.
+- No magic strings for MIME types, headers, claim types, HTTP methods, or auth schemes — use `System.Net.Mime.MediaTypeNames`, `Microsoft.Net.Http.Headers.HeaderNames`, `System.Security.Claims.ClaimTypes`, `Microsoft.AspNetCore.Http.HttpMethods`, `JwtBearerDefaults`, etc. Project-specific repeating strings live in `Strg.Core/Constants/`.
+- Microsoft's C# coding conventions are the baseline: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+
 ### Naming
 
 - Interfaces: `IFooService`, `IFooRepository`

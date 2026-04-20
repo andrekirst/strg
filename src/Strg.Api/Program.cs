@@ -87,14 +87,20 @@ var graphql = builder.Services
     .AddMaxExecutionDepthRule(10);
 
 if (builder.Environment.IsDevelopment())
+{
     graphql.AddInMemorySubscriptions();
+}
 else
+{
     graphql.AddRedisSubscriptions(sp =>
         ConnectionMultiplexer.Connect(
             sp.GetRequiredService<IConfiguration>()["Redis:ConnectionString"]!));
+}
 
 if (!builder.Environment.IsDevelopment())
+{
     graphql.DisableIntrospection();
+}
 
 var app = builder.Build();
 

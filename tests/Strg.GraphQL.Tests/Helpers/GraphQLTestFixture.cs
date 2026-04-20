@@ -48,10 +48,12 @@ public sealed class TestExecutor(IRequestExecutor inner, IServiceProvider rootSe
 {
     public IServiceProvider Services => rootServices;
 
-    public Task<IExecutionResult> ExecuteAsync(string query, CancellationToken ct = default)
+    public Task<IExecutionResult> ExecuteAsync(string query, CancellationToken cancellationToken = default)
     {
         if (globalState is null || globalState.Count == 0)
-            return inner.ExecuteAsync(query, ct);
+        {
+            return inner.ExecuteAsync(query, cancellationToken);
+        }
 
         var builder = OperationRequestBuilder.New().SetDocument(query);
         foreach (var (key, value) in globalState)
@@ -59,6 +61,6 @@ public sealed class TestExecutor(IRequestExecutor inner, IServiceProvider rootSe
             builder.SetGlobalState(key, value);
         }
 
-        return inner.ExecuteAsync(builder.Build(), ct);
+        return inner.ExecuteAsync(builder.Build(), cancellationToken);
     }
 }

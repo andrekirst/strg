@@ -19,7 +19,9 @@ public sealed class FileSubscriptions
         [GlobalState("tenantId")] Guid tenantId)
     {
         if (fileEvent.TenantId != tenantId)
+        {
             throw new UnauthorizedAccessException("Subscription event tenant mismatch.");
+        }
 
         return new FileEventPayload(fileEvent.EventType, fileEvent.FileId, fileEvent.DriveId, fileEvent.OccurredAt);
     }
@@ -27,6 +29,6 @@ public sealed class FileSubscriptions
     public ValueTask<ISourceStream<FileEvent>> SubscribeToFileEventsAsync(
         Guid driveId,
         [Service] ITopicEventReceiver receiver,
-        CancellationToken ct)
-        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(driveId), ct);
+        CancellationToken cancellationToken)
+        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(driveId), cancellationToken);
 }

@@ -1,3 +1,5 @@
+using System.Net.Mime;
+
 namespace Strg.Core.Domain;
 
 public sealed class FileItem : TenantedEntity
@@ -12,7 +14,7 @@ public sealed class FileItem : TenantedEntity
     public bool IsFolder => IsDirectory;
     public string? StorageKey { get; set; }
     public Guid CreatedBy { get; init; }
-    public string MimeType { get; set; } = "application/octet-stream";
+    public string MimeType { get; set; } = MediaTypeNames.Application.Octet;
     public int VersionCount { get; set; } = 1;
 
     // Inbox fields (STRG-305 will add more, keeping these placeholders minimal)

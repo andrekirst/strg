@@ -5,36 +5,36 @@ namespace Strg.Infrastructure.Data;
 
 public sealed class DriveRepository(StrgDbContext db) : IDriveRepository
 {
-    public Task<Drive?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => db.Drives.FirstOrDefaultAsync(d => d.Id == id, ct);
+    public Task<Drive?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => db.Drives.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
     /// <summary>
     /// Bypasses the global tenant/soft-delete query filter intentionally: this method
     /// is used for uniqueness checks, including against soft-deleted names to prevent
     /// re-use of deleted drive names within the same tenant.
     /// </summary>
-    public Task<Drive?> GetByNameAsync(Guid tenantId, string name, CancellationToken ct = default)
+    public Task<Drive?> GetByNameAsync(Guid tenantId, string name, CancellationToken cancellationToken = default)
         => db.Drives.IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(d => d.TenantId == tenantId && d.Name == name && !d.IsDeleted, ct);
+                    .FirstOrDefaultAsync(d => d.TenantId == tenantId && d.Name == name && !d.IsDeleted, cancellationToken);
 
-    public async Task<IReadOnlyList<Drive>> ListAsync(Guid tenantId, CancellationToken ct = default)
-        => await db.Drives.ToListAsync(ct);
+    public async Task<IReadOnlyList<Drive>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => await db.Drives.ToListAsync(cancellationToken);
 
-    public Task AddAsync(Drive drive, CancellationToken ct = default)
+    public Task AddAsync(Drive drive, CancellationToken cancellationToken = default)
     {
         db.Drives.Add(drive);
         return Task.CompletedTask;
     }
 
-    public Task UpdateAsync(Drive drive, CancellationToken ct = default)
+    public Task UpdateAsync(Drive drive, CancellationToken cancellationToken = default)
     {
         db.Drives.Update(drive);
         return Task.CompletedTask;
     }
 
-    public async Task SoftDeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var drive = await db.Drives.FindAsync([id], ct);
+        var drive = await db.Drives.FindAsync([id], cancellationToken);
         if (drive is not null)
         {
             drive.DeletedAt = DateTimeOffset.UtcNow;

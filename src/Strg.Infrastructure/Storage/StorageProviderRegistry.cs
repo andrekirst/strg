@@ -17,7 +17,9 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
     public IStorageProvider Resolve(string providerType, IStorageProviderConfig config)
     {
         if (!_factories.TryGetValue(providerType, out var factory))
+        {
             throw new InvalidOperationException($"No storage provider registered for type '{providerType}'. Registered types: {string.Join(", ", _factories.Keys)}");
+        }
         return factory(config);
     }
 

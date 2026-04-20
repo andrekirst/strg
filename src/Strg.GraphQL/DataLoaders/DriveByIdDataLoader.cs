@@ -19,11 +19,11 @@ public sealed class DriveByIdDataLoader : BatchDataLoader<Guid, Drive>
     }
 
     protected override async Task<IReadOnlyDictionary<Guid, Drive>> LoadBatchAsync(
-        IReadOnlyList<Guid> keys, CancellationToken ct)
+        IReadOnlyList<Guid> keys, CancellationToken cancellationToken)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         return await db.Drives
             .Where(d => keys.Contains(d.Id))
-            .ToDictionaryAsync(d => d.Id, ct);
+            .ToDictionaryAsync(d => d.Id, cancellationToken);
     }
 }

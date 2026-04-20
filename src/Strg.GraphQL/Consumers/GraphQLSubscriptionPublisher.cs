@@ -43,10 +43,10 @@ public sealed class GraphQLSubscriptionPublisher :
 
     private async Task SendAsync(
         FileEventType type, Guid fileId, Guid driveId, Guid userId, Guid tenantId,
-        string? oldPath, string? newPath, CancellationToken ct)
+        string? oldPath, string? newPath, CancellationToken cancellationToken)
     {
         var evt = new FileEvent(type, fileId, driveId, userId, tenantId, oldPath, newPath, DateTimeOffset.UtcNow);
-        await _sender.SendAsync(Topics.FileEvents(driveId), evt, ct);
+        await _sender.SendAsync(Topics.FileEvents(driveId), evt, cancellationToken);
         _logger.LogDebug("Published {EventType} event to topic {Topic}", type, Topics.FileEvents(driveId));
     }
 }

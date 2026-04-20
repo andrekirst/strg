@@ -20,7 +20,10 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
     public bool Verify(string password, string hash)
     {
         var parts = hash.Split('.');
-        if (parts.Length != 2) return false;
+        if (parts.Length != 2)
+        {
+            return false;
+        }
 
         byte[] salt, storedKey;
         try

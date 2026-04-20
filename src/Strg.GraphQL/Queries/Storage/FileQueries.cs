@@ -21,21 +21,45 @@ public sealed class FileQueries
         var query = db.Files.Where(f => f.DriveId == driveId);
 
         if (path is not null)
+        {
             query = query.Where(f => f.Path.StartsWith(path));
+        }
+
         if (filter?.NameContains is not null)
+        {
             query = query.Where(f => f.Name.Contains(filter.NameContains));
+        }
+
         if (filter?.IsFolder.HasValue == true)
+        {
             query = query.Where(f => f.IsDirectory == filter.IsFolder.Value);
+        }
+
         if (filter?.MinSize.HasValue == true)
+        {
             query = query.Where(f => f.Size >= filter.MinSize.Value);
+        }
+
         if (filter?.MaxSize.HasValue == true)
+        {
             query = query.Where(f => f.Size <= filter.MaxSize.Value);
+        }
+
         if (filter?.CreatedAfter.HasValue == true)
+        {
             query = query.Where(f => f.CreatedAt >= filter.CreatedAfter.Value);
+        }
+
         if (filter?.CreatedBefore.HasValue == true)
+        {
             query = query.Where(f => f.CreatedAt <= filter.CreatedBefore.Value);
+        }
+
         if (filter?.IsInInbox.HasValue == true)
+        {
             query = query.Where(f => f.IsInInbox == filter.IsInInbox.Value);
+        }
+
         if (filter?.MimeType is not null)
         {
             var mime = filter.MimeType;
@@ -45,7 +69,9 @@ public sealed class FileQueries
                 query = query.Where(f => f.MimeType != null && f.MimeType.StartsWith(prefix));
             }
             else
+            {
                 query = query.Where(f => f.MimeType == mime);
+            }
         }
 
         return query;
@@ -55,6 +81,6 @@ public sealed class FileQueries
     public Task<FileItem?> GetFile(
         Guid id,
         [Service] StrgDbContext db,
-        CancellationToken ct)
-        => db.Files.FirstOrDefaultAsync(f => f.Id == id, ct);
+        CancellationToken cancellationToken)
+        => db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
 }

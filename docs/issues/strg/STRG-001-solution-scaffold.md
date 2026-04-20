@@ -26,20 +26,20 @@ All other implementation issues depend on this scaffold existing. The solution s
 
 ### Solution: `strg.sln`
 
-### Projects to create:
+### Projects to create
 
-| Project | Type | References |
-|---------|------|-----------|
-| `src/Strg.Core` | classlib | none |
-| `src/Strg.Infrastructure` | classlib | Strg.Core |
-| `src/Strg.GraphQL` | classlib | Strg.Core |
-| `src/Strg.WebDav` | classlib | Strg.Core |
-| `src/Strg.Api` | webapi | Strg.Core, Strg.Infrastructure, Strg.GraphQL, Strg.WebDav |
-| `tests/Strg.Core.Tests` | xunit | Strg.Core |
-| `tests/Strg.Api.Tests` | xunit | Strg.Api, Strg.Infrastructure |
-| `tests/Strg.Integration.Tests` | xunit | Strg.Api |
+| Project                        | Type     | References                                                |
+| ------------------------------ | -------- | --------------------------------------------------------- |
+| `src/Strg.Core`                | classlib | none                                                      |
+| `src/Strg.Infrastructure`      | classlib | Strg.Core                                                 |
+| `src/Strg.GraphQL`             | classlib | Strg.Core                                                 |
+| `src/Strg.WebDav`              | classlib | Strg.Core                                                 |
+| `src/Strg.Api`                 | webapi   | Strg.Core, Strg.Infrastructure, Strg.GraphQL, Strg.WebDav |
+| `tests/Strg.Core.Tests`        | xunit    | Strg.Core                                                 |
+| `tests/Strg.Api.Tests`         | xunit    | Strg.Api, Strg.Infrastructure                             |
+| `tests/Strg.Integration.Tests` | xunit    | Strg.Api                                                  |
 
-### Directory Layout:
+### Directory Layout
 
 ```
 src/
@@ -68,7 +68,7 @@ tests/
   Strg.Integration.Tests/
 ```
 
-### `Directory.Build.props` (repo root):
+### `Directory.Build.props` (repo root)
 
 ```xml
 <Project>
@@ -83,7 +83,7 @@ tests/
 </Project>
 ```
 
-### `.editorconfig` (repo root):
+### `.editorconfig` (repo root)
 
 Standard C# rules: 4-space indent, `var` preference, braces required, file-scoped namespaces.
 

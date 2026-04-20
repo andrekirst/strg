@@ -1,3 +1,4 @@
+using System.Net.Mime;
 using FluentAssertions;
 using Strg.Core.Domain;
 using Xunit;
@@ -17,7 +18,7 @@ public sealed class FileItemTests
             TenantId = Guid.NewGuid(),
             CreatedBy = Guid.NewGuid()
         };
-        file.MimeType.Should().Be("application/octet-stream");
+        file.MimeType.Should().Be(MediaTypeNames.Application.Octet);
         file.VersionCount.Should().Be(1);
         file.IsDirectory.Should().BeFalse();
         file.ContentHash.Should().BeNull();

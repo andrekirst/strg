@@ -20,15 +20,19 @@ public sealed class DriveMutations
         CreateDriveInput input,
         [Service] StrgDbContext db,
         [GlobalState("tenantId")] Guid tenantId,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (!ValidDriveName.IsMatch(input.Name))
+        {
             return new CreateDrivePayload(null,
                 [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-], max 64 chars.", "name")]);
+        }
 
-        if (await db.Drives.AnyAsync(d => d.TenantId == tenantId && d.Name == input.Name, ct))
+        if (await db.Drives.AnyAsync(d => d.TenantId == tenantId && d.Name == input.Name, cancellationToken))
+        {
             return new CreateDrivePayload(null,
                 [new UserError("DUPLICATE_DRIVE_NAME", $"Drive '{input.Name}' already exists.", "name")]);
+        }
 
         var drive = new Drive
         {
@@ -41,7 +45,7 @@ public sealed class DriveMutations
         };
 
         db.Drives.Add(drive);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
         return new CreateDrivePayload(drive, null);
     }
 
@@ -50,25 +54,33 @@ public sealed class DriveMutations
         UpdateDriveInput input,
         [Service] StrgDbContext db,
         [GlobalState("tenantId")] Guid tenantId,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         var drive = await db.Drives.FirstOrDefaultAsync(
-            d => d.Id == input.Id && d.TenantId == tenantId, ct);
+            d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
 
         if (drive is null)
+        {
             return new UpdateDrivePayload(null,
                 [new UserError("NOT_FOUND", "Drive not found.", null)]);
+        }
 
         if (input.Name is not null)
         {
             if (!ValidDriveName.IsMatch(input.Name))
+            {
                 return new UpdateDrivePayload(null,
                     [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-].", "name")]);
+            }
+
             drive.Name = input.Name;
         }
-        if (input.IsDefault.HasValue) drive.IsDefault = input.IsDefault.Value;
+        if (input.IsDefault.HasValue)
+        {
+            drive.IsDefault = input.IsDefault.Value;
+        }
 
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
         return new UpdateDrivePayload(drive, null);
     }
 
@@ -77,17 +89,19 @@ public sealed class DriveMutations
         DeleteDriveInput input,
         [Service] StrgDbContext db,
         [GlobalState("tenantId")] Guid tenantId,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         var drive = await db.Drives.FirstOrDefaultAsync(
-            d => d.Id == input.Id && d.TenantId == tenantId, ct);
+            d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
 
         if (drive is null)
+        {
             return new DeleteDrivePayload(null,
                 [new UserError("NOT_FOUND", "Drive not found.", null)]);
+        }
 
         drive.DeletedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
         return new DeleteDrivePayload(drive.Id, null);
     }
 }

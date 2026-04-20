@@ -9,5 +9,5 @@ public sealed record ExternalIdentityClaim(
 public interface IExternalIdentityProvider
 {
     string ProviderName { get; }
-    Task<ExternalIdentityClaim?> AuthenticateAsync(string code, CancellationToken ct);
+    Task<ExternalIdentityClaim?> AuthenticateAsync(string code, CancellationToken cancellationToken);
 }

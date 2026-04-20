@@ -6,12 +6,12 @@ namespace Strg.Infrastructure.Identity;
 
 public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedService
 {
-    public async Task StartAsync(CancellationToken ct)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
 
-        if (await manager.FindByClientIdAsync("strg-default", ct) is null)
+        if (await manager.FindByClientIdAsync("strg-default", cancellationToken) is null)
         {
             await manager.CreateAsync(new OpenIddictApplicationDescriptor
             {
@@ -32,9 +32,9 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
                     OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
                     OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
                 },
-            }, ct);
+            }, cancellationToken);
         }
     }
 
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -6,33 +6,33 @@ namespace Strg.Infrastructure.Identity;
 
 public sealed class UserRepository(StrgDbContext db) : IUserRepository
 {
-    public Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
-    public Task<User?> GetByEmailAsync(Guid tenantId, string email, CancellationToken ct = default)
+    public Task<User?> GetByEmailAsync(Guid tenantId, string email, CancellationToken cancellationToken = default)
         => db.Users.IgnoreQueryFilters()
                    .FirstOrDefaultAsync(u => u.TenantId == tenantId
                        && u.Email == email.ToLowerInvariant()
-                       && !u.IsDeleted, ct);
+                       && !u.IsDeleted, cancellationToken);
 
-    public async Task<IReadOnlyList<User>> ListAsync(Guid tenantId, CancellationToken ct = default)
-        => await db.Users.Where(u => u.TenantId == tenantId).ToListAsync(ct);
+    public async Task<IReadOnlyList<User>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default)
+        => await db.Users.Where(u => u.TenantId == tenantId).ToListAsync(cancellationToken);
 
-    public Task AddAsync(User user, CancellationToken ct = default)
+    public Task AddAsync(User user, CancellationToken cancellationToken = default)
     {
         db.Users.Add(user);
         return Task.CompletedTask;
     }
 
-    public Task UpdateAsync(User user, CancellationToken ct = default)
+    public Task UpdateAsync(User user, CancellationToken cancellationToken = default)
     {
         db.Users.Update(user);
         return Task.CompletedTask;
     }
 
-    public async Task SoftDeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var user = await db.Users.FindAsync([id], ct);
+        var user = await db.Users.FindAsync([id], cancellationToken);
         if (user is not null)
         {
             user.DeletedAt = DateTimeOffset.UtcNow;

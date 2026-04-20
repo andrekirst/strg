@@ -18,25 +18,25 @@ public sealed class TagMutations
         [Service] StrgDbContext db,
         [GlobalState("tenantId")] Guid tenantId,
         [GlobalState("userId")] Guid userId,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         if (input.Key.Length > 255)
             return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "key must be ≤255 chars.", "key")]);
         if (input.Value.Length > 255)
             return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "value must be ≤255 chars.", "value")]);
 
-        var fileExists = await db.Files.AnyAsync(f => f.Id == input.FileId, ct);
+        var fileExists = await db.Files.AnyAsync(f => f.Id == input.FileId, cancellationToken);
         if (!fileExists)
             return new AddTagPayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
 
         var existing = await db.Tags.FirstOrDefaultAsync(
-            t => t.FileId == input.FileId && t.Key == input.Key, ct);
+            t => t.FileId == input.FileId && t.Key == input.Key, cancellationToken);
 
         if (existing is not null)
         {
             existing.Value = input.Value;
             existing.ValueType = input.ValueType;
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(cancellationToken);
             return new AddTagPayload(existing, null);
         }
 
@@ -51,7 +51,7 @@ public sealed class TagMutations
         };
 
         db.Tags.Add(tag);
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
         return new AddTagPayload(tag, null);
     }
 
@@ -59,15 +59,15 @@ public sealed class TagMutations
     public async Task<UpdateTagPayload> UpdateTagAsync(
         UpdateTagInput input,
         [Service] StrgDbContext db,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
-        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, ct);
+        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, cancellationToken);
         if (tag is null)
             return new UpdateTagPayload(null, [new UserError("NOT_FOUND", "Tag not found.", null)]);
 
         tag.Value = input.Value;
         tag.ValueType = input.ValueType;
-        await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(cancellationToken);
         return new UpdateTagPayload(tag, null);
     }
 
@@ -75,13 +75,13 @@ public sealed class TagMutations
     public async Task<RemoveTagPayload> RemoveTagAsync(
         RemoveTagInput input,
         [Service] StrgDbContext db,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
-        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, ct);
+        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, cancellationToken);
         if (tag is not null)
         {
             tag.DeletedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(cancellationToken);
         }
         return new RemoveTagPayload(input.Id, null);
     }
@@ -90,12 +90,12 @@ public sealed class TagMutations
     public async Task<RemoveAllTagsPayload> RemoveAllTagsAsync(
         RemoveAllTagsInput input,
         [Service] StrgDbContext db,
-        CancellationToken ct)
+        CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         await db.Tags
             .Where(t => t.FileId == input.FileId)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.DeletedAt, now), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.DeletedAt, now), cancellationToken);
         return new RemoveAllTagsPayload(input.FileId, null);
     }
 }

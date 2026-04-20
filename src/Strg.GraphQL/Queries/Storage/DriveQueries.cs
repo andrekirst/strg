@@ -16,6 +16,6 @@ public sealed class DriveQueries
 
     [Authorize(Policy = "FilesRead")]
     public Task<Drive?> GetDrive(
-        Guid id, [Service] StrgDbContext db, CancellationToken ct)
-        => db.Drives.FirstOrDefaultAsync(d => d.Id == id, ct);
+        Guid id, [Service] StrgDbContext db, CancellationToken cancellationToken)
+        => db.Drives.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 }

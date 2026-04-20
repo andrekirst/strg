@@ -19,11 +19,11 @@ public sealed class InboxRuleByIdDataLoader : BatchDataLoader<Guid, InboxRule>
     }
 
     protected override async Task<IReadOnlyDictionary<Guid, InboxRule>> LoadBatchAsync(
-        IReadOnlyList<Guid> keys, CancellationToken ct)
+        IReadOnlyList<Guid> keys, CancellationToken cancellationToken)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         return await db.InboxRules
             .Where(r => keys.Contains(r.Id))
-            .ToDictionaryAsync(r => r.Id, ct);
+            .ToDictionaryAsync(r => r.Id, cancellationToken);
     }
 }

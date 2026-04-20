@@ -36,10 +36,10 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
         }
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         UpdateTimestamps();
-        return base.SaveChangesAsync(ct);
+        return base.SaveChangesAsync(cancellationToken);
     }
 
     private void UpdateTimestamps()

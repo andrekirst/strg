@@ -7,14 +7,14 @@ namespace Strg.Core.Storage;
 public interface IStorageProvider
 {
     string ProviderType { get; }
-    Task<IStorageFile?> GetFileAsync(string path, CancellationToken ct = default);
-    Task<IStorageDirectory?> GetDirectoryAsync(string path, CancellationToken ct = default);
-    Task<Stream> ReadAsync(string path, long offset = 0, CancellationToken ct = default);
-    Task WriteAsync(string path, Stream content, CancellationToken ct = default);
-    Task DeleteAsync(string path, CancellationToken ct = default);
-    Task MoveAsync(string source, string destination, CancellationToken ct = default);
-    Task CopyAsync(string source, string destination, CancellationToken ct = default);
-    Task<bool> ExistsAsync(string path, CancellationToken ct = default);
-    Task CreateDirectoryAsync(string path, CancellationToken ct = default);
-    IAsyncEnumerable<IStorageItem> ListAsync(string path, CancellationToken ct = default);
+    Task<IStorageFile?> GetFileAsync(string path, CancellationToken cancellationToken = default);
+    Task<IStorageDirectory?> GetDirectoryAsync(string path, CancellationToken cancellationToken = default);
+    Task<Stream> ReadAsync(string path, long offset = 0, CancellationToken cancellationToken = default);
+    Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default);
+    Task DeleteAsync(string path, CancellationToken cancellationToken = default);
+    Task MoveAsync(string source, string destination, CancellationToken cancellationToken = default);
+    Task CopyAsync(string source, string destination, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default);
+    Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<IStorageItem> ListAsync(string path, CancellationToken cancellationToken = default);
 }

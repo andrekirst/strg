@@ -55,6 +55,6 @@ public sealed class FileQueries
     public Task<FileItem?> GetFile(
         Guid id,
         [Service] StrgDbContext db,
-        CancellationToken ct)
-        => db.Files.FirstOrDefaultAsync(f => f.Id == id, ct);
+        CancellationToken cancellationToken)
+        => db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
 }

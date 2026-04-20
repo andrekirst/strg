@@ -41,6 +41,6 @@ public sealed class AuditLogQueries
     public Task<User?> GetUser(
         Guid id,
         [Service] StrgDbContext db,
-        CancellationToken ct)
-        => db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+        CancellationToken cancellationToken)
+        => db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 }

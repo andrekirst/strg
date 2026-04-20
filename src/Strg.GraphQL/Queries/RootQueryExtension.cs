@@ -15,8 +15,8 @@ public sealed class RootQueryExtension
     public async Task<User> Me(
         [Service] StrgDbContext db,
         [GlobalState("userId")] Guid userId,
-        CancellationToken ct)
-        => await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
+        CancellationToken cancellationToken)
+        => await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken)
            ?? throw new UnauthorizedAccessException();
 
     public StorageQueries Storage() => new();

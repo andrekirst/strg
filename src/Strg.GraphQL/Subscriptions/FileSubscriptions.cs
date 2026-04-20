@@ -27,6 +27,6 @@ public sealed class FileSubscriptions
     public ValueTask<ISourceStream<FileEvent>> SubscribeToFileEventsAsync(
         Guid driveId,
         [Service] ITopicEventReceiver receiver,
-        CancellationToken ct)
-        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(driveId), ct);
+        CancellationToken cancellationToken)
+        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(driveId), cancellationToken);
 }

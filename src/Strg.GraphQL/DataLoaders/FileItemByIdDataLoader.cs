@@ -19,11 +19,11 @@ public sealed class FileItemByIdDataLoader : BatchDataLoader<Guid, FileItem>
     }
 
     protected override async Task<IReadOnlyDictionary<Guid, FileItem>> LoadBatchAsync(
-        IReadOnlyList<Guid> keys, CancellationToken ct)
+        IReadOnlyList<Guid> keys, CancellationToken cancellationToken)
     {
-        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
         return await db.Files
             .Where(f => keys.Contains(f.Id))
-            .ToDictionaryAsync(f => f.Id, ct);
+            .ToDictionaryAsync(f => f.Id, cancellationToken);
     }
 }

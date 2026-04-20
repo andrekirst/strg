@@ -3,7 +3,7 @@ id: STRG-002
 title: Configure .editorconfig, .gitignore, and Directory.Packages.props
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: infrastructure
 labels: [setup, tooling]
 depends_on: [STRG-001]
@@ -77,13 +77,13 @@ Central version pins for all NuGet packages used across the solution:
 
 ## Acceptance Criteria
 
-- [ ] `.editorconfig` enforces file-scoped namespaces
-- [ ] `.editorconfig` enforces braces-required (`csharp_prefer_braces = true:error`)
-- [ ] `.gitignore` excludes `*.db`, `.env`, `data/`, `plugins/`
-- [ ] `.gitignore` excludes `.superpowers/`
-- [ ] `Directory.Packages.props` pins all major dependencies
-- [ ] `ManagePackageVersionsCentrally = true` is set
-- [ ] Running `dotnet restore` after this issue succeeds
+- [x] `.editorconfig` enforces file-scoped namespaces
+- [x] `.editorconfig` enforces braces-required (`csharp_prefer_braces = true:error`)
+- [x] `.gitignore` excludes `*.db`, `.env`, `data/`, `plugins/`
+- [x] `.gitignore` excludes `.superpowers/`
+- [x] `Directory.Packages.props` pins all major dependencies
+- [x] `ManagePackageVersionsCentrally = true` is set
+- [x] Running `dotnet restore` after this issue succeeds
 
 ## Test Cases
 
@@ -93,23 +93,23 @@ Central version pins for all NuGet packages used across the solution:
 
 ## Implementation Tasks
 
-- [ ] Write `.editorconfig` with all C# rules
-- [ ] Write `.gitignore` (use GitHub's C# template as base, add strg-specific entries)
-- [ ] Write `Directory.Packages.props` with all packages from the tech stack
-- [ ] Verify `dotnet build` and `dotnet restore` pass after changes
+- [x] Write `.editorconfig` with all C# rules
+- [x] Write `.gitignore` (use GitHub's C# template as base, add strg-specific entries)
+- [x] Write `Directory.Packages.props` with all packages from the tech stack
+- [x] Verify `dotnet build` and `dotnet restore` pass after changes
 
 ## Security Review Checklist
 
-- [ ] `.gitignore` excludes `.env` files
-- [ ] `.gitignore` excludes `*.db` (SQLite files with potential user data)
-- [ ] `Directory.Packages.props` does not pin insecure/outdated versions
+- [x] `.gitignore` excludes `.env` files
+- [x] `.gitignore` excludes `*.db` (SQLite files with potential user data)
+- [x] `Directory.Packages.props` does not pin insecure/outdated versions
 
 ## Code Review Checklist
 
-- [ ] All packages from the tech stack are included in `Directory.Packages.props`
-- [ ] Version ranges are appropriate (not too loose, not too strict)
+- [x] All packages from the tech stack are included in `Directory.Packages.props`
+- [x] Version ranges are appropriate (not too loose, not too strict)
 
 ## Definition of Done
 
-- [ ] All three files committed
-- [ ] `dotnet build` passes with zero warnings
+- [x] All three files committed
+- [x] `dotnet build` passes with zero warnings

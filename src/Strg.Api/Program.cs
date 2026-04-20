@@ -1,8 +1,15 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
 using Strg.Core.Domain;
+using Strg.GraphQL.DataLoaders;
+using Strg.GraphQL.Errors;
+using Strg.GraphQL.Mutations;
+using Strg.GraphQL.Queries;
+using Strg.GraphQL.Types;
+using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
 
@@ -54,12 +61,49 @@ builder.Services.AddHostedService<OpenIddictSeedWorker>();
 // ---- MVC / Controllers (token + userinfo endpoints) ----
 builder.Services.AddControllers();
 
+// ---- GraphQL (STRG-049) ----
+var graphql = builder.Services
+    .AddGraphQLServer()
+    .AddQueryType(q => q.Name("Query"))
+    .AddMutationType(m => m.Name("Mutation"))
+    .AddSubscriptionType(s => s.Name("Subscription"))
+    .AddType<UserType>()
+    .AddType<GraphQLDriveType>()
+    .AddType<FileItemType>()
+    .AddType<FileVersionType>()
+    .AddType<AuditEntryType>()
+    .AddType<TagType>()
+    .AddType<RootQueryExtension>()
+    .AddType<RootMutationExtension>()
+    .AddType<FileItemByIdDataLoader>()
+    .AddType<DriveByIdDataLoader>()
+    .AddType<UserByIdDataLoader>()
+    .AddType<InboxRuleByIdDataLoader>()
+    .AddGlobalObjectIdentification()
+    .AddFiltering()
+    .AddSorting()
+    .AddAuthorization()
+    .AddErrorFilter<StrgErrorFilter>()
+    .AddMaxExecutionDepthRule(10);
+
+if (builder.Environment.IsDevelopment())
+    graphql.AddInMemorySubscriptions();
+else
+    graphql.AddRedisSubscriptions(sp =>
+        ConnectionMultiplexer.Connect(
+            sp.GetRequiredService<IConfiguration>()["Redis:ConnectionString"]!));
+
+if (!builder.Environment.IsDevelopment())
+    graphql.DisableIntrospection();
+
 var app = builder.Build();
 
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.UseWebSockets();
+app.MapGraphQL("/graphql");
 app.MapControllers();
 app.MapDriveEndpoints();
 

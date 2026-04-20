@@ -4,6 +4,7 @@ public sealed class User : TenantedEntity
 {
     public required string Email { get; set; }
     public required string DisplayName { get; set; }
+    public required string PasswordHash { get; set; }
     public long QuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024; // 10 GB default
     public long UsedBytes { get; set; }
     public UserRole Role { get; set; } = UserRole.User;

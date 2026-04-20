@@ -9,6 +9,8 @@ public sealed class FileItem : TenantedEntity
     public long Size { get; set; }
     public string? ContentHash { get; set; }
     public bool IsDirectory { get; init; }
+    public bool IsFolder => IsDirectory;
+    public string? StorageKey { get; set; }
     public Guid CreatedBy { get; init; }
     public string MimeType { get; set; } = "application/octet-stream";
     public int VersionCount { get; set; } = 1;

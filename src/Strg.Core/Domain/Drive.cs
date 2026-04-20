@@ -7,5 +7,6 @@ public sealed class Drive : TenantedEntity
     public string ProviderConfig { get; set; } = "{}";
     public string VersioningPolicy { get; set; } = """{"mode":"none"}""";
     public bool EncryptionEnabled { get; set; }
+    public bool IsEncrypted => EncryptionEnabled;
     public bool IsDefault { get; set; }
 }

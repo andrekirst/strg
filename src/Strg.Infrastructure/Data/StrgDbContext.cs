@@ -13,6 +13,8 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     public DbSet<FileItem> Files => Set<FileItem>();
     public DbSet<FileVersion> FileVersions => Set<FileVersion>();
     public DbSet<Tag> Tags => Set<Tag>();
+    public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<InboxRule> InboxRules => Set<InboxRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

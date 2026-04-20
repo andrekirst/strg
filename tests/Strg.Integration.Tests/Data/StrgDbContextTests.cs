@@ -1,13 +1,13 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
+using Testcontainers.PostgreSql;
 using Xunit;
 
-namespace Strg.Api.Tests.Data;
+namespace Strg.Integration.Tests.Data;
 
-// Test helper entity — internal to test assembly, not exposed outside
 internal sealed class SampleTenantedEntity : TenantedEntity { }
 
 internal sealed class SampleTenantContext(Guid id) : ITenantContext
@@ -15,39 +15,65 @@ internal sealed class SampleTenantContext(Guid id) : ITenantContext
     public Guid TenantId => id;
 }
 
-// Test-only DbContext that registers the test entity so it can be stored
-internal sealed class TestDbContext : StrgDbContext
+internal sealed class TestDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tc)
+    : StrgDbContext(options, tc)
 {
-    public TestDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tc)
-        : base(options, tc) { }
-
     public DbSet<SampleTenantedEntity> Samples => Set<SampleTenantedEntity>();
 }
 
-public sealed class StrgDbContextTests
+public sealed class StrgDbContextTests : IAsyncLifetime
 {
-    // Each call creates a fresh isolated InMemory database root to prevent cross-test contamination
-    private static DbContextOptions<StrgDbContext> CreateOptions()
-        => new DbContextOptionsBuilder<StrgDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString(), new InMemoryDatabaseRoot())
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .Build();
+
+    public Task InitializeAsync() => _postgres.StartAsync();
+
+    public Task DisposeAsync() => _postgres.DisposeAsync().AsTask();
+
+    private async Task<DbContextOptions<StrgDbContext>> CreateFreshDatabaseAsync<TContext>(ITenantContext tenantContext)
+        where TContext : StrgDbContext
+    {
+        var dbName = $"strg_test_{Guid.NewGuid():N}";
+        var adminConnectionString = _postgres.GetConnectionString();
+
+        await using (var connection = new NpgsqlConnection(adminConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"CREATE DATABASE \"{dbName}\"";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var testDbConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            Database = dbName,
+        }.ConnectionString;
+
+        var options = new DbContextOptionsBuilder<StrgDbContext>()
+            .UseNpgsql(testDbConnectionString)
             .Options;
+
+        await using (var ctx = (TContext)Activator.CreateInstance(typeof(TContext), options, tenantContext)!)
+        {
+            await ctx.Database.EnsureCreatedAsync();
+        }
+
+        return options;
+    }
 
     [Fact]
     public async Task Tenant_can_be_saved_and_loaded()
     {
-        // Arrange
-        var options = CreateOptions();
         var tenantId = Guid.NewGuid();
+        var options = await CreateFreshDatabaseAsync<StrgDbContext>(new SampleTenantContext(tenantId));
         var tenant = new Tenant { Name = "Acme Corp" };
 
-        // Act
         await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId)))
         {
             ctx.Tenants.Add(tenant);
             await ctx.SaveChangesAsync();
         }
 
-        // Assert — Tenant does NOT inherit TenantedEntity, so no global filter applies
         await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId)))
         {
             var loaded = await ctx.Tenants.FindAsync(tenant.Id);
@@ -59,9 +85,8 @@ public sealed class StrgDbContextTests
     [Fact]
     public async Task SaveChangesAsync_updates_UpdatedAt_on_modified_tenanted_entities()
     {
-        // Arrange
-        var options = CreateOptions();
         var tenantId = Guid.NewGuid();
+        var options = await CreateFreshDatabaseAsync<TestDbContext>(new SampleTenantContext(tenantId));
         var entity = new SampleTenantedEntity { TenantId = tenantId };
         DateTimeOffset originalUpdatedAt;
 
@@ -72,7 +97,6 @@ public sealed class StrgDbContextTests
             originalUpdatedAt = entity.UpdatedAt;
         }
 
-        // Act — small delay to ensure time advances
         await Task.Delay(10);
 
         DateTimeOffset updatedAt;
@@ -84,21 +108,18 @@ public sealed class StrgDbContextTests
             updatedAt = loaded.UpdatedAt;
         }
 
-        // Assert
         updatedAt.Should().BeAfter(originalUpdatedAt);
     }
 
     [Fact]
     public async Task Global_filter_excludes_entities_from_different_tenant()
     {
-        // Arrange
-        var options = CreateOptions();
         var tenantA = Guid.NewGuid();
         var tenantB = Guid.NewGuid();
+        var options = await CreateFreshDatabaseAsync<TestDbContext>(new SampleTenantContext(tenantA));
         var entityA = new SampleTenantedEntity { TenantId = tenantA };
         var entityB = new SampleTenantedEntity { TenantId = tenantB };
 
-        // Seed both entities (saving as tenant A — filter is only on queries, not inserts)
         await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
         {
             ctx.Samples.Add(entityA);
@@ -106,12 +127,9 @@ public sealed class StrgDbContextTests
             await ctx.SaveChangesAsync();
         }
 
-        // Act — query as tenant A
         await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
         {
             var results = await ctx.Samples.ToListAsync();
-
-            // Assert — only tenant A's entity is visible
             results.Should().ContainSingle();
             results[0].Id.Should().Be(entityA.Id);
         }
@@ -120,9 +138,8 @@ public sealed class StrgDbContextTests
     [Fact]
     public async Task Global_filter_excludes_soft_deleted_entities()
     {
-        // Arrange
-        var options = CreateOptions();
         var tenantId = Guid.NewGuid();
+        var options = await CreateFreshDatabaseAsync<TestDbContext>(new SampleTenantContext(tenantId));
         var active = new SampleTenantedEntity { TenantId = tenantId };
         var deleted = new SampleTenantedEntity { TenantId = tenantId };
 
@@ -133,7 +150,6 @@ public sealed class StrgDbContextTests
             await ctx.SaveChangesAsync();
         }
 
-        // Soft-delete one entity (set DeletedAt — IsDeleted is computed from this)
         await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
         {
             var toDelete = await ctx.Samples.FirstAsync(e => e.Id == deleted.Id);
@@ -141,12 +157,9 @@ public sealed class StrgDbContextTests
             await ctx.SaveChangesAsync();
         }
 
-        // Act
         await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
         {
             var results = await ctx.Samples.ToListAsync();
-
-            // Assert — only the non-deleted entity is returned
             results.Should().ContainSingle();
             results[0].Id.Should().Be(active.Id);
         }

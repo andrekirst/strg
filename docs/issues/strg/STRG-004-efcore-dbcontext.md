@@ -104,41 +104,43 @@ modelBuilder.Entity<FileItem>()
 
 ## Acceptance Criteria
 
-- [ ] `StrgDbContext` compiles with all DbSets listed
-- [ ] Only PostgreSQL provider configured (no SQLite in application code)
-- [ ] Global query filters registered as **two separate** `HasQueryFilter` calls per entity (tenant isolation + soft-delete), not a combined expression
-- [ ] Global query filter automatically scopes all `TenantedEntity` queries to current tenant
-- [ ] Global query filter excludes soft-deleted records (`IsDeleted == false`) for all `TenantedEntity`
-- [ ] `SaveChangesAsync` sets `UpdatedAt` on all modified `TenantedEntity` instances
-- [ ] `ITenantContext` is defined in `Strg.Infrastructure` (or `Strg.Core`)
-- [ ] Entity type configurations are in separate `IEntityTypeConfiguration<T>` classes
-- [ ] `StrgDbContext` does NOT directly reference business logic services
+- [ ] `StrgDbContext` compiles with all DbSets listed _(DbSets present: Tenants, Users, Drives, Files, FileVersions, Tags, AuditEntries, InboxRules. `AclEntries` / `Shares` from original spec are deferred — entities not yet defined; `Share` is scoped to STRG-111.)_
+- [x] Only PostgreSQL provider configured (no SQLite in application code)
+- [x] Global query filters registered as **two separate** `HasQueryFilter` calls per entity (tenant isolation + soft-delete), not a combined expression _(implemented as EF Core 10 named filters — `TenantFilterName` and `SoftDeleteFilterName` — which are ANDed automatically)_
+- [x] Global query filter automatically scopes all `TenantedEntity` queries to current tenant
+- [x] Global query filter excludes soft-deleted records (`IsDeleted == false`) for all `TenantedEntity`
+- [x] `SaveChangesAsync` sets `UpdatedAt` on all modified `TenantedEntity` instances
+- [x] `ITenantContext` is defined in `Strg.Infrastructure` (or `Strg.Core`)
+- [x] Entity type configurations are in separate `IEntityTypeConfiguration<T>` classes
+- [x] `StrgDbContext` does NOT directly reference business logic services
 
 ## Test Cases
 
-- **TC-001**: `dotnet ef migrations add Test --project Strg.Infrastructure` with Npgsql → succeeds
-- **TC-002**: Save a `TenantedEntity` → `UpdatedAt` is updated automatically
-- **TC-003**: Query `Users` with TenantId A configured → users from TenantId B not returned (tenant filter)
-- **TC-004**: Query `Users` with `IsDeleted = true` → soft-deleted users not returned (soft-delete filter)
-- **TC-005**: Query `Users` with `.IgnoreQueryFilters()` → all users returned (both filters bypassed)
+- [x] **TC-001**: `dotnet ef migrations add Initial --project Strg.Infrastructure` with Npgsql → succeeds
+- [x] **TC-002**: Save a `TenantedEntity` → `UpdatedAt` is updated automatically
+- [x] **TC-003**: Query with TenantId A configured → entities from TenantId B not returned (tenant filter)
+- [x] **TC-004**: Query with `DeletedAt` set → soft-deleted entities not returned (soft-delete filter)
+- [ ] **TC-005**: Query with `.IgnoreQueryFilters()` → all entities returned (both filters bypassed) _(deferred — out of scope for current blocker sweep)_
 
 ## Implementation Tasks
 
-- [ ] Create `src/Strg.Infrastructure/Data/StrgDbContext.cs`
-- [ ] Create `src/Strg.Infrastructure/Data/ITenantContext.cs` and `HttpTenantContext.cs`
-- [ ] Create `src/Strg.Infrastructure/Data/Configurations/` folder
-- [ ] Write entity type configuration for `Tenant`
-- [ ] Write global query filter helper for `TenantedEntity`
-- [ ] Register `StrgDbContext` in `Strg.Api/Program.cs` with provider switch
-- [ ] Install NuGet: `Npgsql.EntityFrameworkCore.PostgreSQL` only (no SQLite in application code)
+- [x] Create `src/Strg.Infrastructure/Data/StrgDbContext.cs`
+- [x] Create `src/Strg.Infrastructure/Data/ITenantContext.cs` and `HttpTenantContext.cs`
+- [x] Create `src/Strg.Infrastructure/Data/Configurations/` folder
+- [x] Write entity type configuration for `Tenant`
+- [x] Write global query filter helper for `TenantedEntity`
+- [x] Register `StrgDbContext` in `Strg.Api/Program.cs` (PostgreSQL only per Phase 1 decision)
+- [x] Install NuGet: `Npgsql.EntityFrameworkCore.PostgreSQL` only (no SQLite in application code)
+- [x] Add `StrgDbContextFactory : IDesignTimeDbContextFactory<StrgDbContext>` so `dotnet ef` can instantiate the context at design time
+- [x] Generate initial migration (`src/Strg.Infrastructure/Migrations/*_Initial.cs` + `StrgDbContextModelSnapshot.cs`)
 
 ## Testing Tasks
 
-- [ ] Create `Strg.Api.Tests/Data/StrgDbContextTests.cs`
-- [ ] Test soft-delete filter using TestContainers PostgreSQL
-- [ ] Test tenant isolation filter
-- [ ] Test `UpdatedAt` timestamp update on `SaveChangesAsync`
-- [ ] Test that two separate filters (tenant + soft-delete) both apply and are AND-ed
+- [x] Create `tests/Strg.Integration.Tests/Data/StrgDbContextTests.cs` (moved from `Strg.Api.Tests/Data/` per integration-test layout)
+- [x] Test soft-delete filter using TestContainers PostgreSQL
+- [x] Test tenant isolation filter
+- [x] Test `UpdatedAt` timestamp update on `SaveChangesAsync`
+- [x] Test that two separate filters (tenant + soft-delete) both apply and are AND-ed _(covered implicitly by the tenant and soft-delete behavioral tests each passing when both filters are registered)_
 
 ## Security Review Checklist
 
@@ -155,6 +157,13 @@ modelBuilder.Entity<FileItem>()
 
 ## Definition of Done
 
-- [ ] `StrgDbContext` created and registered
-- [ ] Tests pass with SQLite in-memory
-- [ ] `dotnet ef migrations add Initial` succeeds
+- [x] `StrgDbContext` created and registered
+- [x] Tests pass against TestContainers PostgreSQL (Phase 1 decision superseded the original SQLite-in-memory wording)
+- [x] `dotnet ef migrations add Initial` succeeds
+
+## Remaining spec gaps (deferred)
+
+- `AclEntries` / `Shares` DbSets listed in the original spec are not implemented — entities don't exist yet (`Share` is scoped to STRG-111; `AclEntry` is not currently tracked).
+- TC-005 (`IgnoreQueryFilters()` bypass) test not added.
+
+Both are non-blocking for downstream work (STRG-005, STRG-012, STRG-022, STRG-032) and can be picked up in a follow-up.

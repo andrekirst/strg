@@ -240,6 +240,20 @@ dotnet test --collect:"XPlat Code Coverage"
 
 Integration tests use SQLite in-memory + `InMemoryStorageProvider` — no external services needed.
 
+### Run only affected tests while iterating
+
+During implementation, prefer targeted test runs to keep the feedback loop fast:
+
+```bash
+# Filter by fully-qualified name fragment
+dotnet test --filter "FullyQualifiedName~StrgDbContextTests"
+
+# Target a single project
+dotnet test tests/Strg.Core.Tests
+```
+
+Run the full suite (`dotnet test`) only once before declaring a task complete, committing, or opening a PR.
+
 ---
 
 ## Issue Tracking

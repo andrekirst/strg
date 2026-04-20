@@ -8,8 +8,14 @@ namespace Strg.Infrastructure.Data;
 public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tenantContext)
     : DbContext(options)
 {
+    public const string TenantFilterName = "Tenant";
+    public const string SoftDeleteFilterName = "SoftDelete";
+
     private static readonly MethodInfo BuildTenantFilterMethod = typeof(StrgDbContext)
         .GetMethod(nameof(BuildTenantFilter), BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static readonly MethodInfo BuildSoftDeleteFilterMethod = typeof(StrgDbContext)
+        .GetMethod(nameof(BuildSoftDeleteFilter), BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<User> Users => Set<User>();
@@ -24,15 +30,26 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(StrgDbContext).Assembly);
 
+        // Two named query filters per entity — EF Core 10+ ANDs them automatically at query time.
+        // Unnamed filters would overwrite each other; named filters are also selectively disableable
+        // via IgnoreQueryFilters(["TenantFilter"]).
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            if (entityType.ClrType.IsAssignableTo(typeof(TenantedEntity)))
+            if (!entityType.ClrType.IsAssignableTo(typeof(TenantedEntity)))
             {
-                var filter = (LambdaExpression)BuildTenantFilterMethod
-                    .MakeGenericMethod(entityType.ClrType)
-                    .Invoke(this, null)!;
-                modelBuilder.Entity(entityType.ClrType).HasQueryFilter(filter);
+                continue;
             }
+
+            var tenantFilter = (LambdaExpression)BuildTenantFilterMethod
+                .MakeGenericMethod(entityType.ClrType)
+                .Invoke(this, null)!;
+            var softDeleteFilter = (LambdaExpression)BuildSoftDeleteFilterMethod
+                .MakeGenericMethod(entityType.ClrType)
+                .Invoke(this, null)!;
+
+            modelBuilder.Entity(entityType.ClrType)
+                .HasQueryFilter(TenantFilterName, tenantFilter)
+                .HasQueryFilter(SoftDeleteFilterName, softDeleteFilter);
         }
     }
 
@@ -56,5 +73,8 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     // against the current DbContext instance at query time. A hand-built Expression.Constant(instance)
     // would freeze the first DbContext's tenantContext into the cached model.
     private Expression<Func<T, bool>> BuildTenantFilter<T>() where T : TenantedEntity
-        => e => e.TenantId == tenantContext.TenantId && !e.DeletedAt.HasValue;
+        => e => e.TenantId == tenantContext.TenantId;
+
+    private Expression<Func<T, bool>> BuildSoftDeleteFilter<T>() where T : TenantedEntity
+        => e => !e.DeletedAt.HasValue;
 }

@@ -79,7 +79,15 @@ private Expression<Func<T, bool>> BuildSoftDeleteFilter<T>() where T : TenantedE
     => e => !e.DeletedAt.HasValue;
 ```
 
-In `OnModelCreating`, invoke both via reflection and register each with its own `HasQueryFilter` call. EF Core 10 combines multiple filters with AND automatically.
+In `OnModelCreating`, invoke both via reflection and register each with its own **named** `HasQueryFilter` call:
+
+```csharp
+modelBuilder.Entity(entityType.ClrType)
+    .HasQueryFilter(TenantFilterName,     tenantFilter)
+    .HasQueryFilter(SoftDeleteFilterName, softDeleteFilter);
+```
+
+**Correction from initial design:** unnamed repeated `HasQueryFilter` calls still overwrite each other in EF Core 10 (discovered during implementation — the tenant filter was silently lost and both tenants' rows leaked through in the integration test). The EF Core 10 feature is *named* query filters (`HasQueryFilter(string name, LambdaExpression)`), which EF ANDs automatically and which can later be selectively disabled via `IgnoreQueryFilters(["Tenant"])`. The filter names live as `public const string TenantFilterName = "Tenant"` / `SoftDeleteFilterName = "SoftDelete"` on `StrgDbContext` so future `IgnoreQueryFilters` sites don't reintroduce magic strings.
 
 The closure-over-`tenantContext` trick stays in place and the existing comment explaining why still applies — port it to the new `BuildTenantFilter<T>()`.
 

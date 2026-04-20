@@ -9,10 +9,19 @@ public readonly struct StoragePath : IEquatable<StoragePath>
     public static StoragePath Parse(string raw)
     {
         ArgumentNullException.ThrowIfNull(raw);
-        if (raw.Contains('\0')) throw new StoragePathException("Null byte in path");
+        if (raw.Contains('\0'))
+        {
+            throw new StoragePathException("Null byte in path");
+        }
         var decoded = Uri.UnescapeDataString(raw); // URL-decode before traversal check
-        if (ContainsTraversal(decoded)) throw new StoragePathException($"Path traversal detected: {raw}");
-        if (IsReservedName(decoded)) throw new StoragePathException($"Reserved path name: {raw}");
+        if (ContainsTraversal(decoded))
+        {
+            throw new StoragePathException($"Path traversal detected: {raw}");
+        }
+        if (IsReservedName(decoded))
+        {
+            throw new StoragePathException($"Reserved path name: {raw}");
+        }
         return new StoragePath(Normalize(decoded));
     }
 

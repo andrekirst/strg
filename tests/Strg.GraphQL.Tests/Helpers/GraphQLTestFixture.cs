@@ -51,7 +51,9 @@ public sealed class TestExecutor(IRequestExecutor inner, IServiceProvider rootSe
     public Task<IExecutionResult> ExecuteAsync(string query, CancellationToken cancellationToken = default)
     {
         if (globalState is null || globalState.Count == 0)
+        {
             return inner.ExecuteAsync(query, cancellationToken);
+        }
 
         var builder = OperationRequestBuilder.New().SetDocument(query);
         foreach (var (key, value) in globalState)

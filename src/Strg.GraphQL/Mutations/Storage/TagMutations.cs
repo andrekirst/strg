@@ -21,13 +21,20 @@ public sealed class TagMutations
         CancellationToken cancellationToken)
     {
         if (input.Key.Length > 255)
+        {
             return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "key must be ≤255 chars.", "key")]);
+        }
+
         if (input.Value.Length > 255)
+        {
             return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "value must be ≤255 chars.", "value")]);
+        }
 
         var fileExists = await db.Files.AnyAsync(f => f.Id == input.FileId, cancellationToken);
         if (!fileExists)
+        {
             return new AddTagPayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
+        }
 
         var existing = await db.Tags.FirstOrDefaultAsync(
             t => t.FileId == input.FileId && t.Key == input.Key, cancellationToken);
@@ -63,7 +70,9 @@ public sealed class TagMutations
     {
         var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, cancellationToken);
         if (tag is null)
+        {
             return new UpdateTagPayload(null, [new UserError("NOT_FOUND", "Tag not found.", null)]);
+        }
 
         tag.Value = input.Value;
         tag.ValueType = input.ValueType;

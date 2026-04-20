@@ -34,7 +34,9 @@ public sealed class FileMutations
 
         var driveExists = await db.Drives.AnyAsync(d => d.Id == input.DriveId && d.TenantId == tenantId, cancellationToken);
         if (!driveExists)
+        {
             return new CreateFolderPayload(null, [new UserError("NOT_FOUND", "Drive not found.", "driveId")]);
+        }
 
         var folder = new FileItem
         {
@@ -59,7 +61,9 @@ public sealed class FileMutations
     {
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == input.Id, cancellationToken);
         if (file is null)
+        {
             return new DeleteFilePayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
+        }
 
         file.DeletedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
@@ -84,7 +88,9 @@ public sealed class FileMutations
 
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == input.Id, cancellationToken);
         if (file is null)
+        {
             return new MoveFilePayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
+        }
 
         file.Path = targetPath.Value;
         file.Name = targetPath.Value.Split('/').Last(s => s.Length > 0);
@@ -113,7 +119,9 @@ public sealed class FileMutations
 
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == input.Id, cancellationToken);
         if (file is null)
+        {
             return new CopyFilePayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
+        }
 
         var copy = new FileItem
         {
@@ -139,11 +147,15 @@ public sealed class FileMutations
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(input.NewName) || input.NewName.Contains('/'))
+        {
             return new RenameFilePayload(null, [new UserError("VALIDATION_ERROR", "Invalid file name.", "newName")]);
+        }
 
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == input.Id, cancellationToken);
         if (file is null)
+        {
             return new RenameFilePayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
+        }
 
         file.Name = input.NewName;
         await db.SaveChangesAsync(cancellationToken);

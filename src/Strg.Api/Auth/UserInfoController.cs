@@ -19,15 +19,21 @@ public sealed class UserInfoController : ControllerBase
 
         var subject = User.FindFirstValue(OpenIddictConstants.Claims.Subject);
         if (subject is not null)
+        {
             claims[OpenIddictConstants.Claims.Subject] = subject;
+        }
 
         var email = User.FindFirstValue(OpenIddictConstants.Claims.Email);
         if (email is not null)
+        {
             claims[OpenIddictConstants.Claims.Email] = email;
+        }
 
         var name = User.FindFirstValue(OpenIddictConstants.Claims.Name);
         if (name is not null)
+        {
             claims[OpenIddictConstants.Claims.Name] = name;
+        }
 
         return Ok(claims);
     }

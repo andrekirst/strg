@@ -34,10 +34,14 @@ public sealed class StrgErrorFilter : IErrorFilter
     private IError HandleUnexpected(IError error)
     {
         if (error.Exception is not null)
+        {
             _logger.LogError(error.Exception, "Unhandled GraphQL error");
+        }
 
         if (_env.IsDevelopment())
+        {
             return error.WithCode("INTERNAL_ERROR");
+        }
 
         return Clean(error, "INTERNAL_ERROR", "An internal error occurred.");
     }

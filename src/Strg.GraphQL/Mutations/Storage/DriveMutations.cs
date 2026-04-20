@@ -23,12 +23,16 @@ public sealed class DriveMutations
         CancellationToken cancellationToken)
     {
         if (!ValidDriveName.IsMatch(input.Name))
+        {
             return new CreateDrivePayload(null,
                 [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-], max 64 chars.", "name")]);
+        }
 
         if (await db.Drives.AnyAsync(d => d.TenantId == tenantId && d.Name == input.Name, cancellationToken))
+        {
             return new CreateDrivePayload(null,
                 [new UserError("DUPLICATE_DRIVE_NAME", $"Drive '{input.Name}' already exists.", "name")]);
+        }
 
         var drive = new Drive
         {
@@ -56,17 +60,25 @@ public sealed class DriveMutations
             d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
 
         if (drive is null)
+        {
             return new UpdateDrivePayload(null,
                 [new UserError("NOT_FOUND", "Drive not found.", null)]);
+        }
 
         if (input.Name is not null)
         {
             if (!ValidDriveName.IsMatch(input.Name))
+            {
                 return new UpdateDrivePayload(null,
                     [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-].", "name")]);
+            }
+
             drive.Name = input.Name;
         }
-        if (input.IsDefault.HasValue) drive.IsDefault = input.IsDefault.Value;
+        if (input.IsDefault.HasValue)
+        {
+            drive.IsDefault = input.IsDefault.Value;
+        }
 
         await db.SaveChangesAsync(cancellationToken);
         return new UpdateDrivePayload(drive, null);
@@ -83,8 +95,10 @@ public sealed class DriveMutations
             d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
 
         if (drive is null)
+        {
             return new DeleteDrivePayload(null,
                 [new UserError("NOT_FOUND", "Drive not found.", null)]);
+        }
 
         drive.DeletedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);

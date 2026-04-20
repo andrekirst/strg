@@ -4,46 +4,46 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- EF Core -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.*" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.*" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.*" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.*" />
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.*" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.15" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <!-- Hot Chocolate GraphQL 15.x -->
-    <PackageVersion Include="HotChocolate.AspNetCore" Version="15.*" />
-    <PackageVersion Include="HotChocolate.AspNetCore.Authorization" Version="15.*" />
-    <PackageVersion Include="HotChocolate.Data.EntityFramework" Version="15.*" />
-    <PackageVersion Include="HotChocolate.Subscriptions.Redis" Version="15.*" />
+    <PackageVersion Include="HotChocolate.AspNetCore" Version="15.1.14" />
+    <PackageVersion Include="HotChocolate.AspNetCore.Authorization" Version="15.1.14" />
+    <PackageVersion Include="HotChocolate.Data.EntityFramework" Version="15.1.14" />
+    <PackageVersion Include="HotChocolate.Subscriptions.Redis" Version="15.1.14" />
     <!-- OpenIddict -->
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="5.*" />
-    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="5.*" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="5.8.0" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="5.8.0" />
     <!-- MassTransit -->
-    <PackageVersion Include="MassTransit" Version="8.*" />
-    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.*" />
-    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="8.*" />
+    <PackageVersion Include="MassTransit" Version="8.5.9" />
+    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.9" />
+    <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="8.5.9" />
     <!-- TUS upload -->
-    <PackageVersion Include="tusdotnet" Version="2.*" />
+    <PackageVersion Include="tusdotnet" Version="2.11.1" />
     <!-- WebDAV -->
-    <PackageVersion Include="WebDav.Server" Version="*" />
+    <PackageVersion Include="WebDav.Server" Version="15.4.16086" />
     <!-- Logging -->
-    <PackageVersion Include="Serilog.AspNetCore" Version="9.*" />
-    <PackageVersion Include="Serilog.Sinks.Console" Version="6.*" />
+    <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <!-- Observability -->
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.*" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.*" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.*" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.2" />
     <!-- Validation -->
-    <PackageVersion Include="FluentValidation.AspNetCore" Version="11.*" />
+    <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />
     <!-- Redis -->
-    <PackageVersion Include="StackExchange.Redis" Version="2.*" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.12.14" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="FluentAssertions" Version="7.0.0" />
-    <PackageVersion Include="NSubstitute" Version="5.*" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.*" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.*" />
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.15" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.15" />
   </ItemGroup>
 </Project>

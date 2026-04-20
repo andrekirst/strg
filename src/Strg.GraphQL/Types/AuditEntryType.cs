@@ -22,6 +22,7 @@ public sealed class AuditEntryType : ObjectType<AuditEntry>
         descriptor.Field(e => e.UserId).Ignore();
 
         descriptor.Field("performedBy")
+            .Type<ObjectType<User>>()
             .Resolve(async ctx =>
             {
                 var entry = ctx.Parent<AuditEntry>();

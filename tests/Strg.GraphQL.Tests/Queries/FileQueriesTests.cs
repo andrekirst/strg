@@ -7,21 +7,22 @@ using Strg.Core.Domain;
 using Strg.GraphQL.Queries;
 using Strg.GraphQL.Queries.Storage;
 using Strg.GraphQL.Tests.Helpers;
+using Strg.GraphQL.Types;
 using Strg.Infrastructure.Data;
 using Xunit;
-using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 
 namespace Strg.GraphQL.Tests.Queries;
 
 [Collection("database")]
-public class DriveQueriesTests
+public class FileQueriesTests
 {
     private static readonly TestTenantContext SharedTenantCtx = TestTenantContext.Shared;
 
     [Fact]
-    public async Task GetDrives_ReturnsOnlyCurrentTenantDrives()
+    public async Task GetFiles_FilterByNameContains_ReturnsMatching()
     {
         var tenantId = Guid.NewGuid();
+        var driveId = Guid.NewGuid();
         SharedTenantCtx.TenantId = tenantId;
         var dbName = Guid.NewGuid().ToString();
 
@@ -35,8 +36,10 @@ public class DriveQueriesTests
             {
                 b.AddAuthorization()
                  .AddType<RootQueryExtension>()
-                 .AddType<DriveQueries>()
-                 .AddType<GraphQLDriveType>()
+                 .AddType<StorageQueries>()
+                 .AddType<FileQueries>()
+                 .AddType<FileItemType>()
+                 .AddType<FileVersionType>()
                  .AddGlobalObjectIdentification();
                 b.Services.AddSingleton<IAuthorizationHandler, AllowAllAuthorizationHandler>();
             });
@@ -44,36 +47,33 @@ public class DriveQueriesTests
         using (var scope = executor.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
-            db.Drives.AddRange(
-                new Drive { TenantId = tenantId, Name = "Drive A", ProviderType = "local" },
-                new Drive { TenantId = tenantId, Name = "Drive B", ProviderType = "local" },
-                new Drive { TenantId = Guid.NewGuid(), Name = "Other Drive", ProviderType = "local" });
+            db.Files.AddRange(
+                new FileItem { TenantId = tenantId, DriveId = driveId, Name = "report.pdf", Path = "/report.pdf" },
+                new FileItem { TenantId = tenantId, DriveId = driveId, Name = "notes.txt", Path = "/notes.txt" });
             await db.SaveChangesAsync();
         }
 
         var result = (IOperationResult)await executor.ExecuteAsync(
-            "{ storage { drives(first: 10) { nodes { id name } totalCount } } }");
+            $"{{ storage {{ files(driveId: \"{driveId}\", filter: {{ nameContains: \"report\" }}) {{ nodes {{ id name }} totalCount }} }} }}");
 
         var json = result.ToJson();
         using var doc = JsonDocument.Parse(json);
         Assert.True(doc.RootElement.TryGetProperty("data", out var data), $"no data: {json}");
-        Assert.True(data.ValueKind == JsonValueKind.Object, $"data is null: {json}");
         var totalCount = data
             .GetProperty("storage")
-            .GetProperty("drives")
+            .GetProperty("files")
             .GetProperty("totalCount")
             .GetInt32();
 
-        Assert.Equal(2, totalCount);
+        Assert.Equal(1, totalCount);
     }
 
     [Fact]
-    public async Task GetDrive_OtherTenantDrive_ReturnsNull()
+    public async Task GetFile_InaccessibleFile_ReturnsNull()
     {
         var tenantId = Guid.NewGuid();
-        var dbName = Guid.NewGuid().ToString();
-        var otherDriveId = Guid.NewGuid();
         SharedTenantCtx.TenantId = tenantId;
+        var dbName = Guid.NewGuid().ToString();
 
         var executor = await GraphQLTestFixture.CreateExecutorAsync(
             configureServices: services =>
@@ -85,34 +85,23 @@ public class DriveQueriesTests
             {
                 b.AddAuthorization()
                  .AddType<RootQueryExtension>()
-                 .AddType<DriveQueries>()
-                 .AddType<GraphQLDriveType>()
+                 .AddType<StorageQueries>()
+                 .AddType<FileQueries>()
+                 .AddType<FileItemType>()
+                 .AddType<FileVersionType>()
                  .AddGlobalObjectIdentification();
                 b.Services.AddSingleton<IAuthorizationHandler, AllowAllAuthorizationHandler>();
             });
 
-        using (var scope = executor.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
-            db.Drives.Add(new Drive
-            {
-                Id = otherDriveId,
-                TenantId = Guid.NewGuid(),
-                Name = "Other Tenant Drive",
-                ProviderType = "local"
-            });
-            await db.SaveChangesAsync();
-        }
-
         var result = (IOperationResult)await executor.ExecuteAsync(
-            $"{{ storage {{ drive(id: \"{otherDriveId}\") {{ id }} }} }}");
+            $"{{ storage {{ file(id: \"{Guid.NewGuid()}\") {{ id }} }} }}");
 
         using var doc = JsonDocument.Parse(result.ToJson());
-        var driveElement = doc.RootElement
+        var fileElement = doc.RootElement
             .GetProperty("data")
             .GetProperty("storage")
-            .GetProperty("drive");
+            .GetProperty("file");
 
-        Assert.Equal(JsonValueKind.Null, driveElement.ValueKind);
+        Assert.Equal(JsonValueKind.Null, fileElement.ValueKind);
     }
 }

@@ -15,8 +15,8 @@
     <PackageVersion Include="HotChocolate.Data.EntityFramework" Version="15.1.14" />
     <PackageVersion Include="HotChocolate.Subscriptions.Redis" Version="15.1.14" />
     <!-- OpenIddict -->
-    <PackageVersion Include="OpenIddict.AspNetCore" Version="5.8.0" />
-    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="5.8.0" />
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="7.3.0" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.3.0" />
     <!-- MassTransit -->
     <PackageVersion Include="MassTransit" Version="8.5.9" />
     <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.9" />

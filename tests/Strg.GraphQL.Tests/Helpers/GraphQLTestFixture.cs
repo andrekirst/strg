@@ -21,7 +21,7 @@ public static class GraphQLTestFixture
 
         var builder = services
             .AddGraphQLServer()
-            .AddQueryType(q => q.Name("Query"))
+            .AddQueryType(q => q.Name("Query").Field("_placeholder").Type<HotChocolate.Types.BooleanType>().Resolve(() => true))
             .AddInMemorySubscriptions()
             .AddErrorFilter<StrgErrorFilter>();
 

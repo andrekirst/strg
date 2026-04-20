@@ -16,199 +16,197 @@ estimated_complexity: medium
 
 ## Summary
 
-Expose full CRUD operations for inbox rules via GraphQL mutations: create, update, delete, and duplicate. All mutations enforce tenant isolation (users can only manage their own rules and rules on drives they own). The `conditions` and `actions` inputs use structured types (not raw JSON strings) to provide type safety at the GraphQL layer.
+Expose full CRUD operations for inbox rules via GraphQL mutations under the `inbox` namespace. All mutations return Relay-style payload types with `errors: [UserError!]`. Conditions and actions are stored as JSON in v0.1 (structured SDL types planned for v0.2).
 
 ## Technical Specification
 
-### GraphQL input types (`src/Strg.GraphQL/Types/Input/Inbox/`)
+### Schema (under `mutation { inbox { ... } }`):
 
 ```graphql
+type InboxMutations {
+  createInboxRule(input: CreateInboxRuleInput!): CreateInboxRulePayload!
+  updateInboxRule(input: UpdateInboxRuleInput!): UpdateInboxRulePayload!
+  deleteInboxRule(input: DeleteInboxRuleInput!): DeleteInboxRulePayload!
+  duplicateInboxRule(input: DuplicateInboxRuleInput!): DuplicateInboxRulePayload!
+}
+
+type CreateInboxRulePayload    { rule: InboxRule  errors: [UserError!] }
+type UpdateInboxRulePayload    { rule: InboxRule  errors: [UserError!] }
+type DeleteInboxRulePayload    { ruleId: ID       errors: [UserError!] }
+type DuplicateInboxRulePayload { rule: InboxRule  errors: [UserError!] }
+
 input CreateInboxRuleInput {
   name: String!
-  description: String
-  priority: Int = 0
-  isEnabled: Boolean = true
-
-  # Exactly one of userId or driveId must be set (validated in mutation handler)
-  userId: ID           # omit for drive-scoped rule
-  driveId: ID          # omit for user-scoped rule
-
-  conditions: ConditionGroupInput!
-  actions: [InboxActionInput!]!
+  priority: Int!
+  conditionTree: JSON!   # { "$type": "and", "conditions": [...] }
+  actions: JSON!         # [{ "$type": "move", "targetPath": "..." }]
+  isEnabled: Boolean
 }
 
-input ConditionGroupInput {
-  operator: LogicalOperator!     # AND (v0.1 only), OR, NOT
-  children: [InboxConditionInput!]!
+input UpdateInboxRuleInput {
+  id: ID!
+  name: String
+  priority: Int
+  conditionTree: JSON
+  actions: JSON
+  isEnabled: Boolean
 }
 
-input InboxConditionInput {
-  # Exactly one of the following is non-null (discriminated union pattern):
-  group: ConditionGroupInput
-  mimeType: MimeTypeConditionInput
-  nameGlob: NameGlobConditionInput
-  fileSize: FileSizeConditionInput
-  uploadDateTime: UploadDateTimeConditionInput
-}
-
-input MimeTypeConditionInput { mimeType: String! }
-input NameGlobConditionInput { pattern: String! }
-input FileSizeConditionInput { minBytes: Long, maxBytes: Long }
-input UploadDateTimeConditionInput {
-  daysOfWeek: [DayOfWeek!]
-  hourFrom: Int       # 0-23
-  hourTo: Int         # 0-23
-  after: DateTime
-  before: DateTime
-}
-
-input InboxActionInput {
-  # Exactly one of the following is non-null:
-  move: MoveActionInput
-  # v0.2: copy, rename, tag, webhook
-}
-
-input MoveActionInput {
-  targetPath: String!
-  targetDriveId: ID              # null = source file's drive
-  conflictResolution: ConflictResolution = AUTO_RENAME
-  autoCreateFolders: Boolean = true
-}
-
-enum LogicalOperator { AND OR NOT }
-enum ConflictResolution { AUTO_RENAME OVERWRITE FAIL }
-enum DayOfWeek { MONDAY TUESDAY WEDNESDAY THURSDAY FRIDAY SATURDAY SUNDAY }
+input DeleteInboxRuleInput    { id: ID! }
+input DuplicateInboxRuleInput { id: ID!  newName: String }
 ```
 
-### Payload types
+### v0.1 JSON schema for conditionTree (documented, not enforced in SDL):
 
-```graphql
-type CreateInboxRulePayload { rule: InboxRule! }
-type UpdateInboxRulePayload { rule: InboxRule! }
-type DeleteInboxRulePayload { deletedId: ID! }
-type DuplicateInboxRulePayload { rule: InboxRule! }
+```json
+{
+  "$type": "and",
+  "conditions": [
+    { "$type": "mimeType", "mimeType": "image/*" },
+    { "$type": "fileSize", "minBytes": 1048576 }
+  ]
+}
 ```
 
-### Mutations class (`src/Strg.GraphQL/Mutations/InboxRuleMutations.cs`)
+v0.1 supported condition `$type` values: `and`, `mimeType`, `nameGlob`, `fileSize`, `uploadDateTime`.
+v0.1 supported operator: `and` only. Return `VALIDATION_ERROR` if `or`/`not` used.
+
+### v0.1 JSON schema for actions:
+
+```json
+[
+  {
+    "$type": "move",
+    "targetPath": "/sorted/images",
+    "conflictResolution": "AUTO_RENAME",
+    "autoCreateFolders": true
+  }
+]
+```
+
+### File: `src/Strg.GraphQL/Mutations/InboxRuleMutations.cs`
 
 ```csharp
-[MutationType]
+[ExtendObjectType<InboxMutations>]
 public sealed class InboxRuleMutations
 {
+    [Authorize]
     public async Task<CreateInboxRulePayload> CreateInboxRuleAsync(
         CreateInboxRuleInput input,
         [Service] StrgDbContext db,
-        [Service] ICurrentUserContext user,
+        [GlobalState("userId")] Guid userId,
+        [GlobalState("tenantId")] Guid tenantId,
         CancellationToken ct)
     {
-        ValidateInput(input); // exactly one of userId/driveId set; at least one action; v0.1: only AND operator
+        // Validate v0.1 restriction: only AND operator allowed
+        if (!IsValidConditionTree(input.ConditionTree, out var error))
+            return new CreateInboxRulePayload(null, [new UserError("VALIDATION_ERROR", error, "conditionTree")]);
+
+        if (input.Actions is null || !input.Actions.Any())
+            return new CreateInboxRulePayload(null, [new UserError("VALIDATION_ERROR",
+                "At least one action is required.", "actions")]);
 
         var rule = new InboxRule
         {
-            TenantId = user.TenantId,
-            UserId = input.UserId.HasValue ? Guid.Parse(input.UserId) : null,
-            DriveId = input.DriveId.HasValue ? Guid.Parse(input.DriveId) : null,
+            TenantId = tenantId,
+            UserId = userId,
             Name = input.Name,
-            Description = input.Description,
             Priority = input.Priority,
-            IsEnabled = input.IsEnabled,
-            ConditionsJson = Serialize(input.Conditions),
-            ActionsJson = Serialize(input.Actions)
+            IsEnabled = input.IsEnabled ?? true,
+            ConditionsJson = input.ConditionTree.ToString(),
+            ActionsJson = input.Actions.ToString()
         };
 
         db.InboxRules.Add(rule);
         await db.SaveChangesAsync(ct);
-        return new CreateInboxRulePayload(rule);
+        return new CreateInboxRulePayload(rule, null);
     }
 
+    [Authorize]
     public async Task<DuplicateInboxRulePayload> DuplicateInboxRuleAsync(
-        [ID] Guid id, [Service] StrgDbContext db, [Service] ICurrentUserContext user, CancellationToken ct)
+        DuplicateInboxRuleInput input,
+        [Service] StrgDbContext db,
+        [GlobalState("userId")] Guid userId,
+        [GlobalState("tenantId")] Guid tenantId,
+        CancellationToken ct)
     {
-        var original = await db.InboxRules.FirstOrDefaultAsync(r => r.Id == id, ct)
-            ?? throw new NotFoundException(nameof(InboxRule), id);
+        var original = await db.InboxRules.FirstOrDefaultAsync(
+            r => r.Id == (Guid)input.Id && r.TenantId == tenantId, ct);
+
+        if (original is null)
+            return new DuplicateInboxRulePayload(null, [new UserError("NOT_FOUND", "Rule not found.", null)]);
 
         var copy = new InboxRule
         {
             TenantId = original.TenantId,
             UserId = original.UserId,
-            DriveId = original.DriveId,
-            Name = $"Copy of {original.Name}",
-            Description = original.Description,
+            Name = input.NewName ?? $"Copy of {original.Name}",
             Priority = original.Priority,
-            IsEnabled = false,         // disabled by default
+            IsEnabled = false,   // disabled by default
             ConditionsJson = original.ConditionsJson,
             ActionsJson = original.ActionsJson
         };
 
         db.InboxRules.Add(copy);
         await db.SaveChangesAsync(ct);
-        return new DuplicateInboxRulePayload(copy);
+        return new DuplicateInboxRulePayload(copy, null);
     }
 }
 ```
 
-### Input validation rules
-
-- Exactly one of `userId` / `driveId` must be set on create.
-- v0.1 only supports `LogicalOperator.And` in condition groups — return validation error if `Or`/`Not` used.
-- At least one action must be provided.
-- For drive-scoped rules, the authenticated user must own the drive.
-- `MoveActionInput.targetPath` must be a valid non-empty path (validated via `StoragePath.Parse` logic).
-
-### `InboxRule` GraphQL output type
+### `InboxRule` GraphQL output type:
 
 ```graphql
-type InboxRule {
+type InboxRule implements Node {
   id: ID!
   name: String!
-  description: String
   priority: Int!
   isEnabled: Boolean!
-  scope: RuleScope!       # USER or DRIVE
-  driveId: ID
-  userId: ID
-  conditions: ConditionGroup!
-  actions: [InboxAction!]!
+  conditionTree: JSON!
+  actions: JSON!
   createdAt: DateTime!
   updatedAt: DateTime!
+  executionLogs(first: Int, after: String): InboxRuleExecutionLogConnection!
 }
-
-enum RuleScope { USER DRIVE }
 ```
 
 ## Acceptance Criteria
 
-- [ ] `createInboxRule` mutation persists rule with correct `ConditionsJson` and `ActionsJson`
-- [ ] `updateInboxRule` mutation updates all mutable fields including JSON columns
+- [ ] `mutation { inbox { createInboxRule(input: { name: "...", priority: 10, conditionTree: {...}, actions: [...], isEnabled: true }) { rule { id name } errors { code field } } } }` → rule created
+- [ ] `updateInboxRule` updates all mutable fields including JSON columns
 - [ ] `deleteInboxRule` soft-deletes the rule; it no longer appears in queries
-- [ ] `duplicateInboxRule` creates a copy with `IsEnabled = false` and name prefixed `"Copy of "`
-- [ ] Attempting to manage a rule from a different tenant throws `NotFoundException`
-- [ ] Using `OR`/`NOT` operators in v0.1 returns a validation error
-- [ ] Drive-scoped rule creation rejected if user does not own the drive
-- [ ] `InboxRule` GraphQL type exposes `conditions` and `actions` as structured objects (not raw JSON)
+- [ ] `duplicateInboxRule` creates a copy with `isEnabled = false`, name prefixed `"Copy of "` if `newName` not provided
+- [ ] Rule from different tenant → `errors: [{ code: "NOT_FOUND" }]`
+- [ ] Using `or`/`not` operators in `conditionTree` → `errors: [{ code: "VALIDATION_ERROR", field: "conditionTree" }]`
+- [ ] Empty `actions` array → `errors: [{ code: "VALIDATION_ERROR", field: "actions" }]`
+- [ ] `InboxRule` type implements `Node` interface
 
 ## Test Cases
 
-- TC-001: `createInboxRule` with AND + MimeType + Move → rule persisted; conditions/actions round-trip
-- TC-002: `createInboxRule` with OR operator → validation error returned
-- TC-003: `updateInboxRule` changes priority and `isEnabled` → persisted correctly
-- TC-004: `deleteInboxRule` soft-deletes → rule absent from `inboxRules` query
-- TC-005: `duplicateInboxRule` → copy has `isEnabled = false`, name = "Copy of [original]"
-- TC-006: Create rule on drive owned by another user → error
-- TC-007: Both `userId` and `driveId` set on create → validation error
+- TC-001: `createInboxRule` with AND + mimeType condition + move action → rule persisted; JSON round-trips correctly
+- TC-002: `createInboxRule` with `or` operator → `errors[0].code = "VALIDATION_ERROR"`
+- TC-003: `updateInboxRule` changes `priority` and `isEnabled` → persisted correctly
+- TC-004: `deleteInboxRule` soft-deletes → rule absent from `inbox { rules }` query
+- TC-005: `duplicateInboxRule` → copy has `isEnabled = false`; `name = "Copy of [original]"`
+- TC-006: Manage rule from different tenant → `errors[0].code = "NOT_FOUND"`
+- TC-007: `createInboxRule` with empty `actions` → `errors[0].field = "actions"`
 
 ## Implementation Tasks
 
-- [ ] Create GraphQL input types in `src/Strg.GraphQL/Types/Input/Inbox/`
-- [ ] Create `src/Strg.GraphQL/Mutations/InboxRuleMutations.cs`
-- [ ] Create `InboxRule` GraphQL output type with structured conditions/actions
-- [ ] Implement input → domain model serialization helpers
-- [ ] Add validation for v0.1 operator restrictions
-- [ ] Write integration tests using GraphQL test client
+- [ ] Create `InboxMutations` marker record in `src/Strg.GraphQL/Mutations/`
+- [ ] Create `InboxRuleMutations.cs` with `[ExtendObjectType<InboxMutations>]`
+- [ ] Create payload records in `src/Strg.GraphQL/Payloads/`
+- [ ] Create input records in `src/Strg.GraphQL/Inputs/`
+- [ ] Add condition tree validator for v0.1 (AND only)
+- [ ] Types auto-discovered by `AddTypes()` — no manual registration
+
+## Security Review Checklist
+
+- [ ] `UserId` and `TenantId` from JWT, never from mutation input
+- [ ] `TenantId` filter applied when loading rules for update/delete/duplicate
+- [ ] `StoragePath.Parse()` called on `targetPath` in move actions before persisting
 
 ## Definition of Done
 
-- [ ] `dotnet build` passes with zero warnings
-- [ ] All TC-001 through TC-007 tests pass
-- [ ] All mutations require authentication
-- [ ] Input validation errors follow project's RFC 7807 error format
+- [ ] All four mutations working with payload pattern in integration tests
+- [ ] JSON condition/action round-trip verified

@@ -16,23 +16,27 @@ estimated_complexity: small
 
 ## Summary
 
-Implement the `inboxFileProcessed` GraphQL subscription that pushes a real-time notification to subscribed clients when the inbox processing pipeline finishes evaluating rules for a file. This enables UIs and CLI tools to react to rule outcomes (e.g., show the new file path, display an error badge) without polling.
+Implement the `inboxFileProcessed` GraphQL subscription that pushes a real-time notification when the inbox processing pipeline finishes evaluating rules for a file. Scoped per-tenant to prevent cross-tenant data leakage.
 
 ## Technical Specification
 
-### Subscription payload type (`src/Strg.GraphQL/Types/Inbox/InboxFileProcessedPayload.cs`)
+### Schema:
 
-```csharp
-public sealed record InboxFileProcessedPayload(
-    Guid FileId,
-    InboxFileStatus Status,
-    Guid? AppliedRuleId,
-    string? NewPath,
-    DateTimeOffset Timestamp
-);
+```graphql
+type Subscription {
+  inboxFileProcessed: InboxFileProcessedEvent!
+}
+
+type InboxFileProcessedEvent {
+  file: FileItem!       # full FileItem via DataLoader
+  rulesEvaluated: Int!
+  ruleMatched: InboxRule   # null if no rule matched
+  actionsTaken: [String!]!
+  processedAt: DateTime!
+}
 ```
 
-### Subscription topic constant (`src/Strg.GraphQL/Topics.cs`)
+### Topic constant (already defined in `src/Strg.GraphQL/Topics.cs` from STRG-065):
 
 ```csharp
 public static class Topics
@@ -42,92 +46,129 @@ public static class Topics
 }
 ```
 
-Subscription is scoped per-tenant to prevent cross-tenant data leakage.
-
-### Subscription type (`src/Strg.GraphQL/Subscriptions/InboxSubscriptions.cs`)
+### Internal event DTO (`src/Strg.Core/Events/InboxProcessedEvent.cs`):
 
 ```csharp
-[SubscriptionType]
+public sealed record InboxProcessedEvent(
+    Guid FileId,
+    Guid TenantId,
+    int RulesEvaluated,
+    Guid? MatchedRuleId,
+    IReadOnlyList<string> ActionsTaken,
+    DateTimeOffset ProcessedAt
+);
+```
+
+### File: `src/Strg.GraphQL/Subscriptions/InboxSubscriptions.cs`
+
+```csharp
+[ExtendObjectType("Subscription")]
 public sealed class InboxSubscriptions
 {
     [Subscribe]
-    [Topic("{tenantId}")]
-    public InboxFileProcessedPayload OnInboxFileProcessed(
-        [EventMessage] InboxFileProcessedPayload payload) => payload;
+    [Authorize]
+    public async Task<InboxFileProcessedEvent> OnInboxFileProcessed(
+        [EventMessage] InboxProcessedEvent internalEvent,
+        [GlobalState("tenantId")] Guid tenantId,
+        [Service] FileItemByIdDataLoader fileLoader,
+        [Service] InboxRuleByIdDataLoader ruleLoader,
+        CancellationToken ct)
+    {
+        // Tenant isolation — belt-and-suspenders over topic scoping
+        if (internalEvent.TenantId != tenantId)
+            throw new UnauthorizedAccessException("Subscription event tenant mismatch.");
+
+        var file = await fileLoader.LoadAsync(internalEvent.FileId, ct);
+        var matchedRule = internalEvent.MatchedRuleId.HasValue
+            ? await ruleLoader.LoadAsync(internalEvent.MatchedRuleId.Value, ct)
+            : null;
+
+        return new InboxFileProcessedEvent(
+            file!,
+            internalEvent.RulesEvaluated,
+            matchedRule,
+            internalEvent.ActionsTaken,
+            internalEvent.ProcessedAt);
+    }
 
     [SubscribeResolver]
-    public ValueTask<ISourceStream<InboxFileProcessedPayload>> SubscribeToInboxFileProcessedAsync(
+    public ValueTask<ISourceStream<InboxProcessedEvent>> SubscribeToInboxFileProcessedAsync(
         [Service] ITopicEventReceiver receiver,
         [Service] ICurrentUserContext user,
-        CancellationToken ct) =>
-        receiver.SubscribeAsync<InboxFileProcessedPayload>(
-            Topics.InboxFileProcessed(user.TenantId), ct);
+        CancellationToken ct)
+        => receiver.SubscribeAsync<InboxProcessedEvent>(
+               Topics.InboxFileProcessed(user.TenantId), ct);
 }
 ```
 
-### Event publishing from consumer (in STRG-308)
-
-After all actions complete, `InboxProcessingConsumer` sends the event to the topic:
+### Event publishing from `InboxProcessingConsumer` (STRG-308):
 
 ```csharp
-// In InboxProcessingConsumer
+// After all actions complete:
 await _eventSender.SendAsync(
     Topics.InboxFileProcessed(file.TenantId),
-    new InboxFileProcessedPayload(
+    new InboxProcessedEvent(
         FileId: file.Id,
-        Status: finalStatus,
-        AppliedRuleId: matchedRule?.Id,
-        NewPath: newPath,
-        Timestamp: DateTimeOffset.UtcNow),
+        TenantId: file.TenantId,
+        RulesEvaluated: rulesEvaluated,
+        MatchedRuleId: matchedRule?.Id,
+        ActionsTaken: actionSummaries,
+        ProcessedAt: DateTimeOffset.UtcNow),
     ct);
 ```
 
-### GraphQL schema
+### Output type descriptor:
 
-```graphql
-type Subscription {
-  inboxFileProcessed: InboxFileProcessedPayload!
-}
-
-type InboxFileProcessedPayload {
-  fileId: ID!
-  status: InboxFileStatus!
-  appliedRuleId: ID
-  newPath: String
-  timestamp: DateTime!
+```csharp
+public sealed class InboxFileProcessedEventType : ObjectType<InboxFileProcessedEvent>
+{
+    protected override void Configure(IObjectTypeDescriptor<InboxFileProcessedEvent> descriptor)
+    {
+        descriptor.Field(e => e.File);
+        descriptor.Field(e => e.RulesEvaluated);
+        descriptor.Field(e => e.RuleMatched);
+        descriptor.Field(e => e.ActionsTaken);
+        descriptor.Field(e => e.ProcessedAt);
+        // No TenantId on InboxFileProcessedEvent record — never exposed
+    }
 }
 ```
 
-### Transport
-
-Hot Chocolate subscriptions use WebSockets (graphql-ws protocol) or Server-Sent Events. Both are configured in STRG-049 (GraphQL base setup). No additional transport setup needed here.
-
 ## Acceptance Criteria
 
-- [ ] `inboxFileProcessed` subscription is defined in the Hot Chocolate schema
+- [ ] `inboxFileProcessed` subscription defined in schema under `Subscription` root
 - [ ] Subscribing requires authentication
-- [ ] Subscriptions are scoped to the authenticated user's tenant (no cross-tenant events)
-- [ ] `InboxProcessingConsumer` sends the event via `ITopicEventSender` after processing
-- [ ] `IInboxWaitService.Notify` is also called for the wait-header feature (STRG-309)
-- [ ] Payload includes `fileId`, `status`, `appliedRuleId`, `newPath`, `timestamp`
+- [ ] Events scoped to the authenticated user's tenant (no cross-tenant events)
+- [ ] Payload includes full `FileItem` object, `ruleMatched` (nullable), `actionsTaken`, `processedAt`
+- [ ] `ruleMatched` is `null` when no rule matched
+- [ ] `InboxProcessingConsumer` (STRG-308) calls `ITopicEventSender.SendAsync` after processing
+- [ ] `Topics.InboxFileProcessed()` used in both publisher and subscriber
 
 ## Test Cases
 
-- TC-001: Subscribe → upload file to inbox → receive `InboxFileProcessedPayload` with correct status
-- TC-002: Subscription receives event for the uploading user's file; other tenants do not receive it
-- TC-003: `newPath` is non-null when a Move action succeeded
-- TC-004: `appliedRuleId` is null when no rule matched (Skipped status)
+- TC-001: Subscribe → upload file to inbox → receive `InboxFileProcessedEvent` with correct `file` and status
+- TC-002: Event for tenant A's file not received by tenant B's subscriber
+- TC-003: `ruleMatched` is non-null when a rule matched and acted
+- TC-004: `ruleMatched` is `null` when no rule matched (Skipped status)
+- TC-005: `actionsTaken` lists all actions that ran (e.g., `["move:/sorted/images"]`)
 
 ## Implementation Tasks
 
-- [ ] Create `src/Strg.GraphQL/Types/Inbox/InboxFileProcessedPayload.cs`
-- [ ] Add `Topics.InboxFileProcessed` constant to `Topics.cs`
-- [ ] Create `src/Strg.GraphQL/Subscriptions/InboxSubscriptions.cs`
+- [ ] Create `InboxProcessedEvent.cs` in `Strg.Core/Events/`
+- [ ] Create `InboxFileProcessedEvent.cs` output record in `src/Strg.GraphQL/Payloads/`
+- [ ] Create `InboxSubscriptions.cs` in `src/Strg.GraphQL/Subscriptions/`
+- [ ] Create `InboxFileProcessedEventType.cs` in `src/Strg.GraphQL/Types/Inbox/`
 - [ ] Update `InboxProcessingConsumer` (STRG-308) to call `ITopicEventSender.SendAsync`
-- [ ] Write integration tests using Hot Chocolate test subscription client
+- [ ] Types auto-discovered by `AddTypes()` — no manual registration
+
+## Security Review Checklist
+
+- [ ] `InboxFileProcessedEvent` output record has no `TenantId` field
+- [ ] Tenant mismatch guard in resolver (belt-and-suspenders)
+- [ ] `[Authorize]` on subscription field
 
 ## Definition of Done
 
-- [ ] `dotnet build` passes with zero warnings
-- [ ] All TC-001 through TC-004 tests pass
-- [ ] Subscription is schema-documented with XML doc comments on the payload type
+- [ ] Subscription receives full event in integration test
+- [ ] Tenant isolation verified
+- [ ] `Topics.InboxFileProcessed()` used consistently

@@ -27,12 +27,12 @@ public static class GraphQLTestFixture
 
         configureSchema?.Invoke(builder);
 
-        var executor = await services
-            .BuildServiceProvider()
+        var sp = services.BuildServiceProvider();
+        var executor = await sp
             .GetRequiredService<IRequestExecutorResolver>()
             .GetRequestExecutorAsync();
 
-        return new TestExecutor(executor, globalState);
+        return new TestExecutor(executor, sp, globalState);
     }
 }
 
@@ -44,9 +44,9 @@ internal sealed class TestHostEnvironment : IHostEnvironment
     public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
 }
 
-public sealed class TestExecutor(IRequestExecutor inner, IReadOnlyDictionary<string, object?>? globalState = null)
+public sealed class TestExecutor(IRequestExecutor inner, IServiceProvider rootServices, IReadOnlyDictionary<string, object?>? globalState = null)
 {
-    public IServiceProvider Services => inner.Services;
+    public IServiceProvider Services => rootServices;
 
     public Task<IExecutionResult> ExecuteAsync(string query, CancellationToken ct = default)
     {

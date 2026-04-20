@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/andrekirst/git/github/andrekirst/strg && dotnet format --verify-no-changes 2>&1 | tail -5",
+            "description": "Check code formatting after file edits"
+          }
+        ]
+      }
+    ]
+  }
+}

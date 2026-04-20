@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
+    <ProjectReference Include="..\Strg.Infrastructure\Strg.Infrastructure.csproj" />
+    <ProjectReference Include="..\Strg.GraphQL\Strg.GraphQL.csproj" />
+    <ProjectReference Include="..\Strg.WebDav\Strg.WebDav.csproj" />
+  </ItemGroup>
+
+</Project>

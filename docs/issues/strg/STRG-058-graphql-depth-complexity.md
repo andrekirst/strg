@@ -3,7 +3,7 @@ id: STRG-058
 title: Configure GraphQL query depth and complexity limits
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [graphql, security]
 depends_on: [STRG-049]
@@ -16,108 +16,110 @@ estimated_complexity: small
 
 ## Summary
 
-Configure Hot Chocolate's built-in query depth and complexity analysis to prevent deeply nested queries and queries with excessive field selections from causing performance problems or DoS. Disable introspection in production.
+Configure Hot Chocolate's built-in depth and complexity analysis to prevent DoS attacks. All limits are configured in STRG-049's server registration via `AddMaxExecutionDepthRule` and `ModifyRequestOptions`. Introspection is disabled in production. No additional type registrations are needed — the assembly scanning approach in STRG-049 handles everything.
 
 ## Technical Specification
 
-### Registration in `Program.cs` (extends STRG-049):
+### Limits (configured in STRG-049 server setup):
 
 ```csharp
 builder.Services
     .AddGraphQLServer()
-    // ... other config ...
+    // depth: max 10 levels of nesting
     .AddMaxExecutionDepthRule(maxAllowedExecutionDepth: 10)
-    .AddQueryComplexityAnalysis(options =>
-    {
-        options.MaximumAllowed = 1000;
-        options.ApplyDefaults = true;
-        // Paging costs more (each page request multiplies cost)
-        options.DefaultComplexity = 1;
-        options.DefaultResolverComplexity = 5;
-    });
+    // complexity: max 100 units per query
+    .ModifyRequestOptions(o => o.Complexity.MaximumAllowed = 100);
 
 // Disable introspection in production
-if (app.Environment.IsProduction())
-{
-    builder.Services
-        .AddGraphQLServer()
+if (!builder.Environment.IsDevelopment())
+    builder.Services.AddGraphQLServer()
         .ModifyOptions(o => o.EnableSchemaIntrospection = false);
-}
 ```
 
-### Depth limit rationale:
+### Depth limit rationale (max 10):
 
-- Max depth of 10 allows `query { drives { files { nodes { tags { key value } } } } }` (depth 5)
-- Prevents deeply nested queries like `{ a { b { c { d { e { f { g { h { i { j } } } } } } } } } }`
+Allows normal queries like:
+```
+query { storage { drives { nodes { files { nodes { tags { nodes { key value } } } } } } } }
+#                  1        2      3      4      5        6      7    8 = depth 8 — allowed
+```
 
-### Complexity scoring: **developer-assigned** via `[GraphQLComplexity(n)]` attribute on resolvers
+Prevents:
+```
+{ a { b { c { d { e { f { g { h { i { j { k } } } } } } } } } } }
+# depth 11 — rejected
+```
+
+### Complexity scoring (developer-assigned, max 100):
 
 ```csharp
-[GraphQLComplexity(5)]  // explicit — developer assigns cost per resolver
+// Paged list resolvers must be annotated
+[GraphQLComplexity(5)]
+[UsePaging]
+public IQueryable<Drive> GetDrives(...) { }
+
+[GraphQLComplexity(5)]
+[UsePaging]
 public IQueryable<FileItem> GetFiles(...) { }
 
-[GraphQLComplexity(1)]  // cheap scalar field
+// Scalar fields default to complexity 1 (no annotation needed)
 public string GetName(FileItem file) => file.Name;
 ```
 
-Default complexity when attribute is absent: 1. Paged list resolvers must be explicitly annotated with higher complexity.
-
 Typical query cost example:
 ```
-drives (5) → files (5) → nodes (1) → tags (5) → key/value (1 each)
-Total for a typical query: ~18 complexity units
+storage(1) → drives(5) → nodes(1) → files(5) → nodes(1) → tags(5) → nodes(1) → key(1) value(1)
+Total: ~21 complexity units — well within 100
 ```
-
-Maximum of 100 prevents costly combinatorial queries.
 
 ### Introspection:
 
-- Development: introspection enabled (for schema explorer tools like Banana Cake Pop)
-- Staging/Production: introspection disabled (prevents schema reconnaissance)
+- **Development**: enabled — Banana Cake Pop and other tools need it
+- **Production**: disabled — prevents schema reconnaissance attacks
 
-### Persisted queries (future — noted here):
+### Future (v0.2): Automatic Persisted Queries (APQ)
 
-In v0.2, implement Automatic Persisted Queries (APQ) to allow only pre-registered query hashes. This fully prevents arbitrary query injection.
+Register allowed query hashes to fully prevent arbitrary query injection. Noted here as the intended next step after complexity/depth limits.
 
 ## Acceptance Criteria
 
-- [ ] Query with depth > 10 → `400 Bad Request` with `DEPTH_LIMIT_EXCEEDED` error
-- [ ] Query with complexity > 100 → `400 Bad Request` with `COMPLEXITY_LIMIT_EXCEEDED` error
-- [ ] Valid query with depth 5, complexity 50 → executes normally
-- [ ] `__schema` query in development → returns schema
-- [ ] `__schema` query in production → `400` (introspection disabled)
+- [ ] Query with depth > 10 → rejected with error code `HC0062` or similar
+- [ ] Query with complexity > 100 → rejected
+- [ ] Valid query with depth 8, complexity ~50 → executes normally
+- [ ] `__schema` in development → returns schema
+- [ ] `__schema` in production → rejected (introspection disabled)
+- [ ] Paged list resolvers annotated with `[GraphQLComplexity(5)]`
 
 ## Test Cases
 
 - **TC-001**: 11-level deep query → rejected
-- **TC-002**: Normal query → executes
+- **TC-002**: Normal query (depth 5) → executes
 - **TC-003**: `__schema` in development → full schema
 - **TC-004**: `__schema` in production environment → error
+- **TC-005**: Query combining 20+ paged fields → exceeds complexity 100 → rejected
 
 ## Implementation Tasks
 
-- [ ] Add `AddMaxExecutionDepthRule(10)` to Hot Chocolate setup
-- [ ] Add `AddQueryComplexityAnalysis(...)` to setup
-- [ ] Add production introspection disable via `ModifyOptions`
-- [ ] Document complexity scoring in `docs/architecture/`
-
-## Testing Tasks
-
-- [ ] Integration test: deep query rejected at depth 11
-- [ ] Integration test: production mode introspection returns error
+- [ ] Add `AddMaxExecutionDepthRule(10)` to HC setup in `Program.cs` (STRG-049)
+- [ ] Add `.ModifyRequestOptions(o => o.Complexity.MaximumAllowed = 100)` to HC setup
+- [ ] Disable introspection in production via `ModifyOptions`
+- [ ] Annotate all paged list resolvers with `[GraphQLComplexity(5)]`
+- [ ] No type registration needed — limits are server-level config only
 
 ## Security Review Checklist
 
-- [ ] Introspection disabled in production (schema is not public)
+- [ ] Introspection disabled in production (schema not public)
 - [ ] Depth limit prevents recursive query attacks
-- [ ] Complexity limit prevents "width" attacks (many parallel fields)
+- [ ] Complexity limit prevents combinatorial "width" attacks
 
 ## Code Review Checklist
 
-- [ ] Limits configurable via `appsettings.json` (not hardcoded)
+- [ ] Limits are in `Program.cs` HC setup (not hardcoded per-resolver)
+- [ ] All `[UsePaging]` resolvers have `[GraphQLComplexity(5)]`
 - [ ] Error response is a standard GraphQL error (not HTTP 500)
 
 ## Definition of Done
 
-- [ ] Depth and complexity limits enforced
+- [ ] Depth and complexity limits enforced in integration tests
 - [ ] Introspection disabled in production
+- [ ] All paged resolvers annotated with complexity

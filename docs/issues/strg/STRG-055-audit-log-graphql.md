@@ -3,7 +3,7 @@ id: STRG-055
 title: Implement audit log GraphQL query
 milestone: v0.1
 priority: medium
-status: open
+status: done
 type: implementation
 labels: [graphql, audit, admin]
 depends_on: [STRG-049, STRG-062]
@@ -16,104 +16,161 @@ estimated_complexity: small
 
 ## Summary
 
-Implement `auditLog` GraphQL query accessible only to Admin users. Returns paginated audit log entries with filtering by user, action type, resource, and time range. Audit entries are append-only and never soft-deleted.
+Implement the `auditLog` query under the `admin` namespace, accessible only to Admin users. Returns cursor-paginated audit log entries with handcrafted filtering. Audit entries are append-only and never soft-deleted.
 
 ## Technical Specification
 
-### Schema:
+### Schema (under `query { admin { ... } }`):
 
 ```graphql
-type Query {
+type AdminQueries {
   auditLog(
     first: Int
     after: String
-    where: AuditEntryFilterInput
-    order: [AuditEntrySortInput!]
+    last: Int
+    before: String
+    filter: AuditFilterInput
   ): AuditEntryConnection!
 }
 
-type AuditEntry {
-  id: UUID!
-  userId: UUID!
+type AuditEntry implements Node {
+  id: ID!
   action: String!
-  resourceId: UUID!
   resourceType: String!
-  ipAddress: String
+  resourceId: ID!
+  performedAt: DateTime!
+  performedBy: User!   # resolved via UserByIdDataLoader
   metadata: JSON
-  timestamp: DateTime!
+  # ipAddress exposed only to admin — field is already admin-gated by AdminQueries
 }
 
-input AuditEntryFilterInput {
-  userId: UuidOperationFilterInput
-  action: StringOperationFilterInput
-  resourceId: UuidOperationFilterInput
-  timestamp: DateTimeOperationFilterInput
+# Handcrafted filter — not HC auto-generated
+input AuditFilterInput {
+  userId: ID
+  action: String
+  resourceType: String
+  from: DateTime
+  to: DateTime
 }
 ```
 
-### File: `src/Strg.GraphQL/Queries/AuditQueries.cs`
+### File: `src/Strg.GraphQL/Queries/AdminQueries.cs`
 
 ```csharp
-[ExtendObjectType("Query")]
-public class AuditQueries
+public sealed record AdminQueries;  // namespace marker
+
+[ExtendObjectType<AdminQueries>]
+public sealed class AuditLogQueries
 {
-    [Authorize(Policy = "Admin")]
-    [UseProjection]
-    [UseFiltering]
-    [UseSorting]
     [UsePaging(DefaultPageSize = 50, MaxPageSize = 500)]
+    [GraphQLComplexity(5)]
     public IQueryable<AuditEntry> GetAuditLog(
+        AuditFilterInput? filter,
         [Service] StrgDbContext db,
         [GlobalState("tenantId")] Guid tenantId)
-        => db.AuditEntries
-             .Where(e => e.TenantId == tenantId)
-             .OrderByDescending(e => e.Timestamp);
+    {
+        var query = db.AuditEntries
+            .Where(e => e.TenantId == tenantId)  // explicit — AuditEntry has no global tenant filter
+            .OrderByDescending(e => e.PerformedAt);
+
+        if (filter?.UserId is not null)
+            query = query.Where(e => e.UserId == (Guid)filter.UserId);
+        if (filter?.Action is not null)
+            query = query.Where(e => e.Action == filter.Action);
+        if (filter?.ResourceType is not null)
+            query = query.Where(e => e.ResourceType == filter.ResourceType);
+        if (filter?.From.HasValue == true)
+            query = query.Where(e => e.PerformedAt >= filter.From);
+        if (filter?.To.HasValue == true)
+            query = query.Where(e => e.PerformedAt <= filter.To);
+
+        return query;
+    }
 }
 ```
 
-### Important: no global query filter on `AuditEntry`
+### File: `src/Strg.GraphQL/Types/AuditEntryType.cs`
 
-The `AuditEntry` entity deliberately has no soft-delete filter and no global tenant filter (so that admin can query across the full audit log). The `tenantId` filter is applied explicitly in the resolver.
+```csharp
+public sealed class AuditEntryType : ObjectType<AuditEntry>
+{
+    protected override void Configure(IObjectTypeDescriptor<AuditEntry> descriptor)
+    {
+        descriptor.ImplementsNode().IdField(e => e.Id);
+        descriptor.Field(e => e.TenantId).Ignore();
+        descriptor.Field(e => e.UserId).Ignore();  // exposed via performedBy: User! via DataLoader
+
+        descriptor.Field("performedBy")
+            .ResolveWith<AuditEntryResolvers>(r => r.GetPerformedBy(default!, default!, default!));
+    }
+}
+```
+
+### Important: AuditEntry has no global query filter
+
+`AuditEntry` deliberately has no soft-delete filter and no global tenant filter — admin can query the full audit log for their tenant. The `tenantId` filter is applied explicitly in the resolver.
+
+### Usage example:
+
+```graphql
+query {
+  admin {
+    auditLog(first: 20, filter: { action: "file.deleted", from: "2026-01-01" }) {
+      nodes {
+        id
+        action
+        resourceType
+        performedAt
+        performedBy { email displayName }
+        metadata
+      }
+      pageInfo { hasNextPage endCursor }
+      totalCount
+    }
+  }
+}
+```
 
 ## Acceptance Criteria
 
-- [ ] `query { auditLog { nodes { action timestamp userId } } }` → paginated audit entries
-- [ ] Non-admin → `UNAUTHORIZED` GraphQL error
-- [ ] `where: { action: { eq: "file.deleted" } }` → filtered results
-- [ ] `order: [{ timestamp: DESC }]` → newest first (default)
-- [ ] `AuditEntry.metadata` returned as opaque JSON object (not parsed)
-- [ ] Admin can filter by `userId` to audit a specific user's actions
+- [ ] `query { admin { auditLog { nodes { action performedAt } pageInfo { hasNextPage } totalCount } } }` → paginated audit entries
+- [ ] Non-admin → `UNAUTHORIZED` (enforced at `AdminQueries` namespace field in RootQueryExtension)
+- [ ] `filter: { action: "file.deleted" }` → filtered results
+- [ ] `filter: { from: "2026-01-01", to: "2026-04-20" }` → time-range filtered
+- [ ] `AuditEntry.metadata` returned as opaque JSON object
+- [ ] `performedBy` resolved via `UserByIdDataLoader` (no N+1)
+- [ ] `MaxPageSize` 500 for admin audit queries (higher than regular 200)
 
 ## Test Cases
 
-- **TC-001**: Upload file → audit entry appears in `auditLog` query
+- **TC-001**: Upload file → audit entry appears in `admin { auditLog }` query
 - **TC-002**: Non-admin query → `UNAUTHORIZED`
-- **TC-003**: `where: { action: { contains: "file." } }` → only file-related entries
-- **TC-004**: Pagination: `first: 10` → 10 entries, `pageInfo.hasNextPage` correct
+- **TC-003**: `filter: { action: "file.deleted" }` → only matching entries
+- **TC-004**: Pagination `first: 10` → 10 entries, `pageInfo.hasNextPage` correct
+- **TC-005**: `performedBy` fields resolve without extra DB queries (DataLoader assertion)
 
 ## Implementation Tasks
 
-- [ ] Create `AuditQueries.cs` in `Strg.GraphQL/Queries/`
-- [ ] Create `AuditEntryType.cs` (exposes `metadata` as `JSON` scalar)
-- [ ] Configure `AuditEntry` in EF Core without tenant global filter (STRG-062)
-- [ ] Register types in Hot Chocolate setup
-
-## Testing Tasks
-
-- [ ] Integration test: perform operations → verify in audit log query
-- [ ] Integration test: non-admin → UNAUTHORIZED
+- [ ] Create `AdminQueries.cs` marker record + `AuditLogQueries` extension in `src/Strg.GraphQL/Queries/`
+- [ ] Create `AuditEntryType.cs` in `src/Strg.GraphQL/Types/`
+- [ ] Create `UserByIdDataLoader.cs` in `src/Strg.GraphQL/DataLoaders/`
+- [ ] Create `AuditFilterInput.cs` record in `src/Strg.GraphQL/Inputs/`
+- [ ] Configure `AuditEntry` EF Core mapping without tenant global filter (STRG-062)
+- [ ] Types auto-discovered by `AddTypes()` — no manual registration
 
 ## Security Review Checklist
 
-- [ ] `Admin` policy required
+- [ ] `Admin` policy enforced at the `Admin()` namespace field in `RootQueryExtension`
 - [ ] `TenantId` filter applied explicitly (no cross-tenant audit leak)
-- [ ] `ipAddress` visible to admin only (already Admin-gated)
+- [ ] `TenantId` field ignored in `AuditEntryType`
 
 ## Code Review Checklist
 
-- [ ] `AuditEntry` query does NOT use global tenant filter (admin can see all in their tenant)
-- [ ] `MaxPageSize` higher for admin queries (500 vs 200 for regular queries)
+- [ ] `AuditEntry` query does NOT use global tenant filter (comment explains why)
+- [ ] `MaxPageSize` set higher for admin queries (500 vs 200 for regular)
+- [ ] `performedBy` uses DataLoader, not individual DB query
 
 ## Definition of Done
 
-- [ ] Admin can query audit log with pagination and filtering
+- [ ] Admin can query audit log with Relay cursor pagination and handcrafted filtering
+- [ ] N+1 prevention verified via DataLoader

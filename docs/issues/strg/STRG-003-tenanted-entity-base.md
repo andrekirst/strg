@@ -3,7 +3,7 @@ id: STRG-003
 title: Create TenantedEntity base class and domain model foundation
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, domain, entities]
 depends_on: [STRG-001]
@@ -75,15 +75,15 @@ public interface IDomainEvent { }
 
 ## Acceptance Criteria
 
-- [ ] `Entity` base class exists with `Guid Id`
-- [ ] `TenantedEntity` extends `Entity` with `TenantId`, `CreatedAt`, `UpdatedAt`, `DeletedAt`, `IsDeleted`
-- [ ] `Tenant` entity exists
-- [ ] `IDomainEvent` marker interface exists
-- [ ] All classes are in `Strg.Core.Domain` namespace
-- [ ] `Strg.Core` has zero external NuGet dependencies after this issue
-- [ ] `TenantedEntity.UpdatedAt` is mutable (for EF Core update tracking)
-- [ ] `TenantedEntity.CreatedAt` is immutable (`init`)
-- [ ] `TenantedEntity.Id` is immutable (`init`)
+- [x] `Entity` base class exists with `Guid Id`
+- [x] `TenantedEntity` extends `Entity` with `TenantId`, `CreatedAt`, `UpdatedAt`, `DeletedAt`, `IsDeleted`
+- [x] `Tenant` entity exists
+- [x] `IDomainEvent` marker interface exists
+- [x] All classes are in `Strg.Core.Domain` namespace
+- [x] `Strg.Core` has zero external NuGet dependencies after this issue
+- [x] `TenantedEntity.UpdatedAt` is mutable (for EF Core update tracking)
+- [x] `TenantedEntity.CreatedAt` is immutable (`init`)
+- [x] `TenantedEntity.Id` is immutable (`init`)
 
 ## Test Cases
 
@@ -95,33 +95,33 @@ public interface IDomainEvent { }
 
 ## Implementation Tasks
 
-- [ ] Create `src/Strg.Core/Domain/Entity.cs`
-- [ ] Create `src/Strg.Core/Domain/TenantedEntity.cs`
-- [ ] Create `src/Strg.Core/Domain/Tenant.cs`
-- [ ] Create `src/Strg.Core/Domain/IDomainEvent.cs`
-- [ ] Write unit tests in `Strg.Core.Tests`
-- [ ] Verify `Strg.Core` has no external package references
+- [x] Create `src/Strg.Core/Domain/Entity.cs`
+- [x] Create `src/Strg.Core/Domain/TenantedEntity.cs`
+- [x] Create `src/Strg.Core/Domain/Tenant.cs`
+- [x] Create `src/Strg.Core/Domain/IDomainEvent.cs`
+- [x] Write unit tests in `Strg.Core.Tests`
+- [x] Verify `Strg.Core` has no external package references
 
 ## Testing Tasks
 
-- [ ] Test `IsDeleted` property in `Strg.Core.Tests/Domain/TenantedEntityTests.cs`
-- [ ] Test that `Id` is always non-empty Guid on construction
-- [ ] Test `CreatedAt` is approximately `UtcNow` on construction
+- [x] Test `IsDeleted` property in `Strg.Core.Tests/Domain/TenantedEntityTests.cs`
+- [x] Test that `Id` is always non-empty Guid on construction
+- [x] Test `CreatedAt` is approximately `UtcNow` on construction
 
 ## Security Review Checklist
 
-- [ ] `TenantId` is always required (cannot be default Guid) — consider adding guard in EF Core configuration
-- [ ] No business logic in base entities that could be bypassed
+- [x] `TenantId` is always required (cannot be default Guid) — consider adding guard in EF Core configuration
+- [x] No business logic in base entities that could be bypassed
 
 ## Code Review Checklist
 
-- [ ] All properties follow C# naming conventions (PascalCase)
-- [ ] `init` used appropriately for immutable properties
-- [ ] Namespace is `Strg.Core.Domain`
-- [ ] File-scoped namespaces used
+- [x] All properties follow C# naming conventions (PascalCase)
+- [x] `init` used appropriately for immutable properties
+- [x] Namespace is `Strg.Core.Domain`
+- [x] File-scoped namespaces used
 
 ## Definition of Done
 
-- [ ] All 4 files created
-- [ ] Unit tests pass
-- [ ] Zero external dependencies in Strg.Core
+- [x] All 4 files created
+- [x] Unit tests pass
+- [x] Zero external dependencies in Strg.Core

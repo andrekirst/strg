@@ -1,0 +1,232 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using OpenIddict.Server.AspNetCore;
+using Npgsql;
+using Strg.Core.Domain;
+using Strg.Core.Identity;
+using Strg.Core.Services;
+using Strg.Infrastructure.Data;
+using Strg.Infrastructure.Services;
+using Testcontainers.PostgreSql;
+using Xunit;
+
+namespace Strg.Integration.Tests.Auth;
+
+/// <summary>
+/// End-to-end HTTP test harness for the real ASP.NET Core pipeline in <c>Strg.Api</c>. One
+/// container + one database per test class (via <see cref="IClassFixture{TFixture}"/>), matching
+/// the cadence memorised in project_phase12_decisions.md.
+///
+/// Design notes:
+/// <list type="bullet">
+///   <item><description>Environment is forced to <c>Development</c> so OpenIddict uses ephemeral
+///     signing keys and GraphQL subscriptions use the in-memory provider — the production paths
+///     require certs and Redis, neither of which are available in CI.</description></item>
+///   <item><description>Schema is created directly against the container in <c>InitializeAsync</c>
+///     before the host boots. This lets <c>OpenIddictSeedWorker</c> find its tables on first
+///     hosted-service startup, and lets the test pre-seed a tenant + admin user so
+///     <c>FirstRunInitializationService</c> sees users and no-ops (instead of minting a SuperAdmin
+///     with a random password that would never reach the test).</description></item>
+///   <item><description>Tests call <see cref="PostTokenAsync"/> against the real
+///     <c>/connect/token</c> endpoint. No mocking of the identity stack.</description></item>
+/// </list>
+/// </summary>
+public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
+{
+    public const string DefaultClientId = "strg-default";
+    public const string AdminEmail = "admin@strg.test";
+    public const string AdminPassword = "integration-test-password-42";
+    public const string AdminScopes = "files.read files.write files.share tags.write admin";
+
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .Build();
+
+    public string ConnectionString { get; private set; } = string.Empty;
+    public Guid AdminTenantId { get; private set; }
+    public Guid AdminUserId { get; private set; }
+
+    async Task IAsyncLifetime.InitializeAsync()
+    {
+        await _postgres.StartAsync();
+        // Per-factory DB: the default Testcontainers database is reused, but we create a dedicated
+        // one so parallel test classes cannot collide on OpenIddict client rows.
+        var dbName = $"strg_it_{Guid.NewGuid():N}";
+        var adminConnectionString = _postgres.GetConnectionString();
+        await using (var admin = new NpgsqlConnection(adminConnectionString))
+        {
+            await admin.OpenAsync();
+            await using var cmd = admin.CreateCommand();
+            cmd.CommandText = $"CREATE DATABASE \"{dbName}\"";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        ConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString)
+        {
+            Database = dbName,
+        }.ConnectionString;
+
+        await BootstrapSchemaAndSeedAsync();
+    }
+
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        await _postgres.DisposeAsync();
+        await base.DisposeAsync();
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        // Development gives us: ephemeral OpenIddict keys (no X.509 cert), in-memory GraphQL
+        // subscriptions (no Redis). Both production paths would crash the host at startup without
+        // real infra.
+        builder.UseEnvironment("Development");
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Default"] = ConnectionString,
+            });
+        });
+
+        builder.ConfigureServices(services =>
+        {
+            // OpenIddict rejects HTTP requests by default (ID2083) — production-correct. The
+            // in-process HttpClient from WebApplicationFactory speaks HTTP, so the token and
+            // discovery endpoints would 400 without this override. Tests opt out of transport
+            // security; production behavior is unchanged.
+            services.PostConfigure<OpenIddictServerAspNetCoreOptions>(options =>
+            {
+                options.DisableTransportSecurityRequirement = true;
+            });
+        });
+    }
+
+    /// <summary>
+    /// POSTs an <c>application/x-www-form-urlencoded</c> body to <c>/connect/token</c> using the
+    /// password grant. Wrapper around the real OpenIddict endpoint — no short-circuiting.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostTokenAsync(
+        string username,
+        string password,
+        string? clientId = null,
+        string? scopes = null)
+    {
+        var client = CreateClient();
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "password",
+            ["username"] = username,
+            ["password"] = password,
+            ["client_id"] = clientId ?? DefaultClientId,
+            ["scope"] = scopes ?? AdminScopes,
+        });
+        return await client.PostAsync("/connect/token", form);
+    }
+
+    /// <summary>
+    /// POSTs a refresh-token grant to <c>/connect/token</c>.
+    /// </summary>
+    public async Task<HttpResponseMessage> PostRefreshAsync(string refreshToken, string? clientId = null)
+    {
+        var client = CreateClient();
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = refreshToken,
+            ["client_id"] = clientId ?? DefaultClientId,
+        });
+        return await client.PostAsync("/connect/token", form);
+    }
+
+    public HttpClient CreateAuthenticatedClient(string accessToken)
+    {
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        return client;
+    }
+
+    /// <summary>
+    /// Forces a wrong-password lockout by posting <paramref name="attempts"/> invalid tokens
+    /// against the admin account. Returns the number of attempts made (== <paramref name="attempts"/>
+    /// on success). Helper for the STRG-083 HTTP-level lockout tests.
+    /// </summary>
+    public async Task<int> ForceLockoutAttemptsAsync(string email, int attempts)
+    {
+        for (var i = 0; i < attempts; i++)
+        {
+            using var response = await PostTokenAsync(email, $"wrong-password-{i}");
+            // Discard body; the test asserts behavior on the follow-up call, not per-attempt.
+        }
+        return attempts;
+    }
+
+    public async Task<User> ReloadAdminAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
+        await using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+        var admin = await db.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == AdminUserId);
+        return admin;
+    }
+
+    private async Task BootstrapSchemaAndSeedAsync()
+    {
+        // A throw-away service container so we can create the schema + insert the admin user
+        // WITHOUT booting the real ASP.NET Core host. Required because:
+        // (a) `OpenIddictSeedWorker` runs on `IHost.StartAsync` and immediately writes into the
+        //     OpenIddict tables — the schema has to exist first.
+        // (b) `FirstRunInitializationService` also runs on host start; if no users exist it mints
+        //     a SuperAdmin with a random password that never reaches the test. By pre-seeding a
+        //     known admin here, that service sees users and short-circuits.
+        var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+        services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
+        await using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+
+        await db.Database.EnsureCreatedAsync();
+
+        AdminTenantId = Guid.NewGuid();
+        var tenant = new Tenant { Id = AdminTenantId, Name = "integration-test-tenant" };
+        db.Tenants.Add(tenant);
+
+        var admin = new User
+        {
+            TenantId = AdminTenantId,
+            Email = AdminEmail,
+            DisplayName = "Integration Admin",
+            PasswordHash = hasher.Hash(AdminPassword),
+            Role = UserRole.SuperAdmin,
+        };
+        db.Users.Add(admin);
+
+        await db.SaveChangesAsync();
+        AdminUserId = admin.Id;
+    }
+
+    public static async Task<(string AccessToken, string? RefreshToken)> ReadTokensAsync(HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var access = json.GetProperty("access_token").GetString()!;
+        var refresh = json.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+        return (access, refresh);
+    }
+
+    private sealed class TestTenantContext(Guid id) : ITenantContext
+    {
+        public Guid TenantId => id;
+    }
+}

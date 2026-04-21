@@ -113,16 +113,111 @@ public sealed class SecretFieldsDestructuringPolicyTests
     }
 
     [Fact]
-    public void TryDestructure_SkipsPropertyThatThrowsOnGet()
+    public void TryDestructure_RedactsStringKeyedDictionaryValuesByKey()
     {
+        // OpenIddictRequest and any Dictionary<string, T> hit this path. The dict check runs
+        // before the BCL namespace short-circuit precisely so Dictionary<string,T> (which
+        // lives under System.Collections.Generic) gets inspected key-by-key.
+        var dict = new Dictionary<string, string>
+        {
+            ["Password"] = "pw",
+            ["client_secret"] = "cs",
+            ["refresh_token"] = "rt",
+            ["code_verifier"] = "cv",
+            ["safe"] = "visible",
+        };
+
+        var success = _policy.TryDestructure(dict, _factory, out var destructured);
+
+        success.Should().BeTrue();
+        var dictionary = destructured.Should().BeOfType<DictionaryValue>().Subject;
+        DictEntryText(dictionary, "Password").Should().Be("\"***\"");
+        DictEntryText(dictionary, "client_secret").Should().Be("\"***\"");
+        DictEntryText(dictionary, "refresh_token").Should().Be("\"***\"");
+        DictEntryText(dictionary, "code_verifier").Should().Be("\"***\"");
+        DictEntryText(dictionary, "safe").Should().Be("\"visible\"");
+    }
+
+    [Fact]
+    public void TryDestructure_DictionaryKeyMatchIsCaseInsensitive()
+    {
+        var dict = new Dictionary<string, string>
+        {
+            ["PASSWORD"] = "leaked-uppercase",
+            ["Client_Secret"] = "leaked-mixedcase",
+        };
+
+        var success = _policy.TryDestructure(dict, _factory, out var destructured);
+
+        success.Should().BeTrue();
+        var dictionary = destructured.Should().BeOfType<DictionaryValue>().Subject;
+        DictEntryText(dictionary, "PASSWORD").Should().Be("\"***\"");
+        DictEntryText(dictionary, "Client_Secret").Should().Be("\"***\"");
+    }
+
+    [Fact]
+    public void TryDestructure_RedactsReadOnlyDictionaryOnlyShape()
+    {
+        // OpenIddictMessage implements IReadOnlyDictionary<string, _> but NOT the non-generic
+        // IDictionary. The policy therefore detects via IEnumerable<KeyValuePair<string, _>>
+        // which catches both — pinning this as regression coverage so a future refactor back
+        // to `value is IDictionary` doesn't silently reopen the leak on OpenIddictRequest.
+        var message = new ReadOnlyDictionaryOnlyMessage(new Dictionary<string, string>
+        {
+            ["password"] = "leaked",
+            ["safe"] = "visible",
+        });
+
+        var success = _policy.TryDestructure(message, _factory, out var destructured);
+
+        success.Should().BeTrue();
+        var dictionary = destructured.Should().BeOfType<DictionaryValue>().Subject;
+        DictEntryText(dictionary, "password").Should().Be("\"***\"");
+        DictEntryText(dictionary, "safe").Should().Be("\"visible\"");
+    }
+
+    [Fact]
+    public void TryDestructure_RedactsKekFamilyAndCodeVerifier()
+    {
+        // Tranche-4 key-material names + PKCE code_verifier / client_assertion. Pinned here
+        // so a reordering of the allow-list can't silently drop one.
+        var payload = new KeyMaterialPayload(
+            Dek: "d", Kek: "k",
+            DataEncryptionKey: "dek2", KeyEncryptionKey: "kek2",
+            MasterKey: "mk", WrappedKey: "wk",
+            CodeVerifier: "pkce", ClientAssertion: "assert");
+
+        var success = _policy.TryDestructure(payload, _factory, out var destructured);
+
+        success.Should().BeTrue();
+        var structure = destructured.Should().BeOfType<StructureValue>().Subject;
+        foreach (var name in new[]
+        {
+            "Dek", "Kek", "DataEncryptionKey", "KeyEncryptionKey",
+            "MasterKey", "WrappedKey", "CodeVerifier", "ClientAssertion",
+        })
+        {
+            PropertyText(structure, name).Should().Be("\"***\"", $"'{name}' must be redacted");
+        }
+    }
+
+    [Fact]
+    public void TryDestructure_EmitsSentinelForPropertyThatThrowsOnGet()
+    {
+        // A throwing property getter must not take the whole log event down AND must not be
+        // hidden from the log structure — the property shows up with a "<getter threw: …>"
+        // sentinel so a debugger can still see the field exists.
         var throwing = new ThrowingGetterPayload("visible");
 
         var success = _policy.TryDestructure(throwing, _factory, out var destructured);
 
         success.Should().BeTrue();
         var structure = destructured.Should().BeOfType<StructureValue>().Subject;
-        structure.Properties.Should().ContainSingle(p => p.Name == nameof(ThrowingGetterPayload.Safe));
-        structure.Properties.Should().NotContain(p => p.Name == nameof(ThrowingGetterPayload.Boom));
+        PropertyText(structure, nameof(ThrowingGetterPayload.Safe)).Should().Be("\"visible\"");
+        // The sentinel reports the root-cause exception type (InvalidOperationException),
+        // not the TargetInvocationException wrapper that PropertyInfo.GetValue produces.
+        PropertyText(structure, nameof(ThrowingGetterPayload.Boom))
+            .Should().Be("\"<getter threw: InvalidOperationException>\"");
     }
 
     // --- End-to-end through the full Serilog pipeline ------------------------------------
@@ -167,6 +262,28 @@ public sealed class SecretFieldsDestructuringPolicyTests
     }
 
     [Fact]
+    public void LoggerPipeline_LogContextPushPropertyBypassesPolicy()
+    {
+        // LogContext.PushProperty emits a ScalarValue directly — it does NOT pass through the
+        // destructuring chain. Pinning this as known-and-documented behavior so a future
+        // reader doesn't assume PushProperty is safe with credential values.
+        var sink = new InMemorySink();
+        using var logger = new LoggerConfiguration()
+            .Enrich.FromLogContext()
+            .Destructure.With<SecretFieldsDestructuringPolicy>()
+            .WriteTo.Sink(sink)
+            .CreateLogger();
+
+        using (Serilog.Context.LogContext.PushProperty("Password", "bypasses-policy"))
+        {
+            logger.Information("captured");
+        }
+        logger.Dispose();
+
+        RenderProperties(sink).Should().Contain("bypasses-policy");
+    }
+
+    [Fact]
     public void LoggerPipeline_PreservesPlainStringFormatting()
     {
         // A raw secret passed as a {Message} argument (NOT via a destructured object) is not
@@ -191,6 +308,15 @@ public sealed class SecretFieldsDestructuringPolicyTests
         var property = structure.Properties.Single(p => p.Name == propertyName);
         using var writer = new StringWriter();
         property.Value.Render(writer);
+        return writer.ToString();
+    }
+
+    private static string DictEntryText(DictionaryValue dictionary, string key)
+    {
+        var entry = dictionary.Elements
+            .Single(e => string.Equals((string?)e.Key.Value, key, StringComparison.Ordinal));
+        using var writer = new StringWriter();
+        entry.Value.Render(writer);
         return writer.ToString();
     }
 
@@ -247,4 +373,32 @@ public sealed class SecretFieldsDestructuringPolicyTests
         public string Safe { get; } = safe;
         public string Boom => throw new InvalidOperationException("property getter should not crash the log pipeline");
     }
+
+    // Stand-in for OpenIddictMessage: implements IReadOnlyDictionary<string, _> but NOT the
+    // non-generic IDictionary, so the policy must detect via the IEnumerable<KVP<string, _>>
+    // shape, not the IDictionary cast.
+    public sealed class ReadOnlyDictionaryOnlyMessage(IDictionary<string, string> source)
+        : IReadOnlyDictionary<string, string>
+    {
+        private readonly IReadOnlyDictionary<string, string> _inner = new Dictionary<string, string>(source);
+
+        public string this[string key] => _inner[key];
+        public IEnumerable<string> Keys => _inner.Keys;
+        public IEnumerable<string> Values => _inner.Values;
+        public int Count => _inner.Count;
+        public bool ContainsKey(string key) => _inner.ContainsKey(key);
+        public bool TryGetValue(string key, out string value) => _inner.TryGetValue(key, out value!);
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator() => _inner.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    public sealed record KeyMaterialPayload(
+        string Dek,
+        string Kek,
+        string DataEncryptionKey,
+        string KeyEncryptionKey,
+        string MasterKey,
+        string WrappedKey,
+        string CodeVerifier,
+        string ClientAssertion);
 }

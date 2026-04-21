@@ -40,6 +40,11 @@ namespace Strg.Infrastructure.Observability;
 /// first.</description></item>
 /// <item><description>Public <i>fields</i> (not properties) are not surfaced by reflection
 /// here. Use auto-properties on DTOs that could carry credentials.</description></item>
+/// <item><description>Beyond Serilog's <c>MaximumDestructuringDepth</c> (default 10),
+/// truncated leaves render via <c>ToString()</c> — record types whose auto-generated
+/// <c>ToString()</c> includes credential-named properties can leak at cycle depth. Avoid
+/// cyclic graphs in DTOs that carry credentials, or override <c>ToString()</c> on those
+/// records.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -183,10 +188,18 @@ public sealed class SecretFieldsDestructuringPolicy : IDestructuringPolicy
                 {
                     rawValue = property.GetValue(value);
                 }
-                catch
+                catch (Exception ex)
                 {
                     // A throwing property getter (e.g. X509Certificate2.HasPrivateKey on a
-                    // bundle without one) must not take the whole log event down. Skip.
+                    // bundle without one) must not take the whole log event down. Emit a
+                    // sentinel with the exception type so the property still appears in the
+                    // log structure — silent skip would hide the existence of the field from
+                    // a debugger trying to understand the DTO's shape. Unwrap the
+                    // TargetInvocationException that PropertyInfo.GetValue always wraps the
+                    // real exception in, so the sentinel reports the actual root-cause type.
+                    var rootCause = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+                    propertyValue = new ScalarValue($"<getter threw: {rootCause.GetType().Name}>");
+                    destructured.Add(new LogEventProperty(property.Name, propertyValue));
                     continue;
                 }
 

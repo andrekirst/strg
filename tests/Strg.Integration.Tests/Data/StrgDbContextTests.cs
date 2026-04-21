@@ -164,4 +164,41 @@ public sealed class StrgDbContextTests : IAsyncLifetime
             results[0].Id.Should().Be(active.Id);
         }
     }
+
+    [Fact]
+    public async Task IgnoreQueryFilters_bypasses_both_tenant_and_soft_delete_filters()
+    {
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+        var options = await CreateFreshDatabaseAsync<TestDbContext>(new SampleTenantContext(tenantA));
+        var sameTenantActive = new SampleTenantedEntity { TenantId = tenantA };
+        var sameTenantDeleted = new SampleTenantedEntity { TenantId = tenantA };
+        var otherTenantEntity = new SampleTenantedEntity { TenantId = tenantB };
+
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        {
+            ctx.Samples.Add(sameTenantActive);
+            ctx.Samples.Add(sameTenantDeleted);
+            ctx.Samples.Add(otherTenantEntity);
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        {
+            var toDelete = await ctx.Samples.FirstAsync(e => e.Id == sameTenantDeleted.Id);
+            toDelete.DeletedAt = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync();
+        }
+
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        {
+            var allEntities = await ctx.Samples.IgnoreQueryFilters().ToListAsync();
+
+            allEntities.Should().HaveCount(3);
+            allEntities.Select(e => e.Id).Should().BeEquivalentTo(new[]
+            {
+                sameTenantActive.Id, sameTenantDeleted.Id, otherTenantEntity.Id,
+            });
+        }
+    }
 }

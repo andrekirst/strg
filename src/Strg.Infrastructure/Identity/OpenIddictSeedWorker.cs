@@ -18,6 +18,9 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
                 ClientId = "strg-default",
                 ClientSecret = null,
                 DisplayName = "strg Default Client",
+                // Implicit: strg is a first-party identity realm with no external OAuth app
+                // approvals in v0.1. Also silences OpenIddict 7.x's missing-consent-type warning.
+                ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
                 Permissions =
                 {
                     OpenIddictConstants.Permissions.Endpoints.Token,

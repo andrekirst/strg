@@ -345,6 +345,7 @@ public sealed class TagServiceTests : IAsyncLifetime
         // Belt-and-braces: confirm no Tag row was created under either tenant.
         var serviceA = fxA.BuildService();
         (await serviceA.GetTagsAsync(fileA.Id, userA.Id)).Should().BeEmpty();
+        (await serviceB.GetTagsAsync(fileA.Id, userA.Id)).Should().BeEmpty();
     }
 
     // ── fixture helpers ────────────────────────────────────────────────────────

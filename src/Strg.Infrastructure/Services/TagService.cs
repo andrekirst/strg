@@ -13,16 +13,20 @@ namespace Strg.Infrastructure.Services;
 /// lowercase, delegates state changes to <see cref="ITagRepository"/>, commits via the shared
 /// <see cref="StrgDbContext"/>, and emits an audit entry on each state-changing operation.
 ///
-/// <para><b>Tenant-ownership guard (STRG-047 M1).</b> Every method accepting a
-/// <c>fileId</c> first resolves it through <see cref="IFileRepository.GetByIdAsync"/>, which
-/// routes through the global tenant filter. A fileId belonging to a foreign tenant (or a
+/// <para><b>Tenant-ownership guard (STRG-047 M1).</b> Every <b>state-changing</b> method
+/// accepting a <c>fileId</c> first resolves it through <see cref="IFileRepository.GetByIdAsync"/>,
+/// which routes through the global tenant filter. A fileId belonging to a foreign tenant (or a
 /// soft-deleted file) returns null and the method throws <see cref="NotFoundException"/>
 /// before any DB state is touched. <b>This is the sole defense against cross-tenant ghost-row
 /// writes</b> — <see cref="Tag"/> has no EF FK onto <see cref="FileItem"/> (plain Guid column
 /// plus the unique index on <c>(FileId, UserId, Key)</c>), so without this guard a caller in
 /// tenant B guessing a tenant-A fileId and a non-colliding key would successfully INSERT a
 /// ghost Tag row pointing at a foreign file. v0.2 will retire this obligation by adding a
-/// composite <c>(FileId, TenantId) → FileItem(Id, TenantId)</c> FK.</para>
+/// composite <c>(FileId, TenantId) → FileItem(Id, TenantId)</c> FK.
+/// The read path (<see cref="GetTagsAsync"/>) deliberately omits the guard: Tag's own tenant
+/// filter already collapses cross-tenant reads to an empty result, and reusing that
+/// indistinguishability between "file absent" and "file present but untagged" is the desired
+/// behavior for a user-facing read API.</para>
 ///
 /// <para><b>Audit-durability scope.</b> Tag.assigned / tag.removed are logged via
 /// <see cref="IAuditService.LogAsync"/> after the tag-op <c>SaveChangesAsync</c>, so an

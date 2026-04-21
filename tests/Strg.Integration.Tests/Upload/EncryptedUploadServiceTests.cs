@@ -6,6 +6,7 @@ using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
 using Strg.Core.Storage;
+using Strg.Infrastructure.Auditing;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
@@ -347,7 +348,8 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
             var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
-            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, registry, quota);
+            var audit = new AuditService(db);
+            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
     }
 }

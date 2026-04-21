@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Services;
 using Strg.Core.Storage;
@@ -24,7 +26,9 @@ public sealed class FileVersionStore(
     IFileRepository fileRepo,
     IDriveRepository driveRepo,
     IStorageProviderRegistry providerRegistry,
-    IQuotaService quotaService) : IFileVersionStore
+    IQuotaService quotaService,
+    IAuditService auditService,
+    ILogger<FileVersionStore> logger) : IFileVersionStore
 {
     public async Task<FileVersion> CreateVersionAsync(
         FileItem file,
@@ -162,6 +166,58 @@ public sealed class FileVersionStore(
             await quotaService.ReleaseAsync(file.CreatedBy, version.Size, cancellationToken).ConfigureAwait(false);
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Full-success audit: the loop reached here without throwing, so every iteration in
+        // toPrune is committed. A partial-failure path (mid-loop throw) never reaches this line
+        // — the exception propagates and no audit row is written, matching the xmldoc contract.
+        var bytesReleased = toPrune.Sum(v => v.Size);
+        var retainedCount = versions.Count - toPrune.Count;
+        await SafeAuditPruneAsync(
+            file,
+            retainedCount,
+            toPrune.Count,
+            bytesReleased,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SafeAuditPruneAsync(
+        FileItem file,
+        int retainedCount,
+        int prunedCount,
+        long bytesReleased,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await auditService.LogAsync(
+                new AuditEntry
+                {
+                    TenantId = file.TenantId,
+                    UserId = file.CreatedBy,
+                    Action = AuditActions.FileVersionPruned,
+                    ResourceType = "FileItem",
+                    ResourceId = file.Id,
+                    Details = $"retained_count={retainedCount}; pruned_count={prunedCount}; bytes_released={bytesReleased}",
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Prune itself already committed. Per IAuditService xmldoc, audit-store outage is a
+            // logging concern — surfacing it would fail the user's primary op after the fact.
+            // Cooperative cancellation still re-throws so task cancellation semantics hold.
+            if (ex is OperationCanceledException)
+            {
+                throw;
+            }
+            logger.LogWarning(
+                ex,
+                "FileVersionStore: audit write failed for prune on file {FileId} (retained={Retained}, pruned={Pruned}, bytesReleased={BytesReleased}); prune itself succeeded",
+                file.Id,
+                retainedCount,
+                prunedCount,
+                bytesReleased);
         }
     }
 

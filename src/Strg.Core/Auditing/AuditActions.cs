@@ -42,4 +42,24 @@ public static class AuditActions
     /// not operator intent.
     /// </summary>
     public const string TagRemoved = "tag.removed";
+
+    /// <summary>
+    /// One or more <see cref="Strg.Core.Domain.FileVersion"/> rows were pruned (hard-deleted) from
+    /// a file, either by the per-file VersionCount-exceeds-retention sweep or by explicit caller
+    /// request via <see cref="Strg.Core.Services.IFileVersionStore.PruneVersionsAsync"/>.
+    /// ResourceType is <c>"FileItem"</c>, ResourceId is the file id, UserId + TenantId populate
+    /// the structural columns, and Details carries
+    /// <c>retained_count=N; pruned_count=M; bytes_released=B</c>.
+    ///
+    /// <para>Per-version detail is intentionally omitted — the prune is a bulk retention op, and
+    /// the surviving DB state already carries per-version metadata if an operator needs to
+    /// reconstruct which specific VersionNumbers survived.</para>
+    ///
+    /// <para><b>Emitted only on full success.</b> If the per-version loop throws on iteration k,
+    /// the exception propagates and no audit row is written — a partial row would mislead a
+    /// reader into treating an interrupted prune as complete. The forensic trail for the
+    /// committed <c>[0..k-1]</c> iterations lives in the DB itself (rows gone, quota released);
+    /// the next successful retry emits its own audit row with the final <c>pruned_count</c>.</para>
+    /// </summary>
+    public const string FileVersionPruned = "file_version.pruned";
 }

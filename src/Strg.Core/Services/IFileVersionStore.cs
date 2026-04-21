@@ -86,6 +86,17 @@ public interface IFileVersionStore
     /// failure leaves a middle gap in <see cref="FileVersion.VersionNumber"/> (e.g., after partial
     /// prune of {1..7} the surviving rows might be {1,2,3,4,5,8,9,10}) — read paths tolerate gaps
     /// and never rely on contiguity.</para>
+    ///
+    /// <para><b>Audit emission.</b> A single <c>file_version.pruned</c> audit entry is written
+    /// after the loop completes successfully, carrying
+    /// <c>retained_count=N; pruned_count=M; bytes_released=B</c>. <b>Emitted only on full
+    /// success</b> — partial-failure paths propagate the exception and no audit row is written,
+    /// because a half-baked row would mislead a reader into treating an interrupted prune as
+    /// complete. The committed <c>[0..k-1]</c> iterations remain observable via the DB state
+    /// itself; the next successful retry emits its own audit entry reflecting the final
+    /// <c>pruned_count</c>. Audit-store outages on the post-loop write are swallowed and logged
+    /// — the prune itself has already committed, and failing the primary op on a logging concern
+    /// would turn a monitoring outage into an availability one.</para>
     /// </summary>
     Task PruneVersionsAsync(Guid fileId, int keepCount, CancellationToken cancellationToken = default);
 }

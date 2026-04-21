@@ -4,10 +4,12 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
 using Strg.Core.Storage;
+using Strg.Infrastructure.Auditing;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
@@ -219,6 +221,35 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         var user = await fx.ReloadUserAsync(seed.UserId);
         user.UsedBytes.Should().Be(300, "pruning v1 (100) + v2 (200) releases 300 bytes; v3 (300) remains");
+    }
+
+    // STRG-043 I3: a successful prune emits exactly one bulk audit entry summarising the sweep.
+    // Per-iteration audit rows are deliberately NOT emitted — the prune is a bulk retention op,
+    // so one row with retained/pruned/bytes_released is the right grain. The single-row assertion
+    // pins the "no per-iteration pollution" contract against accidental drift.
+    [Fact]
+    public async Task PruneVersionsAsync_emits_single_audit_entry_on_full_success()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+
+        var entries = await fx.LoadPruneAuditEntriesAsync(seed.File.Id);
+        entries.Should().HaveCount(1, "one bulk entry per successful prune, not one per iteration");
+        var entry = entries[0];
+        entry.ResourceType.Should().Be("FileItem");
+        entry.ResourceId.Should().Be(seed.File.Id);
+        entry.TenantId.Should().Be(fx.TenantId);
+        entry.UserId.Should().Be(seed.UserId, "the file owner is the accountable principal for retention ops");
+        // Pruned v1 (size 100) + v2 (size 200) = 300 bytes released; v3 (size 300) retained.
+        entry.Details.Should().Be("retained_count=1; pruned_count=2; bytes_released=300");
     }
 
     [Fact]
@@ -669,6 +700,18 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             return await ctx.FileVersions.CountAsync(v => v.FileId == fileId);
         }
 
+        // Loads audit entries for the file_version.pruned action on a specific file. Used by I3
+        // regression tests to assert the "one bulk row per successful prune" invariant — querying
+        // by Action + ResourceId isolates the assertion from unrelated audit noise.
+        public async Task<IReadOnlyList<AuditEntry>> LoadPruneAuditEntriesAsync(Guid fileId)
+        {
+            await using var ctx = NewDbContext();
+            return await ctx.AuditEntries
+                .Where(e => e.Action == AuditActions.FileVersionPruned && e.ResourceId == fileId)
+                .OrderBy(e => e.PerformedAt)
+                .ToListAsync();
+        }
+
         public async Task<Fixture> WithNewTenantAsync()
         {
             var newTenantId = Guid.NewGuid();
@@ -696,7 +739,8 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
             var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
-            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, customRegistry, quota);
+            var audit = new AuditService(db);
+            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, customRegistry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
 
         private StrgDbContext NewDbContext() => new(options, tenantContext);
@@ -708,7 +752,8 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
             var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
-            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota);
+            var audit = new AuditService(db);
+            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
     }
 

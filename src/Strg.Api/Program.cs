@@ -48,6 +48,7 @@ builder.Services.AddScoped<IFileVersionRepository, FileVersionRepository>();
 builder.Services.AddScoped<IFileKeyRepository, FileKeyRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<IAuditService, AuditService>();
+builder.Services.AddScoped<IQuotaService, QuotaService>();
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future

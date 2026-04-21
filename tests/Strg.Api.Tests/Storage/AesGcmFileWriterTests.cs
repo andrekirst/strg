@@ -303,6 +303,29 @@ public sealed class AesGcmFileWriterTests
     }
 
     [Fact]
+    public async Task ReadAsync_offset_crossing_chunk_boundary_returns_byte_exact_suffix()
+    {
+        // The single-chunk offset test above exercises only in-chunk skipping. This test lands the
+        // offset inside chunk 1 of a three-chunk envelope (130 KiB → 64 + 64 + 2 KiB), so the
+        // reader must (a) authenticate chunk 0 in full during SkipBytesAsync, (b) partial-skip
+        // inside chunk 1, (c) rotate lookahead buffers, (d) continue into chunk 2 and terminate
+        // on is_final=1. A buffer-rotation bug here manifests as misaligned output bytes rather
+        // than a crash — so the assertion is byte-exact equality, not length.
+        var (writer, _) = CreateWriter();
+        var plaintext = new byte[130 * 1024];
+        RandomNumberGenerator.Fill(plaintext);
+        const int offset = 70 * 1024; // lands 6 KiB into chunk 1
+
+        var result = await writer.WriteAsync("cross.bin", new MemoryStream(plaintext));
+
+        await using var stream = await writer.ReadAsync("cross.bin", result.WrappedDek, offset: offset);
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+
+        buffer.ToArray().Should().Equal(plaintext.AsSpan(offset).ToArray());
+    }
+
+    [Fact]
     public async Task ReadAsync_offset_past_end_returns_empty_stream()
     {
         var (writer, _) = CreateWriter();
@@ -386,6 +409,31 @@ public sealed class AesGcmFileWriterTests
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
         buffer.Length.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ReadAsync_on_empty_file_with_tampered_tag_throws()
+    {
+        // Empty-file decryption walks a different AES-GCM code path than non-empty: the ciphertext
+        // span is zero-length, so the GCM tag is computed over (nonce, AAD) alone. A regression in
+        // that branch — e.g. skipping tag validation when ciphertext.Length == 0 — would silently
+        // accept a forged envelope. Flipping the last byte (inside the 16-byte final-chunk tag)
+        // must still trip AuthenticationTagMismatchException.
+        var (writer, inner) = CreateWriter();
+        var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()));
+
+        var envelope = await ReadAllInnerAsync(inner, "empty.bin");
+        envelope.Should().HaveCount(36); // sanity: 20 header + 0 ciphertext + 16 tag
+        envelope[^1] ^= 0x01;
+        await inner.WriteAsync("empty.bin", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
     }
 
     [Fact]

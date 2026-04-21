@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Strg.Infrastructure.Migrations
+namespace Strg.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration
@@ -138,6 +138,7 @@ namespace Strg.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Tags", x => x.Id);
+                    table.CheckConstraint("CK_Tags_ValueType", "\"ValueType\" IN ('string', 'number', 'boolean')");
                 });
 
             migrationBuilder.CreateTable(

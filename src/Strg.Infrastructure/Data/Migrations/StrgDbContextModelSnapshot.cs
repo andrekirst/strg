@@ -2,21 +2,18 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Strg.Infrastructure.Data;
 
 #nullable disable
 
-namespace Strg.Infrastructure.Migrations
+namespace Strg.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(StrgDbContext))]
-    [Migration("20260420204539_Initial")]
-    partial class Initial
+    partial class StrgDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -317,7 +314,10 @@ namespace Strg.Infrastructure.Migrations
                     b.HasIndex("FileId", "UserId", "Key")
                         .IsUnique();
 
-                    b.ToTable("Tags");
+                    b.ToTable("Tags", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Tags_ValueType", "\"ValueType\" IN ('string', 'number', 'boolean')");
+                        });
                 });
 
             modelBuilder.Entity("Strg.Core.Domain.Tenant", b =>

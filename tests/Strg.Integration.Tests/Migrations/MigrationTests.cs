@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Npgsql;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
@@ -155,6 +156,60 @@ public sealed class MigrationTests : IAsyncLifetime
         // two tokens resolve to the same row.
         var tokenIndexes = await QueryUniqueIndexesAsync(ctx, "OpenIddictTokens");
         tokenIndexes.Should().Contain("IX_OpenIddictTokens_ReferenceId");
+    }
+
+    [Fact]
+    public async Task MassTransitOutbox_migration_creates_expected_tables_and_indexes()
+    {
+        // STRG-061 foundation: MassTransit send-side outbox requires InboxState / OutboxState /
+        // OutboxMessage. If a future EF model change drops AddInboxStateEntity() et al. from
+        // OnModelCreating, the migration would skip these tables — and the outbox would silently
+        // turn into a direct-publish with no dual-write protection. Pin the tables and the hot
+        // indexes the dispatcher relies on.
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        var tables = await QueryTableNamesAsync(ctx);
+        tables.Should().Contain(new[] { "InboxState", "OutboxState", "OutboxMessage" });
+
+        // IX_OutboxMessage_EnqueueTime is the working-set index the BusOutboxDeliveryService
+        // polling query orders/filters by. Without it, polling does a seq scan over every row
+        // the outbox has ever held, including Delivered ones awaiting DuplicateDetectionWindow
+        // expiry. Pinning it keeps that regression loud.
+        var outboxIndexes = await QueryIndexNamesAsync(ctx, "OutboxMessage");
+        outboxIndexes.Should().Contain("IX_OutboxMessage_EnqueueTime");
+    }
+
+    [Fact]
+    public async Task Migration_roundtrip_Down_then_Up_restores_schema()
+    {
+        // Task #74 trigger: second migration (MassTransitOutbox) exists, so the Down-then-Up
+        // roundtrip is now observable. Reversibility matters for the operator deploy story —
+        // a failed rollout must be able to `dotnet ef database update <previous>` without data
+        // loss of the tables that existed at the previous migration. This test pins that
+        // contract: MassTransitOutbox.Down restores the post-InitialCreate shape, and a fresh
+        // forward apply lands back in the same place.
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        var fullTables = await QueryTableNamesAsync(ctx);
+        fullTables.Should().Contain("OutboxMessage");
+
+        var migrator = ctx.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("InitialCreate");
+
+        var postDownTables = await QueryTableNamesAsync(ctx);
+        postDownTables.Should().NotContain("OutboxMessage", "Down must drop the outbox tables");
+        postDownTables.Should().NotContain("InboxState");
+        postDownTables.Should().NotContain("OutboxState");
+        postDownTables.Should().Contain("Users",
+            "InitialCreate tables must survive the partial rollback — only MassTransitOutbox is reversed");
+
+        // Forward apply again: schema must converge to the original HEAD shape.
+        await migrator.MigrateAsync();
+        var postUpTables = await QueryTableNamesAsync(ctx);
+        postUpTables.Should().BeEquivalentTo(fullTables,
+            "migrating forward after a Down must produce the same schema as the original Up");
     }
 
     [Fact]
@@ -442,6 +497,36 @@ public sealed class MigrationTests : IAsyncLifetime
             JOIN pg_index ix ON c.oid = ix.indrelid
             JOIN pg_class i ON ix.indexrelid = i.oid
             WHERE c.relname = @tableName AND ix.indisunique = true
+            """;
+        var param = cmd.CreateParameter();
+        param.ParameterName = "tableName";
+        param.Value = tableName;
+        cmd.Parameters.Add(param);
+
+        var results = new HashSet<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(reader.GetString(0));
+        }
+        return results;
+    }
+
+    private static async Task<HashSet<string>> QueryIndexNamesAsync(DbContext ctx, string tableName)
+    {
+        var conn = ctx.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT i.relname
+            FROM pg_class c
+            JOIN pg_index ix ON c.oid = ix.indrelid
+            JOIN pg_class i ON ix.indexrelid = i.oid
+            WHERE c.relname = @tableName
             """;
         var param = cmd.CreateParameter();
         param.ParameterName = "tableName";

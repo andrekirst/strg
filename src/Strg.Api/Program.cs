@@ -19,6 +19,7 @@ using Strg.GraphQL.Types;
 using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
+using Strg.Infrastructure.Messaging;
 using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
@@ -90,6 +91,13 @@ builder.Services.AddDbContext<StrgDbContext>(options =>
 
 // ---- OpenIddict (STRG-012) ----
 builder.Services.AddStrgOpenIddict(builder.Configuration, builder.Environment.IsDevelopment());
+
+// ---- MassTransit + EF Core Outbox (STRG-061) ----
+// Send-side outbox: domain events are atomically committed with the business transaction via
+// the OutboxMessage/OutboxState tables, then dispatched in the background via RabbitMQ. This
+// preserves at-least-once delivery semantics across process crashes between DB commit and broker
+// publish — the classic dual-write problem the outbox pattern exists to solve.
+builder.Services.AddStrgMassTransit(builder.Configuration);
 
 // ---- Authorization policies (STRG-013) ----
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();

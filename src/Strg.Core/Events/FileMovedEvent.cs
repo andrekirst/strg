@@ -3,6 +3,5 @@ using Strg.Core.Domain;
 namespace Strg.Core.Events;
 
 public sealed record FileMovedEvent(
-    Guid FileId, Guid DriveId, Guid UserId, Guid TenantId,
-    string OldPath, string NewPath
+    Guid TenantId, Guid FileId, Guid DriveId, string OldPath, string NewPath, Guid UserId
 ) : IDomainEvent;

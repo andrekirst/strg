@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 
@@ -29,6 +30,13 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // MassTransit EF Core Outbox: InboxState / OutboxMessage / OutboxState tables.
+        // Registered first so our own configurations and query filters do not interfere
+        // with MassTransit's conventions.
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
+
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(StrgDbContext).Assembly);
 
         // Two named query filters per entity — EF Core 10+ ANDs them automatically at query time.

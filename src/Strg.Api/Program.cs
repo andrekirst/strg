@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -40,6 +41,12 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
+builder.Services.AddScoped<ITenantRepository, TenantRepository>();
+
+// ---- Validation (STRG-085/086) ----
+// Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future
+// validated endpoints) can resolve IValidator<T> from DI without hand-wiring each.
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 // Storage providers (STRG-021/023). Singleton — registry is stateless and constructed from
 // IEnumerable<IStorageProvider>. Without this, .NET 10's minimal-API metadata inference
@@ -145,5 +152,6 @@ app.UseWebSockets();
 app.MapGraphQL("/graphql");
 app.MapControllers();
 app.MapDriveEndpoints();
+app.MapUserRegistrationEndpoints();
 
 app.Run();

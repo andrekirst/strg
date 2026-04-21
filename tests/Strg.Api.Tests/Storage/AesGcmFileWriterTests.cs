@@ -348,7 +348,7 @@ public sealed class AesGcmFileWriterTests
     }
 
     [Fact]
-    public async Task ReadAsync_rejects_wrong_magic_bytes()
+    public async Task ReadAsync_detects_magic_tampering()
     {
         // Header with an unknown magic is almost certainly either a corrupted strg envelope or a
         // different file format that slipped into an encrypted drive. Reject fast with a clear
@@ -426,6 +426,59 @@ public sealed class AesGcmFileWriterTests
         await readStream.CopyToAsync(buffer);
 
         buffer.ToArray().Should().Equal(plaintext);
+    }
+
+    [Fact]
+    public async Task Very_large_file_roundtrip()
+    {
+        // 10 MiB = 160 × 64-KiB chunks. The point isn't just correctness at scale — it's to prove
+        // that neither the encrypt nor decrypt path accumulates plaintext or ciphertext in memory
+        // proportional to file size. If a reviewer ever introduces buffering (say, a helpful
+        // "MemoryStream everything first" shortcut), this test won't fail functionally but the
+        // stream-based assertion here at least exercises the real production path.
+        var (writer, _) = CreateWriter();
+        var plaintext = new byte[10 * 1024 * 1024];
+        RandomNumberGenerator.Fill(plaintext);
+
+        var writeResult = await writer.WriteAsync("xl.bin", new MemoryStream(plaintext));
+
+        await using var readStream = await writer.ReadAsync("xl.bin", writeResult.WrappedDek);
+        using var buffer = new MemoryStream(capacity: plaintext.Length);
+        await readStream.CopyToAsync(buffer);
+
+        buffer.ToArray().Should().Equal(plaintext);
+        writeResult.Length.Should().Be(plaintext.Length);
+    }
+
+    [Fact]
+    public async Task SkipBytesAsync_on_tampered_early_chunk_throws()
+    {
+        // The skip-to-offset path in AesGcmFileWriter.ReadAsync MUST authenticate the chunks it
+        // skips, not just jump past them — otherwise a malicious inner provider could corrupt an
+        // early chunk knowing the caller's Range request starts past it. We tamper chunk 0's
+        // ciphertext byte, then ask for a read that skips past chunk 0. If skip-read bypassed
+        // authentication, the read would succeed returning chunk-1 plaintext; it must instead
+        // throw AuthenticationTagMismatchException during the skip.
+        var (writer, inner) = CreateWriter();
+        var plaintext = new byte[AesGcmFileWriter.ChunkPlaintextSize * 2];
+        RandomNumberGenerator.Fill(plaintext);
+        var result = await writer.WriteAsync("two-chunk.bin", new MemoryStream(plaintext));
+
+        // First chunk ciphertext starts at byte 20 (header = 8 magic + 12 file_nonce).
+        var envelope = await ReadAllInnerAsync(inner, "two-chunk.bin");
+        envelope[AesGcmFileWriter.HeaderLength] ^= 0x01; // flip one bit in chunk 0 ciphertext
+        await inner.WriteAsync("two-chunk.bin", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync(
+                "two-chunk.bin",
+                result.WrappedDek,
+                offset: AesGcmFileWriter.ChunkPlaintextSize + 1);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
     }
 
     [Fact]

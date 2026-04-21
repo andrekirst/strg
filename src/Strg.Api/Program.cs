@@ -5,10 +5,12 @@ using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
+using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Core.Storage;
+using Strg.Infrastructure.Auditing;
 using Strg.GraphQL.DataLoaders;
 using Strg.GraphQL.Errors;
 using Strg.GraphQL.Mutations;
@@ -42,6 +44,7 @@ builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
@@ -408,7 +409,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var versionRepo = new FileVersionRepository(db);
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
-            var quota = new QuotaService(db);
+            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota);
         }
     }

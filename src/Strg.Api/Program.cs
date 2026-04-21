@@ -49,7 +49,12 @@ builder.Services.AddScoped<IFileVersionRepository, FileVersionRepository>();
 builder.Services.AddScoped<IFileKeyRepository, FileKeyRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<IQuotaService, QuotaService>();
+builder.Services.AddScoped<QuotaService>();
+builder.Services.AddScoped<IQuotaService>(sp => sp.GetRequiredService<QuotaService>());
+// IQuotaAdminService is the enumeration-oracle-unsafe surface — bind ONLY into authenticated
+// admin/diagnostic endpoints via policy-scoped DI. Global registration is acceptable here only
+// because consumer-side policy enforcement (AuthPolicies.Admin) gates every call site.
+builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<QuotaService>());
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 
 // ---- Validation (STRG-085/086) ----

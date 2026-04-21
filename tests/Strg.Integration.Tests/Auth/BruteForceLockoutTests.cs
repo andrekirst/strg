@@ -53,15 +53,26 @@ public sealed class BruteForceLockoutTests(StrgWebApplicationFactory factory) : 
         admin.IsLocked.Should().BeTrue();
     }
 
-    // TC-005 from the spec ("10 failed logins → locked for 1 hour") is NOT reachable through
-    // the token endpoint via sequential attempts: `ValidateCredentialsAsync` short-circuits
-    // once `user.IsLocked` is true (via UserManager.cs:248–253), skipping
-    // ApplyFailedLoginAsync and leaving the counter pinned at 5. The 1h tier only fires when
-    // the counter advances beyond the short-lock threshold, which the consolidated
-    // single-timing-envelope handler deliberately prevents. Coverage for the `== 10` branch of
-    // the lockout state machine lives in UserManagerTests at the manager level.
-    //
-    // If team-lead wants the 1h tier reachable via the wire, that's a design change to
-    // `ValidateCredentialsAsync` (keep incrementing while locked, matching
-    // `RecordFailedLoginAsync`'s documented invariant). Flagged rather than silently patched.
+    // TC-005 from the spec ("10 failed logins → locked for 1 hour"). Made reachable on the wire
+    // by `c988a36` — ValidateCredentialsAsync now calls ApplyFailedLoginAsync even when the
+    // account is already locked, so cumulative attack pressure during the short-tier lockout
+    // escalates to the long tier instead of being pinned at 5. Before that fix this test would
+    // have asserted a ~15min window (short tier only); the ~1h assertion is the regression guard
+    // against accidentally re-introducing the short-circuit.
+    [Fact]
+    public async Task Ten_wrong_attempts_escalate_to_one_hour_lockout()
+    {
+        await factory.ResetAdminLockoutAsync();
+
+        await factory.ForceLockoutAttemptsAsync(StrgWebApplicationFactory.AdminEmail, 10);
+
+        var admin = await factory.ReloadAdminAsync();
+        admin.FailedLoginAttempts.Should().BeGreaterThanOrEqualTo(10,
+            "the locked-branch must keep incrementing so the long tier is reachable via the wire");
+        admin.LockedUntil.Should().NotBeNull();
+        admin.LockedUntil!.Value.Should().BeCloseTo(
+            DateTimeOffset.UtcNow + TimeSpan.FromHours(1),
+            TimeSpan.FromMinutes(2),
+            "the 10-attempt threshold sets LockedUntil to now+1h (the short-tier 15min window would be a regression)");
+    }
 }

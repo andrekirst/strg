@@ -21,22 +21,38 @@ namespace Strg.Core.Storage;
 public interface IEncryptingFileWriter
 {
     /// <summary>
-    /// Generates a fresh DEK, AES-256-GCM-encrypts <paramref name="content"/>, writes the
-    /// ciphertext envelope to the underlying provider at <paramref name="storageKey"/>, and
-    /// returns the KEK-wrapped DEK. The caller persists the wrapped DEK in a
-    /// <see cref="Strg.Core.Domain.FileKey"/> row within the same <c>SaveChangesAsync</c> as
-    /// the owning <see cref="Strg.Core.Domain.FileVersion"/>.
+    /// Generates a fresh DEK, encrypts <paramref name="content"/> with the cipher named by
+    /// <paramref name="algorithm"/>, writes the ciphertext envelope to the underlying provider at
+    /// <paramref name="storageKey"/>, and returns the KEK-wrapped DEK alongside the algorithm name
+    /// that actually ran (which must match <paramref name="algorithm"/> — implementations reject
+    /// algorithms they do not support rather than silently falling back). The caller persists the
+    /// wrapped DEK in a <see cref="Strg.Core.Domain.FileKey"/> row within the same
+    /// <c>SaveChangesAsync</c> as the owning <see cref="Strg.Core.Domain.FileVersion"/>.
+    ///
+    /// <para>The <paramref name="algorithm"/> parameter is the caller's explicit election — no
+    /// default, no implicit pick-up-whatever-is-bound. v0.2 will introduce alternate ciphers
+    /// (e.g., ChaCha20-Poly1305) and KEK-rotated variants, and the dispatcher will route
+    /// on this string. Making it required NOW means no caller has ever baked in an implicit
+    /// algorithm choice that would have to be unwound at lockdown.</para>
     /// </summary>
-    Task<EncryptedWriteResult> WriteAsync(string storageKey, Stream content, CancellationToken cancellationToken = default);
+    Task<EncryptedWriteResult> WriteAsync(string storageKey, Stream content, string algorithm, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reads the ciphertext envelope from the underlying provider, unwraps
-    /// <paramref name="wrappedDek"/> with the KEK, authenticates via GCM tag, and returns a
-    /// plaintext stream positioned at <paramref name="offset"/>. Authentication covers the
-    /// entire ciphertext — partial-stream reads would bypass tag verification, so the full
+    /// <paramref name="wrappedDek"/> with the KEK using the cipher named by
+    /// <paramref name="algorithm"/>, authenticates via the envelope's integrity tag(s), and
+    /// returns a plaintext stream positioned at <paramref name="offset"/>. Authentication covers
+    /// the entire ciphertext — partial-stream reads would bypass tag verification, so the full
     /// envelope is always decrypted before <paramref name="offset"/> is applied.
+    ///
+    /// <para>The <paramref name="algorithm"/> parameter is the v0.2 dispatch hook: callers pass
+    /// the value stored on the envelope's <see cref="Strg.Core.Domain.FileKey"/> row, and the
+    /// dispatcher routes to the implementation that owns that cipher. At v0.1 only one
+    /// implementation exists and mismatched values are rejected with
+    /// <see cref="NotSupportedException"/> — preferable to silently decrypting with the wrong
+    /// cipher and returning tag-mismatch errors that mask the actual misconfiguration.</para>
     /// </summary>
-    Task<Stream> ReadAsync(string storageKey, byte[] wrappedDek, long offset = 0, CancellationToken cancellationToken = default);
+    Task<Stream> ReadAsync(string storageKey, byte[] wrappedDek, string algorithm, long offset = 0, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

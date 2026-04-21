@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Strg.Core.Domain;
 using Strg.Core.Services;
 using Strg.Core.Storage;
+using Strg.Infrastructure.Storage.Encryption;
 
 namespace Strg.Integration.Tests.Upload;
 
@@ -54,7 +55,7 @@ internal sealed class NaiveEncryptedUploadService(
         // reaper OR replace with a two-phase temp-then-promote protocol. The failure tests in
         // EncryptedUploadServiceTests observe the orphan this ordering produces.
         var writeResult = await writer
-            .WriteAsync(storageKey, new MemoryStream(plaintext), cancellationToken)
+            .WriteAsync(storageKey, new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName, cancellationToken)
             .ConfigureAwait(false);
 
         // BlobSizeBytes is envelope-inclusive (header + per-chunk tags), NOT the plaintext length

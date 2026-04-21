@@ -26,9 +26,9 @@ public sealed class AesGcmFileWriterTests
         var (writer, _) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("The quick brown fox jumps over the lazy dog.");
 
-        var writeResult = await writer.WriteAsync("blob.txt", new MemoryStream(plaintext));
+        var writeResult = await writer.WriteAsync("blob.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var readStream = await writer.ReadAsync("blob.txt", writeResult.WrappedDek);
+        await using var readStream = await writer.ReadAsync("blob.txt", writeResult.WrappedDek, AesGcmFileWriter.AlgorithmName);
         using var buffer = new MemoryStream();
         await readStream.CopyToAsync(buffer);
 
@@ -45,7 +45,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("SECRET_TOKEN_ABCDEFG_1234567890");
 
-        await writer.WriteAsync("leak.txt", new MemoryStream(plaintext));
+        await writer.WriteAsync("leak.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         await using var ciphertextStream = await inner.ReadAsync("leak.txt");
         using var buffer = new MemoryStream();
@@ -65,8 +65,8 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("same bytes every time");
 
-        await writer.WriteAsync("a.txt", new MemoryStream(plaintext));
-        await writer.WriteAsync("b.txt", new MemoryStream(plaintext));
+        await writer.WriteAsync("a.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
+        await writer.WriteAsync("b.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         var a = await ReadAllInnerAsync(inner, "a.txt");
         var b = await ReadAllInnerAsync(inner, "b.txt");
@@ -79,8 +79,8 @@ public sealed class AesGcmFileWriterTests
         var (writer, _) = CreateWriter();
         var plaintext = new byte[] { 1, 2, 3 };
 
-        var resultA = await writer.WriteAsync("a.txt", new MemoryStream(plaintext));
-        var resultB = await writer.WriteAsync("b.txt", new MemoryStream(plaintext));
+        var resultA = await writer.WriteAsync("a.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
+        var resultB = await writer.WriteAsync("b.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         resultA.WrappedDek.Should().NotEqual(resultB.WrappedDek);
     }
@@ -91,7 +91,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("authenticated payload");
 
-        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         // Envelope: header(20) + ciphertext(21) + tag(16) = 57 bytes. Middle byte (28) lands in
         // the ciphertext region — flip should break the final-chunk tag.
@@ -101,7 +101,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -118,7 +118,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("nonce-tamper payload");
 
-        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "file.txt");
         envelope[10] ^= 0xFF; // inside the 12-byte file_nonce region (envelope bytes 8..19)
@@ -126,7 +126,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -143,7 +143,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("padding-tamper payload");
 
-        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "file.txt");
         envelope[15] ^= 0xFF; // inside file_nonce bytes 4..11 (not used by nonce formula)
@@ -151,7 +151,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -168,7 +168,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("tag-tamper payload");
 
-        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "file.txt");
         envelope[^1] ^= 0xFF; // last byte of the 16-byte final-chunk tag
@@ -176,7 +176,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -194,7 +194,7 @@ public sealed class AesGcmFileWriterTests
         var plaintext = new byte[130 * 1024]; // 3 chunks: 64K + 64K + 2K
         RandomNumberGenerator.Fill(plaintext);
 
-        var result = await writer.WriteAsync("big.bin", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("big.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "big.bin");
         // Chop the final (2K + 16-byte tag) chunk.
@@ -203,7 +203,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("big.bin", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("big.bin", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -231,12 +231,12 @@ public sealed class AesGcmFileWriterTests
         var writeResults = new EncryptedWriteResult[iterations];
         await Parallel.ForEachAsync(Enumerable.Range(0, iterations), async (i, ct) =>
         {
-            writeResults[i] = await writer.WriteAsync($"concurrent/file-{i:D4}.bin", new MemoryStream(plaintexts[i]), ct);
+            writeResults[i] = await writer.WriteAsync($"concurrent/file-{i:D4}.bin", new MemoryStream(plaintexts[i]), AesGcmFileWriter.AlgorithmName, ct);
         });
 
         await Parallel.ForEachAsync(Enumerable.Range(0, iterations), async (i, ct) =>
         {
-            await using var stream = await writer.ReadAsync($"concurrent/file-{i:D4}.bin", writeResults[i].WrappedDek, cancellationToken: ct);
+            await using var stream = await writer.ReadAsync($"concurrent/file-{i:D4}.bin", writeResults[i].WrappedDek, AesGcmFileWriter.AlgorithmName, cancellationToken: ct);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf, ct);
             buf.ToArray().Should().Equal(plaintexts[i]);
@@ -249,13 +249,13 @@ public sealed class AesGcmFileWriterTests
         var (writer, _) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("hello");
 
-        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
         var tamperedWrappedDek = result.WrappedDek.ToArray();
         tamperedWrappedDek[0] ^= 0xFF;
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("file.txt", tamperedWrappedDek);
+            await using var stream = await writer.ReadAsync("file.txt", tamperedWrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -269,7 +269,7 @@ public sealed class AesGcmFileWriterTests
         // KEK check fires before any ciphertext is decrypted. Critical for KEK-rotation-gone-wrong.
         var (writerA, _, innerA) = CreateWriterWithInner(ValidKekBase64);
         var plaintext = Encoding.UTF8.GetBytes("cross-key test");
-        var result = await writerA.WriteAsync("file.txt", new MemoryStream(plaintext));
+        var result = await writerA.WriteAsync("file.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         // Copy the ciphertext into a second inner provider so writerB can see the same bytes.
         var envelope = await ReadAllInnerAsync(innerA, "file.txt");
@@ -280,7 +280,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writerB.ReadAsync("file.txt", result.WrappedDek);
+            await using var stream = await writerB.ReadAsync("file.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -293,9 +293,9 @@ public sealed class AesGcmFileWriterTests
         var (writer, _) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("0123456789ABCDEF");
 
-        var result = await writer.WriteAsync("f.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("f.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var stream = await writer.ReadAsync("f.txt", result.WrappedDek, offset: 6);
+        await using var stream = await writer.ReadAsync("f.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName, offset: 6);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
 
@@ -316,9 +316,9 @@ public sealed class AesGcmFileWriterTests
         RandomNumberGenerator.Fill(plaintext);
         const int offset = 70 * 1024; // lands 6 KiB into chunk 1
 
-        var result = await writer.WriteAsync("cross.bin", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("cross.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var stream = await writer.ReadAsync("cross.bin", result.WrappedDek, offset: offset);
+        await using var stream = await writer.ReadAsync("cross.bin", result.WrappedDek, AesGcmFileWriter.AlgorithmName, offset: offset);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
 
@@ -331,9 +331,9 @@ public sealed class AesGcmFileWriterTests
         var (writer, _) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("short");
 
-        var result = await writer.WriteAsync("f.txt", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("f.txt", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var stream = await writer.ReadAsync("f.txt", result.WrappedDek, offset: 999);
+        await using var stream = await writer.ReadAsync("f.txt", result.WrappedDek, AesGcmFileWriter.AlgorithmName, offset: 999);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
 
@@ -344,7 +344,7 @@ public sealed class AesGcmFileWriterTests
     public async Task ReadAsync_negative_offset_throws()
     {
         var (writer, _) = CreateWriter();
-        var act = () => writer.ReadAsync("x", new byte[60], offset: -1);
+        var act = () => writer.ReadAsync("x", new byte[60], AesGcmFileWriter.AlgorithmName, offset: -1);
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
@@ -355,7 +355,7 @@ public sealed class AesGcmFileWriterTests
         // any bytes to AesGcm so the error message is actionable. Use a legitimate wrapped DEK so
         // the KEK-unwrap check (which fires BEFORE the envelope read) passes.
         var (writer, inner) = CreateWriter();
-        var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }));
+        var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }), AesGcmFileWriter.AlgorithmName);
 
         // Overwrite "good" with a too-short blob so the wrapped DEK is still valid but the
         // envelope fails its length check.
@@ -363,7 +363,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("good", good.WrappedDek);
+            await using var stream = await writer.ReadAsync("good", good.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -377,7 +377,7 @@ public sealed class AesGcmFileWriterTests
         // different file format that slipped into an encrypted drive. Reject fast with a clear
         // error rather than letting AesGcm surface a tag mismatch on random header bytes.
         var (writer, inner) = CreateWriter();
-        var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }));
+        var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "good");
         envelope[0] ^= 0xFF; // flip first magic byte
@@ -385,7 +385,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("good", good.WrappedDek);
+            await using var stream = await writer.ReadAsync("good", good.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -399,13 +399,13 @@ public sealed class AesGcmFileWriterTests
         // bytes. Without that trailing tag the reader couldn't tell "legitimate empty file" from
         // "envelope truncated after header" — both would look like 20 bytes.
         var (writer, inner) = CreateWriter();
-        var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()));
+        var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "empty.bin");
         envelope.Should().HaveCount(36); // 8 magic + 12 file_nonce + 0 ciphertext + 16 tag
         result.Length.Should().Be(0);
 
-        await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek);
+        await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
         using var buffer = new MemoryStream();
         await stream.CopyToAsync(buffer);
         buffer.Length.Should().Be(0);
@@ -420,7 +420,7 @@ public sealed class AesGcmFileWriterTests
         // accept a forged envelope. Flipping the last byte (inside the 16-byte final-chunk tag)
         // must still trip AuthenticationTagMismatchException.
         var (writer, inner) = CreateWriter();
-        var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()));
+        var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()), AesGcmFileWriter.AlgorithmName);
 
         var envelope = await ReadAllInnerAsync(inner, "empty.bin");
         envelope.Should().HaveCount(36); // sanity: 20 header + 0 ciphertext + 16 tag
@@ -429,7 +429,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek);
+            await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek, AesGcmFileWriter.AlgorithmName);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -447,9 +447,9 @@ public sealed class AesGcmFileWriterTests
         var plaintext = new byte[130 * 1024];
         RandomNumberGenerator.Fill(plaintext);
 
-        var writeResult = await writer.WriteAsync("big.bin", new MemoryStream(plaintext));
+        var writeResult = await writer.WriteAsync("big.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var readStream = await writer.ReadAsync("big.bin", writeResult.WrappedDek);
+        await using var readStream = await writer.ReadAsync("big.bin", writeResult.WrappedDek, AesGcmFileWriter.AlgorithmName);
         using var buffer = new MemoryStream();
         await readStream.CopyToAsync(buffer);
 
@@ -467,9 +467,9 @@ public sealed class AesGcmFileWriterTests
         var plaintext = new byte[64 * 1024 * 2]; // exactly two full chunks
         RandomNumberGenerator.Fill(plaintext);
 
-        var writeResult = await writer.WriteAsync("aligned.bin", new MemoryStream(plaintext));
+        var writeResult = await writer.WriteAsync("aligned.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var readStream = await writer.ReadAsync("aligned.bin", writeResult.WrappedDek);
+        await using var readStream = await writer.ReadAsync("aligned.bin", writeResult.WrappedDek, AesGcmFileWriter.AlgorithmName);
         using var buffer = new MemoryStream();
         await readStream.CopyToAsync(buffer);
 
@@ -488,9 +488,9 @@ public sealed class AesGcmFileWriterTests
         var plaintext = new byte[10 * 1024 * 1024];
         RandomNumberGenerator.Fill(plaintext);
 
-        var writeResult = await writer.WriteAsync("xl.bin", new MemoryStream(plaintext));
+        var writeResult = await writer.WriteAsync("xl.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
-        await using var readStream = await writer.ReadAsync("xl.bin", writeResult.WrappedDek);
+        await using var readStream = await writer.ReadAsync("xl.bin", writeResult.WrappedDek, AesGcmFileWriter.AlgorithmName);
         using var buffer = new MemoryStream(capacity: plaintext.Length);
         await readStream.CopyToAsync(buffer);
 
@@ -510,7 +510,7 @@ public sealed class AesGcmFileWriterTests
         var (writer, inner) = CreateWriter();
         var plaintext = new byte[AesGcmFileWriter.ChunkPlaintextSize * 2];
         RandomNumberGenerator.Fill(plaintext);
-        var result = await writer.WriteAsync("two-chunk.bin", new MemoryStream(plaintext));
+        var result = await writer.WriteAsync("two-chunk.bin", new MemoryStream(plaintext), AesGcmFileWriter.AlgorithmName);
 
         // First chunk ciphertext starts at byte 20 (header = 8 magic + 12 file_nonce).
         var envelope = await ReadAllInnerAsync(inner, "two-chunk.bin");
@@ -519,10 +519,7 @@ public sealed class AesGcmFileWriterTests
 
         var act = async () =>
         {
-            await using var stream = await writer.ReadAsync(
-                "two-chunk.bin",
-                result.WrappedDek,
-                offset: AesGcmFileWriter.ChunkPlaintextSize + 1);
+            await using var stream = await writer.ReadAsync("two-chunk.bin", result.WrappedDek, AesGcmFileWriter.AlgorithmName, offset: AesGcmFileWriter.ChunkPlaintextSize + 1);
             using var buf = new MemoryStream();
             await stream.CopyToAsync(buf);
         };
@@ -533,7 +530,7 @@ public sealed class AesGcmFileWriterTests
     public async Task WriteAsync_rejects_null_content()
     {
         var (writer, _) = CreateWriter();
-        var act = () => writer.WriteAsync("x", null!);
+        var act = () => writer.WriteAsync("x", null!, AesGcmFileWriter.AlgorithmName);
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
@@ -541,8 +538,54 @@ public sealed class AesGcmFileWriterTests
     public async Task WriteAsync_rejects_empty_storage_key()
     {
         var (writer, _) = CreateWriter();
-        var act = () => writer.WriteAsync("", new MemoryStream());
+        var act = () => writer.WriteAsync("", new MemoryStream(), AesGcmFileWriter.AlgorithmName);
         await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    // Algorithm-dispatch contract: WriteAsync rejects a foreign algorithm with NotSupportedException
+    // (NOT ArgumentException) because the v0.2 dispatcher keys on this exception type to decide
+    // "try the next IEncryptingFileWriter". If this turns into ArgumentException, the dispatcher's
+    // fallthrough becomes harder to distinguish from malformed input.
+    [Fact]
+    public async Task WriteAsync_rejects_foreign_algorithm()
+    {
+        var (writer, _) = CreateWriter();
+        var act = () => writer.WriteAsync("f.txt", new MemoryStream([1, 2, 3]), "ChaCha20-Poly1305");
+        await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*ChaCha20-Poly1305*");
+    }
+
+    [Fact]
+    public async Task ReadAsync_rejects_foreign_algorithm()
+    {
+        var (writer, _) = CreateWriter();
+        var result = await writer.WriteAsync("f.txt", new MemoryStream([1, 2, 3]), AesGcmFileWriter.AlgorithmName);
+        var act = () => writer.ReadAsync("f.txt", result.WrappedDek, "ChaCha20-Poly1305");
+        await act.Should().ThrowAsync<NotSupportedException>().WithMessage("*ChaCha20-Poly1305*");
+    }
+
+    [Fact]
+    public async Task WriteAsync_rejects_empty_algorithm()
+    {
+        var (writer, _) = CreateWriter();
+        var act = () => writer.WriteAsync("f.txt", new MemoryStream([1, 2, 3]), "");
+        await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    // Drive.EncryptionEnabled is init-only — this test is a compile-time guard that the next
+    // refactor cannot quietly add `set;` back. Commented-out body intentionally: re-enabling it
+    // should produce a compiler error, not a runtime assertion failure.
+    [Fact]
+    public void Drive_EncryptionEnabled_is_init_only()
+    {
+        // Uncomment to prove the guard still bites:
+        //   var drive = new Strg.Core.Domain.Drive { Name = "x", ProviderType = "in-memory" };
+        //   drive.EncryptionEnabled = true; // CS0200 expected
+        //
+        // The reflection check below catches runtime-level removal of the init modifier.
+        var prop = typeof(Strg.Core.Domain.Drive).GetProperty(nameof(Strg.Core.Domain.Drive.EncryptionEnabled))!;
+        var setter = prop.SetMethod!;
+        var modifiers = setter.ReturnParameter.GetRequiredCustomModifiers();
+        modifiers.Should().Contain(typeof(System.Runtime.CompilerServices.IsExternalInit));
     }
 
     private static (IEncryptingFileWriter writer, InMemoryStorageProvider inner) CreateWriter()

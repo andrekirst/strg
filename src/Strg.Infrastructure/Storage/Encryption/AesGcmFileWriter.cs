@@ -51,10 +51,11 @@ public sealed class AesGcmFileWriter(IStorageProvider inner, IKeyProvider keyPro
 
     internal static ReadOnlySpan<byte> Magic => "STRGENC1"u8;
 
-    public async Task<EncryptedWriteResult> WriteAsync(string storageKey, Stream content, CancellationToken cancellationToken = default)
+    public async Task<EncryptedWriteResult> WriteAsync(string storageKey, Stream content, string algorithm, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(storageKey);
         ArgumentNullException.ThrowIfNull(content);
+        EnsureAlgorithmSupported(algorithm);
 
         var dek = keyProvider.GenerateDataKey();
         try
@@ -78,11 +79,12 @@ public sealed class AesGcmFileWriter(IStorageProvider inner, IKeyProvider keyPro
         }
     }
 
-    public async Task<Stream> ReadAsync(string storageKey, byte[] wrappedDek, long offset = 0, CancellationToken cancellationToken = default)
+    public async Task<Stream> ReadAsync(string storageKey, byte[] wrappedDek, string algorithm, long offset = 0, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(storageKey);
         ArgumentNullException.ThrowIfNull(wrappedDek);
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        EnsureAlgorithmSupported(algorithm);
 
         var dek = keyProvider.DecryptDek(wrappedDek);
         Stream? ciphertext = null;
@@ -140,6 +142,20 @@ public sealed class AesGcmFileWriter(IStorageProvider inner, IKeyProvider keyPro
                     CryptographicOperations.ZeroMemory(dek);
                 }
             }
+        }
+    }
+
+    // Rejects unknown algorithms before any key material is touched. Throws NotSupportedException
+    // rather than ArgumentException because the v0.2 dispatcher will turn this branch into a
+    // "route to a different IEncryptingFileWriter" — the caller's algorithm pick is not invalid,
+    // it's just not ours. NotSupportedException is the signal the dispatcher keys off.
+    private static void EnsureAlgorithmSupported(string algorithm)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(algorithm);
+        if (!string.Equals(algorithm, AlgorithmName, StringComparison.Ordinal))
+        {
+            throw new NotSupportedException(
+                $"Algorithm '{algorithm}' is not supported by {nameof(AesGcmFileWriter)}; expected '{AlgorithmName}'.");
         }
     }
 

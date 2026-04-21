@@ -114,7 +114,7 @@ public sealed class LocalFileSystemProvider : IStorageProvider
     public async Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
-        var full = ResolvePath(path);
+        var full = ResolveChildPath(path);
 
         // Intermediate directories materialize automatically so the caller's mental model matches
         // "write file at logical path"; otherwise the first upload into a new folder would require
@@ -142,7 +142,9 @@ public sealed class LocalFileSystemProvider : IStorageProvider
 
     public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
-        var full = ResolvePath(path);
+        // Must use ResolveChildPath so `""`, `"."`, `"./"` etc. can't resolve to the base
+        // directory and take the whole drive with them on Directory.Delete(recursive: true).
+        var full = ResolveChildPath(path);
 
         if (File.Exists(full))
         {
@@ -159,8 +161,11 @@ public sealed class LocalFileSystemProvider : IStorageProvider
 
     public Task MoveAsync(string source, string destination, CancellationToken cancellationToken = default)
     {
-        var sourceFull = ResolvePath(source);
-        var destinationFull = ResolvePath(destination);
+        // Both endpoints need the root guard: moving the base directory away is as bad as
+        // overwriting it, and Directory.Move onto the base path would either fail opaquely
+        // or — on some filesystems — relocate the entire drive.
+        var sourceFull = ResolveChildPath(source);
+        var destinationFull = ResolveChildPath(destination);
 
         var parent = Path.GetDirectoryName(destinationFull);
         if (!string.IsNullOrEmpty(parent))
@@ -296,6 +301,24 @@ public sealed class LocalFileSystemProvider : IStorageProvider
             throw new StoragePathException($"Path escapes base directory: {relativePath}");
         }
 
+        return full;
+    }
+
+    /// <summary>
+    /// <see cref="ResolvePath"/> + a guard against paths that resolve to the drive root. Destructive
+    /// or mutating ops (<c>Delete</c>, <c>Write</c>, <c>Move</c>) must never target the base itself —
+    /// <c>DeleteAsync("")</c> or <c>DeleteAsync(".")</c> would otherwise take the entire drive with
+    /// it via <c>Directory.Delete(recursive: true)</c>. Read-only ops (<c>GetFileAsync</c>,
+    /// <c>ExistsAsync</c>, <c>ListAsync</c>) legitimately accept root and continue to use the
+    /// plain <see cref="ResolvePath"/>.
+    /// </summary>
+    private string ResolveChildPath(string relativePath)
+    {
+        var full = ResolvePath(relativePath);
+        if (full.Equals(_basePath, FsComparison))
+        {
+            throw new StoragePathException($"Operation targets the drive root: '{relativePath}'");
+        }
         return full;
     }
 

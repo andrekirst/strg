@@ -244,4 +244,46 @@ public sealed class LocalFileSystemProviderTests : IAsyncLifetime
         var act = async () => await _sut.WriteAsync("legal\0secret.txt", new MemoryStream([1]));
         await act.Should().ThrowAsync<StoragePathException>();
     }
+
+    [Fact]
+    public async Task DeleteAsync_rejects_empty_path()
+    {
+        // Without the root guard, DeleteAsync("") would resolve to _basePath and
+        // Directory.Delete(base, recursive: true) would wipe the entire drive.
+        await _sut.WriteAsync("canary.txt", new MemoryStream([1]));
+
+        var act = async () => await _sut.DeleteAsync("");
+        await act.Should().ThrowAsync<StoragePathException>();
+
+        // Sanity: the drive and its contents survive the rejected call.
+        Directory.Exists(_root).Should().BeTrue();
+        (await _sut.GetFileAsync("canary.txt")).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task DeleteAsync_rejects_dot_path()
+    {
+        // "." resolves to the base directory just like "" does. Same blast radius, same guard.
+        await _sut.WriteAsync("canary.txt", new MemoryStream([1]));
+
+        var act = async () => await _sut.DeleteAsync(".");
+        await act.Should().ThrowAsync<StoragePathException>();
+
+        Directory.Exists(_root).Should().BeTrue();
+        (await _sut.GetFileAsync("canary.txt")).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task MoveAsync_rejects_empty_destination()
+    {
+        // Destination "" resolves to base — Directory.Move onto the base path would either fail
+        // opaquely or relocate the drive. Guard rejects before reaching the BCL.
+        await _sut.WriteAsync("source.txt", new MemoryStream([1]));
+
+        var act = async () => await _sut.MoveAsync("source.txt", "");
+        await act.Should().ThrowAsync<StoragePathException>();
+
+        // Source untouched when the move is rejected up front.
+        (await _sut.GetFileAsync("source.txt")).Should().NotBeNull();
+    }
 }

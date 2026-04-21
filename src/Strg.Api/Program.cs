@@ -22,6 +22,7 @@ using Strg.Infrastructure.Identity;
 using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
+using Strg.Infrastructure.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,6 +50,7 @@ builder.Services.AddScoped<IFileKeyRepository, FileKeyRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IQuotaService, QuotaService>();
+builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future

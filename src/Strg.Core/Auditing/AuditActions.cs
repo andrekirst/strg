@@ -23,15 +23,23 @@ public static class AuditActions
 
     /// <summary>
     /// A user-scoped tag was assigned (or its value replaced) on a file. ResourceType is
-    /// <c>"FileItem"</c>, ResourceId is the file id, Details carries the (userId, key, value)
-    /// triple so post-hoc reports can reconstruct the assignment without joining other tables.
+    /// <c>"FileItem"</c>, ResourceId is the file id, UserId + TenantId populate the structural
+    /// columns on <see cref="Strg.Core.Domain.AuditEntry"/>, and Details carries the normalised
+    /// <c>(key, value_type)</c> pair.
+    ///
+    /// <para><b>Value deliberately excluded from Details.</b> Tag.Value is user-controlled up
+    /// to 255 chars and may carry secrets (API keys, tokens, PII). The audit trail captures the
+    /// fact of assignment, not its payload — pair with a per-value tagging policy when admin-
+    /// visible value inspection is legitimately needed (v0.2 tracker).</para>
     /// </summary>
     public const string TagAssigned = "tag.assigned";
 
     /// <summary>
-    /// A user-scoped tag was removed from a file. ResourceType is <c>"FileItem"</c>,
-    /// ResourceId is the file id, Details carries (userId, key). Idempotent removes (no row
-    /// matched) do NOT emit — the audit log reflects state changes, not operator intent.
+    /// A user-scoped tag was removed from a file. ResourceType is <c>"FileItem"</c>, ResourceId
+    /// is the file id, UserId + TenantId populate the structural columns, and Details carries
+    /// <c>key=...</c> for single-key removes or <c>bulk=true; count=N</c> for <c>RemoveAllAsync</c>.
+    /// Idempotent removes (no row matched) do NOT emit — the audit log reflects state changes,
+    /// not operator intent.
     /// </summary>
     public const string TagRemoved = "tag.removed";
 }

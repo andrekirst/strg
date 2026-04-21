@@ -13,22 +13,36 @@ namespace Strg.Infrastructure.Services;
 /// lowercase, delegates state changes to <see cref="ITagRepository"/>, commits via the shared
 /// <see cref="StrgDbContext"/>, and emits an audit entry on each state-changing operation.
 ///
-/// <para><b>Audit-logging policy.</b> Tag.assigned / tag.removed are logged via
-/// <see cref="IAuditService.LogAsync"/> with its own <c>SaveChangesAsync</c>, so the audit row
-/// is durable even if a subsequent caller of the tag op rolls back. If the audit write throws,
-/// the tag op still succeeds — we swallow and warn. Rationale matches the IAuditService xmldoc:
-/// "an audit-store outage is a logging/ops concern, not an authorization gate".</para>
+/// <para><b>Tenant-ownership guard (STRG-047 M1).</b> Every method accepting a
+/// <c>fileId</c> first resolves it through <see cref="IFileRepository.GetByIdAsync"/>, which
+/// routes through the global tenant filter. A fileId belonging to a foreign tenant (or a
+/// soft-deleted file) returns null and the method throws <see cref="NotFoundException"/>
+/// before any DB state is touched. <b>This is the sole defense against cross-tenant ghost-row
+/// writes</b> — <see cref="Tag"/> has no EF FK onto <see cref="FileItem"/> (plain Guid column
+/// plus the unique index on <c>(FileId, UserId, Key)</c>), so without this guard a caller in
+/// tenant B guessing a tenant-A fileId and a non-colliding key would successfully INSERT a
+/// ghost Tag row pointing at a foreign file. v0.2 will retire this obligation by adding a
+/// composite <c>(FileId, TenantId) → FileItem(Id, TenantId)</c> FK.</para>
+///
+/// <para><b>Audit-durability scope.</b> Tag.assigned / tag.removed are logged via
+/// <see cref="IAuditService.LogAsync"/> after the tag-op <c>SaveChangesAsync</c>, so an
+/// audit-store failure never rolls back the primary op — we swallow and warn. Durability
+/// applies only within THIS service's transaction scope (no ambient <c>BeginTransactionAsync</c>
+/// opened by a higher-level caller). Inside an ambient transaction opened upstream, both
+/// <c>SaveChangesAsync</c> flushes enlist into that transaction and audit rows roll back with
+/// the rest of the batch on upstream abort — the expected behaviour for multi-step units of
+/// work, worth stating explicitly because the separate <c>SaveChangesAsync</c> pair suggests
+/// independence that does not actually hold.</para>
 ///
 /// <para><b>TenantId provenance.</b> New tags inherit <see cref="ITenantContext.TenantId"/>
 /// from the ambient request context. Updates of existing tags never mutate TenantId — the
-/// entity is init-only on that field. Cross-tenant lookups collapse via the global query
-/// filter: a caller in tenant B trying to upsert on a tenant-A file will not see the existing
-/// tag, will try to Add, and will hit the FK-on-FileItem constraint since the foreign file
-/// is not visible.</para>
+/// entity is init-only on that field. Combined with the tenant-ownership guard above, a caller
+/// in tenant B cannot observe, mutate, or create Tag rows against any tenant-A file.</para>
 /// </summary>
 public sealed partial class TagService(
     StrgDbContext db,
     ITagRepository tagRepository,
+    IFileRepository fileRepository,
     ITenantContext tenantContext,
     IAuditService auditService,
     ILogger<TagService> logger) : ITagService
@@ -52,6 +66,7 @@ public sealed partial class TagService(
     {
         ValidateKey(key);
         ValidateValue(value);
+        await EnsureFileVisibleAsync(fileId, cancellationToken).ConfigureAwait(false);
 
         // Tag.Key's setter lowercases on assignment, but we normalize here too for the audit
         // Details payload + GetByKey lookup so the repository call and the logged row agree.
@@ -102,6 +117,8 @@ public sealed partial class TagService(
         string key,
         CancellationToken cancellationToken = default)
     {
+        await EnsureFileVisibleAsync(fileId, cancellationToken).ConfigureAwait(false);
+
         var normalizedKey = key.ToLowerInvariant();
 
         // Probe first so we can return the correct bool and suppress the audit row on a no-op
@@ -135,6 +152,8 @@ public sealed partial class TagService(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureFileVisibleAsync(fileId, cancellationToken).ConfigureAwait(false);
+
         var existing = await tagRepository.GetByFileAsync(fileId, userId, cancellationToken)
             .ConfigureAwait(false);
         if (existing.Count == 0)
@@ -191,6 +210,20 @@ public sealed partial class TagService(
         {
             throw new ValidationException(
                 $"Tag value must not exceed {MaxValueLength} characters.", nameof(value));
+        }
+    }
+
+    private async Task EnsureFileVisibleAsync(Guid fileId, CancellationToken cancellationToken)
+    {
+        // Tenant-ownership guard. `IFileRepository.GetByIdAsync` routes through the global
+        // tenant filter and returns null for (a) foreign-tenant fileIds, (b) soft-deleted files,
+        // (c) non-existent files. All three collapse to NotFoundException so the caller cannot
+        // distinguish them — if a later feature needs to, it goes through an admin-only service
+        // with its own AuthPolicy gate, never this user-facing surface.
+        var file = await fileRepository.GetByIdAsync(fileId, cancellationToken).ConfigureAwait(false);
+        if (file is null)
+        {
+            throw new NotFoundException($"File '{fileId}' not found.");
         }
     }
 

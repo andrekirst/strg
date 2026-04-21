@@ -300,10 +300,11 @@ public sealed class TagServiceTests : IAsyncLifetime
     [Fact]
     public async Task UpsertAsync_cross_tenant_does_not_mutate_foreign_tag()
     {
-        // Cross-tenant security pin: even if a caller guessed a foreign fileId, the global query
-        // filter hides the existing tag so UpsertAsync takes the Add branch, which fails the
-        // FileItem foreign key because the foreign file is not visible. The invariant under test:
-        // tenant-A's tag state is unchanged after tenant-B's attempt.
+        // Cross-tenant security pin: a caller guessing a foreign fileId is rejected by the
+        // service-layer IFileRepository guard (EnsureFileVisibleAsync) before any repo call,
+        // because IFileRepository.GetByIdAsync routes through the tenant global filter and
+        // returns null for tenant-A files when queried under tenant-B's context. The invariant
+        // under test: tenant-A's tag state is unchanged after tenant-B's attempt.
         var fxA = await CreateFixtureAsync();
         var (userA, fileA) = await fxA.CreateUserAndFileAsync();
         var serviceA = fxA.BuildService();
@@ -313,14 +314,37 @@ public sealed class TagServiceTests : IAsyncLifetime
         var serviceB = fxB.BuildService();
 
         var act = () => serviceB.UpsertAsync(fileA.Id, userA.Id, "project", "stolen");
-        // Either the FK constraint rejects the Add or EF Core raises before the DB call —
-        // either way, tenant-A's tag is unchanged. The shape of the exception is secondary to
-        // the state-invariance assertion below.
-        await act.Should().ThrowAsync<Exception>();
+        await act.Should().ThrowAsync<NotFoundException>();
 
         var aTags = await serviceA.GetTagsAsync(fileA.Id, userA.Id);
         aTags.Should().HaveCount(1);
         aTags[0].Value.Should().Be("acme", "cross-tenant upsert must not mutate foreign-tenant tag state");
+    }
+
+    [Fact]
+    public async Task UpsertAsync_cross_tenant_throws_NotFound_when_file_not_visible_to_caller()
+    {
+        // Ghost-row attack vector pin: without the service-layer IFileRepository guard, a tenant-B
+        // caller who knows (or guesses) a tenant-A fileId and picks a non-colliding key would
+        // INSERT a Tag row with TenantId=B pointing at a tenant-A FileItem — there is no EF FK
+        // from Tag → FileItem, so only the service layer stands between the caller and the
+        // ghost row. The previous `does_not_mutate_foreign_tag` test masked this gap because the
+        // unique-index collision on the pre-existing tenant-A tag would reject the INSERT on its
+        // own. Here we deliberately create a fileA with NO pre-existing tag so no collision can
+        // mask a missing guard: a green NotFoundException assertion proves the service-layer
+        // guard is what's rejecting the write.
+        var fxA = await CreateFixtureAsync();
+        var (userA, fileA) = await fxA.CreateUserAndFileAsync();
+
+        var fxB = await fxA.WithNewTenantAsync();
+        var serviceB = fxB.BuildService();
+
+        var act = () => serviceB.UpsertAsync(fileA.Id, userA.Id, "project", "stolen");
+        await act.Should().ThrowAsync<NotFoundException>();
+
+        // Belt-and-braces: confirm no Tag row was created under either tenant.
+        var serviceA = fxA.BuildService();
+        (await serviceA.GetTagsAsync(fileA.Id, userA.Id)).Should().BeEmpty();
     }
 
     // ── fixture helpers ────────────────────────────────────────────────────────
@@ -373,8 +397,9 @@ public sealed class TagServiceTests : IAsyncLifetime
         {
             var db = NewDbContext();
             var repo = new TagRepository(db);
+            var fileRepo = new FileRepository(db);
             var audit = new AuditService(db);
-            return new TagService(db, repo, tenantContext, audit, NullLogger<TagService>.Instance);
+            return new TagService(db, repo, fileRepo, tenantContext, audit, NullLogger<TagService>.Instance);
         }
 
         public async Task<User> CreateUserAsync()

@@ -52,6 +52,14 @@ public sealed class TagRepository(StrgDbContext db) : ITagRepository
     public async Task UpsertAsync(Tag tag, CancellationToken cancellationToken = default)
     {
         // Tag.Key is normalized in the setter, so `tag.Key` here is already lowercase.
+        //
+        // Tenant-ownership of `tag.FileId` is NOT enforced here: `Tag` has no EF navigation/FK
+        // onto `FileItem`, so a foreign-tenant fileId would INSERT a ghost row. The guard lives
+        // at the service layer (`TagService` verifies the file is visible via the tenant-filtered
+        // `IFileRepository.GetByIdAsync` before calling this method). Any future caller of this
+        // repository MUST replicate that guard — the repo trusts its caller on tenant ownership.
+        // Tracked as v0.2 structural fix: composite `(FileId, TenantId) → FileItem(Id, TenantId)`
+        // FK would move the defense down into the DB and retire the service-layer obligation.
         var existing = await db.Tags
             .FirstOrDefaultAsync(
                 t => t.FileId == tag.FileId && t.UserId == tag.UserId && t.Key == tag.Key,
@@ -104,16 +112,17 @@ public sealed class TagRepository(StrgDbContext db) : ITagRepository
     }
 
     public async Task<IReadOnlyList<Tag>> SearchAsync(
-        Guid tenantId,
         Guid userId,
         string? key,
         string? value,
         CancellationToken cancellationToken = default)
     {
-        // tenantId on the signature is informational — the global query filter already pins
-        // `t.TenantId == currentTenant`. Accepting the parameter forces callers to state intent
-        // explicitly and leaves room to extend to admin-cross-tenant search later without
-        // breaking the method signature.
+        // Tenant scoping is ambient via the global query filter (`t.TenantId == currentTenant`).
+        // The previous signature accepted a tenantId parameter "informationally" — dropped because
+        // it was a footgun: a reviewer seeing `SearchAsync(adminTargetTenantId, ...)` would assume
+        // cross-tenant lookup was possible here. When admin-cross-tenant search legitimately lands,
+        // introduce `ITagAdminService` (same pattern as `IQuotaAdminService`) rather than
+        // overloading this user-facing repo.
         var query = db.Tags.Where(t => t.UserId == userId);
         if (!string.IsNullOrEmpty(key))
         {

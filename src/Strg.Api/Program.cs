@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
@@ -14,9 +15,23 @@ using Strg.GraphQL.Types;
 using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
+using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ---- Logging (STRG-006, partial) ----
+// Replaces the default Microsoft.Extensions.Logging provider with Serilog so that
+// SecretFieldsDestructuringPolicy has an effect: the default provider calls ToString() on
+// logged objects, and a positional-record ToString() auto-renders every property — including
+// Password/ClientSecret/etc. Full STRG-006 wiring (request enrichers, CompactJsonFormatter,
+// OTLP) is still pending; this is the minimum surface that makes credential redaction real.
+builder.Host.UseSerilog((context, services, loggerConfig) => loggerConfig
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .Destructure.With<SecretFieldsDestructuringPolicy>()
+    .WriteTo.Console());
 
 // ---- Infrastructure ----
 builder.Services.AddHttpContextAccessor();

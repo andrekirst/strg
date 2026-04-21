@@ -50,4 +50,12 @@ public sealed class UserTests
 
         user.UsagePercent.Should().Be(0);
     }
+
+    [Fact]
+    public void Email_IsNormalizedToLowercase_OnSet()
+    {
+        var user = NewUser(u => u.Email = "MIXED.Case@Example.COM");
+
+        user.Email.Should().Be("mixed.case@example.com");
+    }
 }

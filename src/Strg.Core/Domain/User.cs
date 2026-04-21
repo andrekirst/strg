@@ -2,7 +2,14 @@ namespace Strg.Core.Domain;
 
 public sealed class User : TenantedEntity
 {
-    public required string Email { get; set; }
+    private string _email = string.Empty;
+
+    public required string Email
+    {
+        get => _email;
+        set => _email = value.ToLowerInvariant();
+    }
+
     public required string DisplayName { get; set; }
     public required string PasswordHash { get; set; }
     public long QuotaBytes { get; set; } = 10L * 1024 * 1024 * 1024; // 10 GB default

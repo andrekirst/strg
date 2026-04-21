@@ -4,6 +4,8 @@ using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
 using Strg.Core.Domain;
+using Strg.Core.Identity;
+using Strg.Core.Services;
 using Strg.GraphQL.DataLoaders;
 using Strg.GraphQL.Errors;
 using Strg.GraphQL.Mutations;
@@ -12,6 +14,7 @@ using Strg.GraphQL.Types;
 using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
+using Strg.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +23,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
+
+// ---- Identity (STRG-014) ----
+builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
+builder.Services.AddScoped<IUserManager, UserManager>();
 
 builder.Services.AddDbContext<StrgDbContext>(options =>
 {
@@ -56,6 +63,9 @@ builder.Services.AddAuthorization(options =>
 });
 
 // ---- Hosted services ----
+// FirstRunInitializationService runs before OpenIddictSeedWorker so that the default tenant +
+// SuperAdmin exist before any OpenIddict client records reference them.
+builder.Services.AddHostedService<FirstRunInitializationService>();
 builder.Services.AddHostedService<OpenIddictSeedWorker>();
 
 // ---- MVC / Controllers (token + userinfo endpoints) ----

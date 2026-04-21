@@ -69,8 +69,12 @@ public sealed class TokenController(IUserManager userManager) : ControllerBase
 
     private async Task<IActionResult> HandleRefreshTokenGrantAsync()
     {
-        // Authenticate with the existing refresh token principal so that
-        // OpenIddict can rotate the tokens.
+        // Authenticate with the existing refresh token principal so OpenIddict can rotate the
+        // tokens. A valid refresh token reaching this point only proves the *token* is good —
+        // the user behind it may have been soft-deleted, locked out, or role-downgraded since
+        // the refresh token was issued. We MUST re-read the current user row and fail-closed on
+        // any liveness issue; otherwise a stolen or stale refresh token survives those signals
+        // until natural token expiry.
         var result = await HttpContext.AuthenticateAsync(
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
@@ -79,14 +83,24 @@ public sealed class TokenController(IUserManager userManager) : ControllerBase
             return InvalidGrant("The refresh token is no longer valid.");
         }
 
-        var identity = new ClaimsIdentity(
-            result.Principal!.Claims,
-            authenticationType: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
-            nameType: OpenIddictConstants.Claims.Name,
-            roleType: OpenIddictConstants.Claims.Role);
+        var subjectClaim = result.Principal!.FindFirst(OpenIddictConstants.Claims.Subject)?.Value;
+        if (!Guid.TryParse(subjectClaim, out var userId))
+        {
+            return InvalidGrant("The refresh token is no longer valid.");
+        }
 
-        return SignIn(new ClaimsPrincipal(identity),
-            OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        var user = await userManager.FindForRefreshAsync(userId, HttpContext.RequestAborted);
+        if (user is null)
+        {
+            return InvalidGrant("The refresh token is no longer valid.");
+        }
+
+        // Rebuild claims from the fresh row so role changes, email updates, and tenant moves
+        // propagate on the next refresh. Scopes are preserved from the incoming principal —
+        // they were negotiated at the initial grant and are client/server contract, not
+        // identity state.
+        var principal = BuildPrincipal(user, result.Principal.GetScopes());
+        return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     private static ClaimsPrincipal BuildPrincipal(

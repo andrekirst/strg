@@ -262,6 +262,34 @@ public sealed class UserManager(
         return user;
     }
 
+    public async Task<User?> FindForRefreshAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        // Pre-auth path: refresh endpoint is [AllowAnonymous]; ITenantContext is not populated
+        // for this request even though OpenIddict has validated the refresh token. A tenant-
+        // filtered query would resolve tenant_id to Guid.Empty and always return null.
+        var user = await FindByIdPreAuthAsync(userId, cancellationToken);
+        if (user is null)
+        {
+            return null;
+        }
+
+        // Natural lock expiry clears the counter here too, matching ValidateCredentialsAsync.
+        // Without this, a user whose lock expired while holding a valid refresh token would be
+        // permanently stuck at "locked" from refresh's perspective even after the lock window
+        // passed, until their next explicit login reset the counter.
+        if (user.LockedUntil.HasValue && user.LockedUntil <= DateTimeOffset.UtcNow)
+        {
+            await ClearFailedLoginsAsync(user, cancellationToken);
+        }
+
+        if (user.IsLocked)
+        {
+            return null;
+        }
+
+        return user;
+    }
+
     // Threshold checks use `==` so the lock is set EXACTLY at the tier transitions (5 and 10)
     // and not re-applied on every subsequent failure. Combined with RecordFailedLoginAsync NOT
     // no-op'ing on locked accounts, this gives the desired shape: counter grows while locked,

@@ -72,4 +72,20 @@ public interface IUserManager
     /// <see cref="RecordFailedLoginAsync"/> or <see cref="ResetFailedLoginsAsync"/> on the result.
     /// </summary>
     Task<User?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-resolves a user from the current database row for the refresh-token grant flow. Returns
+    /// <c>null</c> when the user is missing, soft-deleted, or currently locked out — the caller
+    /// MUST fail-closed with <c>invalid_grant</c> in that case. A non-null result means the
+    /// holder of a valid refresh token is still allowed to obtain new access tokens; the caller
+    /// rebuilds claims from this fresh row so role downgrades, email changes, and tenant moves
+    /// propagate on the next refresh instead of waiting for refresh-token expiry.
+    ///
+    /// <para>
+    /// Uses the pre-auth lookup path: the refresh endpoint is anonymous, OpenIddict has validated
+    /// the refresh token but ASP.NET Core's tenant context is not populated for this request, so
+    /// a tenant-scoped query would always resolve to <c>Guid.Empty</c> and return null.
+    /// </para>
+    /// </summary>
+    Task<User?> FindForRefreshAsync(Guid userId, CancellationToken cancellationToken = default);
 }

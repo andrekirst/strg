@@ -268,6 +268,49 @@ public sealed class QuotaServiceTests : IAsyncLifetime
         reloaded.UsedBytes.Should().Be(55 * 1024 * 1024);
     }
 
+    // Security-reviewer L2: pin tenant-filter propagation through ExecuteUpdateAsync. The global
+    // filter adds an implicit `tenant_id = @currentTenant` clause to the WHERE, which collapses
+    // cross-tenant Commit into "rows-affected = 0 → QuotaExceededException" (security-positive:
+    // indistinguishable from legitimate quota-shortfall, no enumeration oracle) and cross-tenant
+    // Release into a silent no-op. A future refactor that replaces ExecuteUpdateAsync with a
+    // read-then-write service-layer loop would lose the filter binding without failing any
+    // existing test — these two tests are the regression gate.
+    [Fact]
+    public async Task CommitAsync_from_tenant_B_on_user_in_tenant_A_throws_QuotaExceeded()
+    {
+        var fxA = await CreateFixtureAsync();
+        var fxB = await fxA.WithNewTenantAsync();
+        var userInA = await fxA.CreateUserAsync(quotaBytes: 1_000_000, usedBytes: 0);
+        var serviceInB = fxB.BuildService();
+
+        var act = () => serviceInB.CommitAsync(userInA.Id, 100);
+        await act.Should().ThrowAsync<QuotaExceededException>();
+
+        // The real test isn't the exception — it's that the foreign user's bytes didn't move.
+        // A filter bypass would typically still return rows-affected >= 1, so the exception
+        // alone is insufficient to catch it.
+        var reloaded = await fxA.ReloadUserAsync(userInA.Id);
+        reloaded.UsedBytes.Should().Be(0, "cross-tenant commit must not mutate the foreign-tenant user");
+    }
+
+    [Fact]
+    public async Task ReleaseAsync_from_tenant_B_on_user_in_tenant_A_is_silent_noop()
+    {
+        var fxA = await CreateFixtureAsync();
+        var fxB = await fxA.WithNewTenantAsync();
+        var userInA = await fxA.CreateUserAsync(quotaBytes: 1_000_000, usedBytes: 500_000);
+        var serviceInB = fxB.BuildService();
+
+        // Release contract: rows-affected=0 is NOT an error — a legitimate orphan-reaper path
+        // may call Release against a soft-deleted user and must not panic. That same silent-noop
+        // contract extends to cross-tenant callers. The invariant under test is that the call
+        // neither throws nor mutates state outside its tenant.
+        await serviceInB.ReleaseAsync(userInA.Id, 100);
+
+        var reloaded = await fxA.ReloadUserAsync(userInA.Id);
+        reloaded.UsedBytes.Should().Be(500_000, "cross-tenant release must not mutate the foreign-tenant user");
+    }
+
     private static async Task<bool> CommitOutcomeAsync(Func<Task> commit)
     {
         try
@@ -352,6 +395,22 @@ public sealed class QuotaServiceTests : IAsyncLifetime
             var user = await ctx.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
             user.Should().NotBeNull($"user {userId} should exist for reload");
             return user!;
+        }
+
+        // Mint a SECOND tenant in the SAME database. Cross-tenant tests demand that service-B and
+        // the foreign user live under one Postgres connection + schema, so the row is present but
+        // filtered-out by the global tenant filter that piggybacks onto ExecuteUpdateAsync. Using
+        // CreateFixtureAsync twice would put the two tenants in different databases, exercising
+        // database isolation instead — a strictly stronger guarantee that hides the property we
+        // actually want to pin (query-filter propagation through EF Core's bulk-update path).
+        public async Task<Fixture> WithNewTenantAsync()
+        {
+            var newTenantId = Guid.NewGuid();
+            var newTenantContext = new FixedTenantContext(newTenantId);
+            await using var ctx = new StrgDbContext(options, newTenantContext);
+            ctx.Tenants.Add(new Tenant { Id = newTenantId, Name = $"test-{newTenantId:N}" });
+            await ctx.SaveChangesAsync();
+            return new Fixture(options, newTenantContext, newTenantId);
         }
     }
 }

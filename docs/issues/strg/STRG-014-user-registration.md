@@ -56,16 +56,23 @@ public record CreateUserRequest(
 
 ## Acceptance Criteria
 
-- [ ] `CreateUserAsync` creates a user in both `users` table and OpenIddict's user store
+- [ ] `CreateUserAsync` accepts an explicit `TenantId` (callers resolve the tenant; multi-tenant routing is v0.2)
 - [ ] Password is hashed with PBKDF2 (never stored in plaintext)
 - [ ] Email is validated (format check, uniqueness within tenant)
-- [ ] `ValidatePasswordAsync` returns false for wrong password
-- [ ] `RecordFailedLoginAsync` increments `FailedLoginAttempts` and sets `LockedUntil` after 5 failures
-- [ ] After 5 failures: `LockedUntil = now + 15 minutes`
-- [ ] After 10 failures: `LockedUntil = now + 1 hour`
-- [ ] First-run admin user created if no users exist
-- [ ] First-run admin password printed to stdout with clear warning
-- [ ] Creating a user with an existing email returns `Result.Failure` (not exception)
+- [ ] `ValidatePasswordAsync` returns true ONLY when password matches AND user is not locked AND user exists
+- [ ] `ValidatePasswordAsync` runs `IPasswordHasher.Verify` against a cached dummy hash when the user is missing, so wall-clock timing is identical to the existing-user path (defeats user enumeration via timing)
+- [ ] `RecordFailedLoginAsync` is a NO-OP when the account is already locked (prevents indefinite-DoS where attacker hammers a locked account to extend its lock)
+- [ ] `RecordFailedLoginAsync` and `ResetFailedLoginsAsync` are silent no-ops for missing users (don't throw, don't return Result — consistent with no-enumeration)
+- [ ] Lockout schedule:
+  - 5 failures → `LockedUntil = now + 15 min`
+  - 10 failures → `LockedUntil = now + 1 hour`
+  - Beyond 10 failures → counter keeps incrementing but lock stays at 1h (no escalating ladder)
+  - Successful login or natural lock expiry → counter resets to 0
+- [ ] Concurrent same-email registration: `CreateUserAsync` catches `DbUpdateException` with `PostgresException { SqlState: "23505" }` → `Result.Failure(EmailAlreadyExists, ...)` (NOT a 500)
+- [ ] `CreateUserAsync` rejects `QuotaBytes < 0` with `Result.Failure(InvalidQuota, ...)`
+- [ ] `FirstRunInitializationService` uses `pg_advisory_lock(7390023145001)` to single-leader the seed across replicas; uses `IgnoreQueryFilters().AnyAsync` to detect existing users; prints the generated password to stdout exactly once with a clear warning
+- [ ] First-run admin password uses URL-safe base64 alphabet (no `+/=`) so docker-logs copy-paste survives shell quoting
+- [ ] `SetPasswordAsync` carries a doc banner placing authorization responsibility on callers (it does NOT internally check role)
 
 ## Test Cases
 

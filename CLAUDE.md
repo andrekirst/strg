@@ -130,7 +130,8 @@ return Results.File(bytes, contentType: file.MimeType);
 
 ### NEVER do these:
 
-1. **Never bypass tenant isolation** — no `IgnoreQueryFilters()` in application code
+1. **Never bypass tenant isolation** — no `IgnoreQueryFilters()` in application code.
+   *Carve-out:* repositories that run pre-auth (when no JWT exists yet, so `ITenantContext.TenantId` is `Guid.Empty`) MAY use `IgnoreQueryFilters()` provided they re-apply `TenantId` and `IsDeleted` inline AND carry a justification comment. `UserRepository.GetByEmailAsync` is the canonical example — login lookup must run before auth completes.
 2. **Never trust user-supplied paths** — always use `StoragePath.Parse()`
 3. **Never log passwords, tokens, or secrets** — use Serilog destructuring policies
 4. **Never expose `ProviderConfig`** — storage credentials live in `Drive.ProviderConfig`, which is ignored in all GraphQL types and DTOs
@@ -190,7 +191,19 @@ public sealed class FooService : IFooService  // sealed by default
 
 ### Error Handling
 
-- Domain exceptions in `Strg.Core/Exceptions/`
+Two patterns coexist by deliberate design — pick the one that matches the failure semantics:
+
+**`Result` / `Result<T>`** — for *expected* failure modes that the caller will branch on. Identity and auth surfaces are the canonical example: `EmailAlreadyExists`, `InvalidPassword`, `PasswordTooShort` are not exceptional, they are part of the API contract. Use this when:
+- Every failure has a stable error code the caller maps to a wire-level response.
+- Throwing would force the caller into `try/catch` for normal control flow.
+- The failure is not "the system is broken", it's "the input was rejected".
+
+**Exceptions** — for *exceptional* conditions. Use this when:
+- The failure is mapped centrally (`StrgErrorFilter` for GraphQL, RFC 7807 problem-details middleware for REST).
+- Multiple unrelated call sites would otherwise need duplicated `if (result.IsFailure) return ...` plumbing.
+- The condition is genuinely unusual (path traversal attempt, quota exceeded, soft-deleted resource lookup).
+
+Domain exceptions in `Strg.Core/Exceptions/`:
 - `StoragePathException`: invalid path
 - `NotFoundException`: resource not found
 - `QuotaExceededException`: quota exceeded

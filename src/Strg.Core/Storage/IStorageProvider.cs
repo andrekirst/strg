@@ -36,6 +36,18 @@ public interface IStorageProvider
     /// <summary>
     /// Removes the file or directory at <paramref name="path"/>. Idempotent — does not throw if the path is absent.
     /// </summary>
+    /// <remarks>
+    /// <b>Idempotency is load-bearing, not a convenience.</b> Implementations MUST NOT throw when
+    /// the target path is absent. The per-version retry contract on
+    /// <see cref="Strg.Core.Services.IFileVersionStore.PruneVersionsAsync"/> — where a
+    /// mid-batch failure leaves the already-deleted blobs reachable by a resumed prune —
+    /// requires this behavior: a second call targeting an already-absent blob must return
+    /// silently so the retry can advance to the next un-pruned version instead of looping
+    /// forever at iteration <c>k</c>. Any future provider that throws on missing would break
+    /// this contract and reintroduce the orphan-row drift the per-version scope was designed
+    /// to prevent. Linux <c>File.Delete</c>, S3 <c>DeleteObject</c>, and the in-memory test
+    /// provider all honor this today.
+    /// </remarks>
     Task DeleteAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>

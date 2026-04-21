@@ -3,6 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
+using OpenIddict.Validation.AspNetCore;
 using Strg.Infrastructure.Data;
 
 namespace Strg.Infrastructure.Identity;
@@ -20,6 +21,13 @@ public static class OpenIddictConfiguration
         IConfiguration config,
         bool isDevelopment)
     {
+        // Without this, ASP.NET Core has no default scheme to authenticate/challenge against, so
+        // every [Authorize]-protected endpoint (controllers AND minimal APIs AND /graphql) throws
+        // "No authenticationScheme was specified, and there was no DefaultChallengeScheme found."
+        // — surfacing as a 500 instead of the intended 401/403. AddValidation().UseAspNetCore()
+        // below registers the scheme but does NOT make it the default; we have to do that here.
+        services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+
         services.AddOpenIddict()
             .AddCore(o => o
                 .UseEntityFrameworkCore()

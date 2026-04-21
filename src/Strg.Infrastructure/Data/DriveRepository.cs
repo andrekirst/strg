@@ -9,13 +9,15 @@ public sealed class DriveRepository(StrgDbContext db) : IDriveRepository
         => db.Drives.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
     /// <summary>
-    /// Bypasses the global tenant/soft-delete query filter intentionally: this method
-    /// is used for uniqueness checks, including against soft-deleted names to prevent
-    /// re-use of deleted drive names within the same tenant.
+    /// Uniqueness lookup that spans active AND soft-deleted drives within a tenant. Bypasses the
+    /// global tenant/soft-delete filter so a soft-deleted drive named "x" still blocks creation
+    /// of a new drive named "x" — otherwise un-soft-delete (e.g. an admin restore) could produce
+    /// two drives with identical (TenantId, Name), violating the unique index. Returning the
+    /// soft-deleted match lets callers surface a clearer error than a 23505 constraint violation.
     /// </summary>
     public Task<Drive?> GetByNameAsync(Guid tenantId, string name, CancellationToken cancellationToken = default)
         => db.Drives.IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(d => d.TenantId == tenantId && d.Name == name && !d.IsDeleted, cancellationToken);
+                    .FirstOrDefaultAsync(d => d.TenantId == tenantId && d.Name == name, cancellationToken);
 
     public async Task<IReadOnlyList<Drive>> ListAsync(Guid tenantId, CancellationToken cancellationToken = default)
         => await db.Drives.ToListAsync(cancellationToken);

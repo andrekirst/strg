@@ -361,6 +361,90 @@ public sealed class LocalFileSystemProviderTests : IAsyncLifetime
         }
     }
 
+    // STRG-024 security-reviewer L3: DeleteAsync eventually calls Directory.Delete(recursive: true).
+    // Its handling of symlinked subdirectories is a BCL contract we rely on but do not enforce in
+    // our code — platform-specific, and historically adjacent to CVEs (e.g. CVE-2023-36049). The
+    // test below pins the property "a recursive delete of a directory containing a symlinked
+    // subdirectory unlinks the symlink entry but does NOT traverse its target". If the BCL ever
+    // regresses (or a refactor introduces a hand-rolled recursive walker that follows links), the
+    // "outside-drive victim survives" assertion trips and reveals a data-destruction primitive.
+    [Fact]
+    public async Task DeleteAsync_recursive_does_not_descend_into_symlinked_subdirectory()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var victimDir = Path.Combine(Path.GetTempPath(), "strg-delete-victim-dir-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(victimDir);
+        var victimFile = Path.Combine(victimDir, "sentinel.txt");
+        await File.WriteAllTextAsync(victimFile, "do-not-touch");
+        try
+        {
+            // Inside-drive layout:
+            //   _root/parent/inside.txt         ← must be deleted
+            //   _root/parent/link-to-outside/   ← symlink to victimDir; unlink only
+            await _sut.WriteAsync("parent/inside.txt", new MemoryStream([1, 2, 3]));
+            Directory.CreateSymbolicLink(Path.Combine(_root, "parent", "link-to-outside"), victimDir);
+
+            await _sut.DeleteAsync("parent");
+
+            Directory.Exists(Path.Combine(_root, "parent"))
+                .Should().BeFalse("the in-drive directory AND the symlink entry must both be gone");
+
+            // Load-bearing assertions: if these trip, BCL has traversed the link target and this
+            // is a data-destruction primitive — escalate per task #32's brief.
+            Directory.Exists(victimDir)
+                .Should().BeTrue("recursive delete must not descend through a symlinked subdirectory");
+            File.Exists(victimFile)
+                .Should().BeTrue("the file inside the symlink target must survive the recursive delete");
+            (await File.ReadAllTextAsync(victimFile)).Should().Be("do-not-touch");
+        }
+        finally
+        {
+            if (Directory.Exists(victimDir))
+            {
+                Directory.Delete(victimDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DeleteAsync_recursive_unlinks_symlinked_file_without_touching_target()
+    {
+        // Symlinked FILES (as opposed to directories) walk a different BCL path internally — the
+        // "symlink-is-a-regular-file" branch of recursive delete must also unlink rather than
+        // follow. Pinning both shapes keeps the coverage complete against future BCL regressions.
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var victimFile = Path.Combine(Path.GetTempPath(), "strg-delete-victim-file-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(victimFile, "do-not-touch");
+        try
+        {
+            await _sut.WriteAsync("parent/inside.txt", new MemoryStream([1, 2, 3]));
+            File.CreateSymbolicLink(Path.Combine(_root, "parent", "link-to-outside.txt"), victimFile);
+
+            await _sut.DeleteAsync("parent");
+
+            Directory.Exists(Path.Combine(_root, "parent")).Should().BeFalse();
+
+            File.Exists(victimFile)
+                .Should().BeTrue("deleting a directory containing a symlinked file must not delete the link target");
+            (await File.ReadAllTextAsync(victimFile)).Should().Be("do-not-touch");
+        }
+        finally
+        {
+            if (File.Exists(victimFile))
+            {
+                File.Delete(victimFile);
+            }
+        }
+    }
+
     [Fact]
     public async Task MoveAsync_rejects_empty_destination()
     {

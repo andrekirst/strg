@@ -283,6 +283,91 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             "cross-tenant Prune must NOT release quota on another tenant's user");
     }
 
+    // STRG-043 L2 regression gate — per-version atomic tx scope (csharp-implementer commit b753663).
+    //
+    // PruneVersionsAsync iterates toPrune newest→oldest (versions.Skip(keepCount), where Skip acts on
+    // the newest-first list) and wraps each "blob delete + DB row remove + quota release" in its
+    // own transaction. Provider.DeleteAsync runs OUTSIDE the per-iteration tx, so a throw at
+    // iteration k leaves:
+    //   • iterations [0..k-1]: fully committed — blob gone, row gone, quota released
+    //   • iteration k: tx was never opened (throw preceded BeginTransactionAsync), so the DB row
+    //     and quota charge remain intact; blob state is INDETERMINATE (depends on the provider
+    //     implementation's exact throw point — our fake throws before touching storage, but real
+    //     providers may have partially committed and then failed on flush)
+    //   • iterations [k+1..]: never reached — untouched
+    //
+    // This test pins that invariant. The failure mode it protects against: a future refactor
+    // reverting to "delete all blobs first, then a single DB tx removes all rows + releases sum
+    // quota" would leave the DB state unchanged on any mid-loop provider failure (because the
+    // single tx never reached SaveChanges) while orphaning [0..k-1]'s blobs on disk with the DB
+    // still pointing at them. This test would fail in that shape because it asserts k-1 DB rows
+    // are gone + quota partially released — exactly the semantics the single-tx shape cannot
+    // produce.
+    [Fact]
+    public async Task PruneVersionsAsync_partial_failure_commits_pre_throw_work_and_preserves_post_throw_state()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+
+        // Distinct sizes per version → quota arithmetic is unambiguous across release-math
+        // errors (equal sizes would mask a release-wrong-version bug).
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+        await fx.Provider.WriteAsync("blob/v4", new MemoryStream([0x04]));
+        await fx.Provider.WriteAsync("blob/v5", new MemoryStream([0x05]));
+
+        // Sanity: starting UsedBytes = 100+200+300+400+500 = 1500.
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(1500);
+
+        // toPrune (keepCount=1) is [v4, v3, v2, v1] (newest-first minus the kept v5), so:
+        //   iter 1 deletes v4, iter 2 deletes v3, iter 3 throws on v2, iter 4 never runs (v1).
+        var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3);
+        var store = fx.BuildStore(failingProvider);
+
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var thrown = await act.Should().ThrowAsync<IOException>(
+            "the provider failure must bubble unchanged through PruneVersionsAsync — catching it "
+            + "would hide partial-failure state from the caller and prevent retry-driven recovery");
+        thrown.Which.Message.Should().Contain("call #3");
+
+        failingProvider.DeleteCallCount.Should().Be(3,
+            "iter 1 (v4) + iter 2 (v3) delegated to inner; iter 3 (v2) threw before delegating");
+
+        // DB state: iterations [0..1] committed (v4, v3 rows gone), iter 2 (v2) row PRESENT because
+        // its tx was never opened, iter 3 (v1) never attempted. Plus the kept v5.
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        remaining.Select(v => v.VersionNumber).Should().ContainInOrder(5, 2, 1);
+        remaining.Should().HaveCount(3,
+            "surviving VersionNumbers are {1,2,5} — a middle gap at {3,4} is the documented shape of "
+            + "a mid-loop failure (see FileVersionStore.PruneVersionsAsync gap-semantics comment); "
+            + "retry resumes by re-pruning beyond keepCount=1");
+
+        // Quota: released v4 (400) + v3 (300) = 700; v2's charge (200) remains because its tx did
+        // not open. Starting 1500 - 700 released = 800 remaining, which equals sum({v1,v2,v5}) =
+        // 100 + 200 + 500. Internal consistency is what a release-wrong-version bug would break.
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(800,
+            "quota released exactly for the two pre-throw iterations; v2's charge must remain "
+            + "intact because its release was inside the same tx the DB row remove lives in");
+
+        // Blobs: v4 + v3 confirmed deleted (pre-throw iterations actually called inner.DeleteAsync);
+        // v5 (kept) + v1 (never attempted) intact. v2's blob state is DELIBERATELY not asserted —
+        // in this fake it's still there because the wrapper throws before delegating, but a real
+        // provider might have torn down part of the storage object before the failure surfaced.
+        // Asserting either way would over-constrain the contract.
+        (await fx.Provider.ExistsAsync("blob/v4")).Should().BeFalse("iter 1 deleted v4's blob");
+        (await fx.Provider.ExistsAsync("blob/v3")).Should().BeFalse("iter 2 deleted v3's blob");
+        (await fx.Provider.ExistsAsync("blob/v5")).Should().BeTrue("kept version's blob must remain");
+        (await fx.Provider.ExistsAsync("blob/v1")).Should().BeTrue("iter 4 never ran — v1's blob untouched");
+        // NO assertion on blob/v2 — indeterminate by contract.
+    }
+
     // TC-002 extended: 5 versions with keepCount 3 → oldest 2 pruned.
     [Fact]
     public async Task PruneVersionsAsync_keepCount_3_prunes_oldest_when_five_versions_exist()
@@ -446,6 +531,26 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             return new Fixture(options, newTenantContext, newTenantId, _registry, _provider);
         }
 
+        /// <summary>
+        /// Builds a store wired against a test-supplied <see cref="IStorageProvider"/> (typically a
+        /// wrapping fake like <see cref="ThrowOnNthDeleteProvider"/>). Registers a one-off registry
+        /// for the "memory" provider type so <see cref="FileVersionStore"/>'s drive-to-provider
+        /// resolution picks up the wrapper. Uses a fresh registry instance per call — never mutates
+        /// the fixture's shared <c>_registry</c>, so other stores built from this fixture continue
+        /// to see the unwrapped provider.
+        /// </summary>
+        public IFileVersionStore BuildStore(IStorageProvider customProvider)
+        {
+            var customRegistry = new StorageProviderRegistry();
+            customRegistry.Register("memory", _ => customProvider);
+            var db = NewDbContext();
+            var versionRepo = new FileVersionRepository(db);
+            var fileRepo = new FileRepository(db);
+            var driveRepo = new DriveRepository(db);
+            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, customRegistry, quota);
+        }
+
         private StrgDbContext NewDbContext() => new(options, tenantContext);
 
         private IFileVersionStore BuildStore()
@@ -457,5 +562,59 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota);
         }
+    }
+
+    /// <summary>
+    /// Test-only <see cref="IStorageProvider"/> wrapper that delegates every call to
+    /// <paramref name="inner"/> except <see cref="DeleteAsync"/>, which throws an
+    /// <see cref="IOException"/> on the N-th invocation (1-indexed). Lets the L2 partial-failure
+    /// test simulate a transient provider outage mid-PruneVersionsAsync without modifying the
+    /// real <c>InMemoryStorageProvider</c>. The throw happens BEFORE delegating, so the inner
+    /// provider observes exactly <c>throwOnNthCall - 1</c> successful deletes from the wrapper.
+    /// </summary>
+    private sealed class ThrowOnNthDeleteProvider(IStorageProvider inner, int throwOnNthCall) : IStorageProvider
+    {
+        private int _deleteCalls;
+
+        public int DeleteCallCount => _deleteCalls;
+
+        public string ProviderType => inner.ProviderType;
+
+        public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
+        {
+            var n = Interlocked.Increment(ref _deleteCalls);
+            if (n == throwOnNthCall)
+            {
+                throw new IOException($"Simulated provider failure on DeleteAsync call #{n} (path: {path})");
+            }
+            return inner.DeleteAsync(path, cancellationToken);
+        }
+
+        public Task<IStorageFile?> GetFileAsync(string path, CancellationToken cancellationToken = default)
+            => inner.GetFileAsync(path, cancellationToken);
+
+        public Task<IStorageDirectory?> GetDirectoryAsync(string path, CancellationToken cancellationToken = default)
+            => inner.GetDirectoryAsync(path, cancellationToken);
+
+        public Task<Stream> ReadAsync(string path, long offset = 0, CancellationToken cancellationToken = default)
+            => inner.ReadAsync(path, offset, cancellationToken);
+
+        public Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default)
+            => inner.WriteAsync(path, content, cancellationToken);
+
+        public Task MoveAsync(string source, string destination, CancellationToken cancellationToken = default)
+            => inner.MoveAsync(source, destination, cancellationToken);
+
+        public Task CopyAsync(string source, string destination, CancellationToken cancellationToken = default)
+            => inner.CopyAsync(source, destination, cancellationToken);
+
+        public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
+            => inner.ExistsAsync(path, cancellationToken);
+
+        public Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
+            => inner.CreateDirectoryAsync(path, cancellationToken);
+
+        public IAsyncEnumerable<IStorageItem> ListAsync(string path, CancellationToken cancellationToken = default)
+            => inner.ListAsync(path, cancellationToken);
     }
 }

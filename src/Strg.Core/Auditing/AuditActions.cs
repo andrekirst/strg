@@ -62,4 +62,27 @@ public static class AuditActions
     /// the next successful retry emits its own audit row with the final <c>pruned_count</c>.</para>
     /// </summary>
     public const string FileVersionPruned = "file_version.pruned";
+
+    /// <summary>
+    /// A file was uploaded (new blob committed). ResourceType is <c>"FileItem"</c>, ResourceId is
+    /// the file id, UserId + TenantId carry the uploader/tenant, and Details is a JSON object
+    /// <c>{ driveId, size, mimeType }</c>. Emitted by <see cref="Strg.Infrastructure.Messaging.Consumers.AuditLogConsumer"/>
+    /// from <c>FileUploadedEvent</c>; <see cref="Strg.Core.Domain.AuditEntry.EventId"/> is the
+    /// outbox MessageId so redelivery is idempotent.
+    /// </summary>
+    public const string FileUploaded = "file.uploaded";
+
+    /// <summary>
+    /// A file was soft-deleted. ResourceType is <c>"FileItem"</c>, Details is
+    /// <c>{ driveId }</c>. Emitted from <c>FileDeletedEvent</c>.
+    /// </summary>
+    public const string FileDeleted = "file.deleted";
+
+    /// <summary>
+    /// A file was moved (path changed). ResourceType is <c>"FileItem"</c>, Details is
+    /// <c>{ driveId, oldPath, newPath }</c> — both paths recorded so the audit reader can
+    /// reconstruct the pre/post layout without a separate table join. Emitted from
+    /// <c>FileMovedEvent</c>.
+    /// </summary>
+    public const string FileMoved = "file.moved";
 }

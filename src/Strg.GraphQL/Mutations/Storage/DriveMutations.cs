@@ -28,6 +28,14 @@ public sealed class DriveMutations
                 [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-], max 64 chars.", "name")]);
         }
 
+        // Reject oversized ProviderConfig before it hits the DB — cheaper error, no tx rollback.
+        // DB column is capped at varchar(8192) as defense-in-depth backstop.
+        if (input.ProviderConfig.Length > 8192)
+        {
+            return new CreateDrivePayload(null,
+                [new UserError("VALIDATION_ERROR", "ProviderConfig JSON cannot exceed 8192 characters.", "providerConfig")]);
+        }
+
         if (await db.Drives.AnyAsync(d => d.TenantId == tenantId && d.Name == input.Name, cancellationToken))
         {
             return new CreateDrivePayload(null,

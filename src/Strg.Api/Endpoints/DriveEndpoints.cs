@@ -71,6 +71,13 @@ public static class DriveEndpoints
             return Results.UnprocessableEntity(new { error = $"Unknown provider type: {request.ProviderType}" });
         }
 
+        // Reject oversized ProviderConfig before it hits the DB — cheaper error, no tx rollback.
+        // DB column is capped at varchar(8192) as defense-in-depth backstop.
+        if ((request.ProviderConfigJson?.Length ?? 0) > 8192)
+        {
+            return Results.UnprocessableEntity(new { error = "ProviderConfig JSON cannot exceed 8192 characters" });
+        }
+
         // Check name uniqueness — bypass global filter to also check soft-deleted names,
         // preventing re-use of a deleted drive name within the same tenant.
         var existing = await db.Drives.IgnoreQueryFilters()

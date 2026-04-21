@@ -41,6 +41,13 @@ public sealed class UserManager(
 
         var normalizedEmail = request.Email.ToLowerInvariant();
 
+        // Hash unconditionally — BEFORE the duplicate-email check. The new-user path pays one
+        // PBKDF2 Hash (~100ms) for the persisted hash; the duplicate-email path used to skip it
+        // and return in single-digit ms, leaking email existence via wall-clock timing — exactly
+        // the enumeration vector STRG-086's anti-enumeration story exists to defeat. The wasted
+        // hash on the duplicate path is just CPU; the discarded value never persists.
+        var passwordHash = passwordHasher.Hash(request.Password);
+
         var existing = await userRepository.GetByEmailAsync(request.TenantId, normalizedEmail, cancellationToken);
         if (existing is not null)
         {
@@ -52,7 +59,7 @@ public sealed class UserManager(
             TenantId = request.TenantId,
             Email = normalizedEmail,
             DisplayName = request.DisplayName,
-            PasswordHash = passwordHasher.Hash(request.Password),
+            PasswordHash = passwordHash,
             Role = request.Role,
         };
 
@@ -247,8 +254,18 @@ public sealed class UserManager(
 
         if (user.IsLocked)
         {
-            // Equalize wall-clock with the wrong-password path so lock state isn't probeable.
+            // Equalize wall-clock with the wrong-password path so lock state isn't probeable
+            // — same single PBKDF2 verify against the singleton canary.
             _ = passwordHasher.Verify(password, passwordHasher.CanaryHash);
+            // Per spec: the counter still increments while the account is locked, so cumulative
+            // attack pressure during the 15-min short tier can escalate to the 1h long tier on
+            // the wire. ApplyFailedLogin's `==` threshold checks cap LockedUntil at the 1h
+            // window — no indefinite-DoS via lock extension. Without this call,
+            // ValidateCredentialsAsync would short-circuit at the 5-tier and the long tier
+            // would be unreachable through the password-grant endpoint (the manager-level
+            // RecordFailedLoginAsync path stays correct in isolation, but the wire path is
+            // what real attackers exercise).
+            await ApplyFailedLoginAsync(user, cancellationToken);
             return null;
         }
 

@@ -249,6 +249,108 @@ public sealed class MigrationTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Migration_pins_tenant_scoped_unique_indexes()
+    {
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        // IX_Users_TenantId_Email: DB-layer defence against the concurrent-registration
+        // account-shadowing race. Two simultaneous /register POSTs for the same (tenant, email)
+        // can both pass the app-layer "email taken?" check in UserManager before either has
+        // committed; only the unique index serialises the conflict. Without it, both inserts
+        // land and subsequent login becomes nondeterministic across the two rows.
+        var userIndexes = await QueryUniqueIndexesAsync(ctx, "Users");
+        userIndexes.Should().Contain("IX_Users_TenantId_Email");
+        var userColumns = await QueryIndexColumnOrderAsync(ctx, "IX_Users_TenantId_Email");
+        userColumns.Should().Equal("TenantId", "Email");
+
+        // IX_Drives_TenantId_Name: backs DuplicateDriveNameException. The service-layer
+        // pre-check is necessary for a clean error shape but insufficient under concurrency —
+        // this index is the actual serialisation point.
+        var driveIndexes = await QueryUniqueIndexesAsync(ctx, "Drives");
+        driveIndexes.Should().Contain("IX_Drives_TenantId_Name");
+        var driveColumns = await QueryIndexColumnOrderAsync(ctx, "IX_Drives_TenantId_Name");
+        driveColumns.Should().Equal("TenantId", "Name");
+
+        // IX_Tags_FileId_UserId_Key: backs TagService.UpsertAsync. Downgrading this to
+        // non-unique would silently turn Upsert into Insert — every edit of an existing tag
+        // would create a duplicate row instead of updating, and ListAsync would start
+        // returning the same (key, value) twice.
+        var tagIndexes = await QueryUniqueIndexesAsync(ctx, "Tags");
+        tagIndexes.Should().Contain("IX_Tags_FileId_UserId_Key");
+        var tagColumns = await QueryIndexColumnOrderAsync(ctx, "IX_Tags_FileId_UserId_Key");
+        tagColumns.Should().Equal("FileId", "UserId", "Key");
+    }
+
+    [Fact]
+    public async Task Migration_pins_FileKey_cascade_delete()
+    {
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        // Refactor risks this catches:
+        //  - Silent downgrade to SetNull: PruneVersionsAsync succeeds but DEKs stay behind
+        //    forever, pointing at FileVersion rows that no longer exist. A later key-rotation
+        //    job that iterates FileKeys would trip on the dangling FileVersionId.
+        //  - Silent downgrade to Restrict: every FileVersion delete fails with an FK violation,
+        //    breaking the per-version atomic loop in FileVersionStore.PruneVersionsAsync.
+        // Both regressions compile, pass unit tests, and only surface in integration flows —
+        // hence pinning at the migration layer.
+        var conn = ctx.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT con.confdeltype
+            FROM pg_constraint con
+            JOIN pg_class rel ON con.conrelid = rel.oid
+            JOIN pg_attribute att ON att.attrelid = rel.oid AND att.attnum = ANY(con.conkey)
+            WHERE rel.relname = 'FileKeys'
+              AND att.attname = 'FileVersionId'
+              AND con.contype = 'f'
+            """;
+
+        var result = await cmd.ExecuteScalarAsync();
+        result.Should().NotBeNull("FileKeys.FileVersionId must have a foreign-key constraint");
+        // pg_constraint.confdeltype is the internal "char" type — Npgsql maps it to System.Char.
+        // 'c' = CASCADE, 'n' = SET NULL, 'r' = RESTRICT, 'a' = NO ACTION, 'd' = SET DEFAULT.
+        ((char)result!).Should().Be('c', "ON DELETE CASCADE is confdeltype='c' in pg_constraint");
+    }
+
+    [Fact]
+    public async Task Migration_pins_PasswordHash_unbounded_text_type()
+    {
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        // Refactor risk: a "consistency" PR caps PasswordHash to varchar(N) to match Email.
+        // A subsequent PBKDF2 iteration-bump produces a longer hash encoding — Postgres
+        // silently truncates on insert, the stored hash no longer matches the full computed
+        // hash on verify, and every post-bump login fails. The failure mode reads as "mass
+        // auth outage" but its root cause is a column-width regression several PRs upstream.
+        // Pinning 'text' here is the canary.
+        var conn = ctx.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+        }
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'Users'
+              AND column_name = 'PasswordHash'
+            """;
+
+        var dataType = (string?)await cmd.ExecuteScalarAsync();
+        dataType.Should().Be("text");
+    }
+
     private async Task<StrgDbContext> BuildContextForFreshDatabaseAsync(Guid? tenantId = null)
     {
         var dbName = $"strg_migration_test_{Guid.NewGuid():N}";
@@ -347,6 +449,43 @@ public sealed class MigrationTests : IAsyncLifetime
         cmd.Parameters.Add(param);
 
         var results = new HashSet<string>();
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(reader.GetString(0));
+        }
+        return results;
+    }
+
+    private static async Task<IReadOnlyList<string>> QueryIndexColumnOrderAsync(DbContext ctx, string indexName)
+    {
+        var conn = ctx.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+        }
+
+        await using var cmd = conn.CreateCommand();
+        // pg_index.indkey is an int2vector of attribute numbers in declared order. generate_subscripts
+        // walks the vector by index position (1-based); ORDER BY s preserves that declared order in
+        // the result set. Column order in a composite index is load-bearing: IX_Users_TenantId_Email
+        // and IX_Users_Email_TenantId both enforce uniqueness, but only the first supports tenant-
+        // scoped range scans on TenantId as the leading column.
+        cmd.CommandText = """
+            SELECT a.attname
+            FROM pg_index ix
+            JOIN pg_class i ON ix.indexrelid = i.oid
+            CROSS JOIN generate_subscripts(ix.indkey, 1) AS s
+            JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = ix.indkey[s]
+            WHERE i.relname = @indexName
+            ORDER BY s
+            """;
+        var param = cmd.CreateParameter();
+        param.ParameterName = "indexName";
+        param.Value = indexName;
+        cmd.Parameters.Add(param);
+
+        var results = new List<string>();
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {

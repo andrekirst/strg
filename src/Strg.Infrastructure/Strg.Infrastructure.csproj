@@ -31,4 +31,9 @@
     <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Strg.Api.Tests" />
+    <InternalsVisibleTo Include="Strg.Integration.Tests" />
+  </ItemGroup>
+
 </Project>

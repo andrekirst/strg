@@ -116,6 +116,16 @@ public sealed class LocalFileSystemProvider : IStorageProvider
         ArgumentNullException.ThrowIfNull(content);
         var full = ResolveChildPath(path);
 
+        // Refuse to write through a symlink. FileMode.Create on a symlinked target would follow
+        // the link and truncate whatever it points at — a write-anywhere primitive if an attacker
+        // ever lands a symlink inside the drive. The provider never creates symlinks itself, so
+        // finding one here is already anomalous.
+        var existing = new FileInfo(full);
+        if (existing.Exists && existing.LinkTarget is not null)
+        {
+            throw new StoragePathException($"Refusing to write through symlink: {path}");
+        }
+
         // Intermediate directories materialize automatically so the caller's mental model matches
         // "write file at logical path"; otherwise the first upload into a new folder would require
         // a prior CreateDirectoryAsync round-trip.

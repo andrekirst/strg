@@ -274,6 +274,37 @@ public sealed class LocalFileSystemProviderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WriteAsync_rejects_symlink_target()
+    {
+        // Linux-only — Windows symlink creation requires elevated privileges we don't have in CI,
+        // and production runs on Linux containers where this primitive is the real threat.
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var outsideFile = Path.Combine(Path.GetTempPath(), "strg-symlink-victim-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(outsideFile, "ORIGINAL");
+        try
+        {
+            // Plant a symlink inside the drive that points at a file outside. A naive WriteAsync
+            // with FileMode.Create would follow the link and truncate the outside file.
+            var linkPath = Path.Combine(_root, "planted-link.txt");
+            File.CreateSymbolicLink(linkPath, outsideFile);
+
+            var act = async () => await _sut.WriteAsync("planted-link.txt", new MemoryStream([0xFF]));
+            await act.Should().ThrowAsync<StoragePathException>();
+
+            // The outside file must still hold its original contents — the symlink was not followed.
+            (await File.ReadAllTextAsync(outsideFile)).Should().Be("ORIGINAL");
+        }
+        finally
+        {
+            File.Delete(outsideFile);
+        }
+    }
+
+    [Fact]
     public async Task MoveAsync_rejects_empty_destination()
     {
         // Destination "" resolves to base — Directory.Move onto the base path would either fail

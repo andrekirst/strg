@@ -368,6 +368,154 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         // NO assertion on blob/v2 — indeterminate by contract.
     }
 
+    // STRG-043 L2 expansion I1 — retry-resumes lifecycle (security-reviewer phase-1 on 93b309b).
+    //
+    // FileVersionStore.PruneVersionsAsync's xmldoc promises that "retry resumes by re-pruning
+    // the same 'beyond keepCount' tail". The single-shot L2 test pins the partial-failure
+    // invariant (pre-throw iterations committed, throw iteration untouched) but stops there.
+    // This test exercises the FULL lifecycle: a first call fails mid-loop, a second call with a
+    // clean provider must complete the pruning without needing any manual recovery step.
+    //
+    // Failure mode it protects against: a refactor that stashes any iteration state outside the
+    // per-call scope (a progress cursor, a retry counter, an "in-flight" flag on FileItem) would
+    // desynchronise between attempts. The retry would either skip the un-pruned tail (leaving
+    // permanent orphan rows) or double-delete the committed head (throwing on missing blobs).
+    // Both regressions show up here as a wrong final VersionNumber count or a quota that doesn't
+    // land on the kept version's size exactly.
+    [Fact]
+    public async Task PruneVersionsAsync_retry_after_partial_failure_resumes_cleanly_on_next_call()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+        await fx.Provider.WriteAsync("blob/v4", new MemoryStream([0x04]));
+        await fx.Provider.WriteAsync("blob/v5", new MemoryStream([0x05]));
+
+        // First attempt: wrapper throws on iter 3. Matches the L2 partial-failure shape — we
+        // rely on that test for the intermediate-state invariant and only re-check the minimum
+        // needed as the retry precondition.
+        var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3);
+        var failingStore = fx.BuildStore(failingProvider);
+        var firstAttempt = () => failingStore.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await firstAttempt.Should().ThrowAsync<IOException>();
+
+        var afterFirst = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        afterFirst.Select(v => v.VersionNumber).Should().ContainInOrder(new[] { 5, 2, 1 },
+            "partial failure must leave {1,2,5} — retry precondition");
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(800,
+            "partial failure must release only pre-throw v4+v3 (700); retry precondition");
+
+        // Second attempt: fresh store using the fixture's default (unwrapped) provider. The
+        // retry re-reads versions (now {v5, v2, v1}), computes toPrune = {v2, v1} under the same
+        // keepCount=1, and walks the per-version loop to completion. No manual state reset
+        // between attempts — the retry contract is that the caller just calls Prune again.
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+
+        var afterRetry = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        afterRetry.Should().HaveCount(1, "retry must resume pruning the tail beyond keepCount=1");
+        afterRetry[0].VersionNumber.Should().Be(5, "only the kept (newest) version survives the full lifecycle");
+
+        // Quota: 1500 total - (v4 + v3 + v2 + v1) = 1500 - 1000 = 500 = v5's size. Internal
+        // consistency catches a release-wrong-version bug in the retry path that a pure
+        // count-based assertion would miss.
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(500,
+            "retry releases v2 (200) + v1 (100); running total ends at v5's size");
+
+        (await fx.Provider.ExistsAsync("blob/v1")).Should().BeFalse("retry pruned v1");
+        (await fx.Provider.ExistsAsync("blob/v2")).Should().BeFalse("retry pruned v2");
+        (await fx.Provider.ExistsAsync("blob/v3")).Should().BeFalse("first attempt pruned v3");
+        (await fx.Provider.ExistsAsync("blob/v4")).Should().BeFalse("first attempt pruned v4");
+        (await fx.Provider.ExistsAsync("blob/v5")).Should().BeTrue("kept version's blob must remain");
+    }
+
+    // STRG-043 L2 expansion I2 — inverse fail-point: throw AFTER inner.DeleteAsync succeeds but
+    // BEFORE the per-iteration tx opens (security-reviewer phase-1 on 93b309b).
+    //
+    // The primary L2 test throws BEFORE delegating, so the N-th blob stays intact. This test
+    // exercises the opposite: inner.DeleteAsync runs to completion, THEN the wrapper raises.
+    // FileVersionStore.PruneVersionsAsync's design survives this cleanly because BeginTransactionAsync
+    // has not been called yet — the DB row + quota charge remain untouched, leaving the asymmetric
+    // partial state "blob gone, row intact, quota intact". A subsequent retry re-computes toPrune
+    // from the row snapshot and re-calls DeleteAsync on an already-deleted storage key (idempotency
+    // requirement — see STRG-043 phase-2 audit tracker).
+    //
+    // Failure mode this pins against: a refactor that moves BeginTransactionAsync or db.FileVersions.Remove
+    // BEFORE provider.DeleteAsync — or that wraps the delete in a try/catch swallowing provider
+    // errors — would commit the row removal when the provider subsequently throws, leaving the
+    // blob orphaned on disk and the DB forgetting about it. This test would fail by observing
+    // one fewer remaining row than expected (v2's row would be gone despite the throw) and quota
+    // would drop an extra 200 bytes.
+    [Fact]
+    public async Task PruneVersionsAsync_partial_failure_throw_after_inner_delete_leaves_row_intact_and_quota_charged()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+        await fx.Provider.WriteAsync("blob/v4", new MemoryStream([0x04]));
+        await fx.Provider.WriteAsync("blob/v5", new MemoryStream([0x05]));
+
+        // throwAfterInner=true → iter 3's inner.DeleteAsync(v2) runs, then the wrapper throws
+        // BEFORE FileVersionStore's BeginTransactionAsync call, so v2's row remove + quota release
+        // never execute.
+        var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3, throwAfterInner: true);
+        var store = fx.BuildStore(failingProvider);
+
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var thrown = await act.Should().ThrowAsync<IOException>(
+            "the post-inner-delete throw must still bubble — per-version-scope relies on the caller "
+            + "observing the failure to trigger retry");
+        thrown.Which.Message.Should().Contain("call #3");
+        thrown.Which.Message.Should().Contain("AFTER inner delete",
+            "failure mode in the message distinguishes this scenario from the before-inner variant in logs");
+
+        failingProvider.DeleteCallCount.Should().Be(3,
+            "all three iters delegated to inner.DeleteAsync; the throw happens AFTER the third delegation");
+
+        // DB rows: iters 1 + 2 committed (v4, v3 gone), iter 3's row PRESERVED because its tx
+        // never opened. Plus the kept v5 and the untouched v1. Count = 3.
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        remaining.Select(v => v.VersionNumber).Should().ContainInOrder(5, 2, 1);
+        remaining.Should().HaveCount(3,
+            "v2's row must survive — its remove + quota release were inside the tx the post-delete throw "
+            + "prevented from opening. This is the asymmetric 'blob gone, row intact' state that "
+            + "per-version-scope tolerates by design; a single-tx shape would have committed the row "
+            + "removal and left a silent orphan");
+
+        // Quota: only the two pre-throw iterations released (400 + 300 = 700). v2's 200 stays
+        // charged because its release was scoped to the never-opened tx.
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(800,
+            "v2's quota charge must remain — 1500 - (v4:400 + v3:300) = 800; releasing v2 anyway "
+            + "would indicate the release escaped the per-iteration tx");
+
+        // Blobs: v4, v3, AND v2 are gone — inner.DeleteAsync succeeded for all three before the
+        // wrapper raised on v2. This is the whole point of the test: blob gone, row intact.
+        (await fx.Provider.ExistsAsync("blob/v4")).Should().BeFalse("iter 1 deleted v4's blob");
+        (await fx.Provider.ExistsAsync("blob/v3")).Should().BeFalse("iter 2 deleted v3's blob");
+        (await fx.Provider.ExistsAsync("blob/v2")).Should().BeFalse(
+            "iter 3's inner.DeleteAsync completed before the wrapper threw — the asymmetric "
+            + "'blob gone, row intact' state per-version-scope tolerates without corrupting DB");
+        (await fx.Provider.ExistsAsync("blob/v5")).Should().BeTrue("kept version's blob must remain");
+        (await fx.Provider.ExistsAsync("blob/v1")).Should().BeTrue("iter 4 never ran — v1's blob untouched");
+    }
+
     // TC-002 extended: 5 versions with keepCount 3 → oldest 2 pruned.
     [Fact]
     public async Task PruneVersionsAsync_keepCount_3_prunes_oldest_when_five_versions_exist()
@@ -568,11 +716,23 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     /// Test-only <see cref="IStorageProvider"/> wrapper that delegates every call to
     /// <paramref name="inner"/> except <see cref="DeleteAsync"/>, which throws an
     /// <see cref="IOException"/> on the N-th invocation (1-indexed). Lets the L2 partial-failure
-    /// test simulate a transient provider outage mid-PruneVersionsAsync without modifying the
-    /// real <c>InMemoryStorageProvider</c>. The throw happens BEFORE delegating, so the inner
-    /// provider observes exactly <c>throwOnNthCall - 1</c> successful deletes from the wrapper.
+    /// tests simulate a transient provider outage mid-PruneVersionsAsync without modifying the
+    /// real <c>InMemoryStorageProvider</c>.
+    ///
+    /// <para>The <paramref name="throwAfterInner"/> flag toggles the throw's position relative to
+    /// the inner delegation:
+    /// <list type="bullet">
+    /// <item><description><c>false</c> (default) — throw BEFORE delegating. The inner provider
+    /// observes exactly <c>throwOnNthCall - 1</c> successful deletes; the N-th blob stays intact.
+    /// This is the "clean failure" shape where the row + blob + quota are all still consistent.</description></item>
+    /// <item><description><c>true</c> — delegate to inner FIRST (so the N-th blob is actually
+    /// deleted), THEN throw. This simulates the inverse partial state: blob gone but the wrapper
+    /// raised before <c>FileVersionStore</c> could open its per-iteration tx. The test pins that
+    /// per-version-scope keeps the DB row + quota charge intact in this shape, so a retry can
+    /// safely re-prune (assuming <c>DeleteAsync</c> is idempotent — separate tracker).</description></item>
+    /// </list></para>
     /// </summary>
-    private sealed class ThrowOnNthDeleteProvider(IStorageProvider inner, int throwOnNthCall) : IStorageProvider
+    private sealed class ThrowOnNthDeleteProvider(IStorageProvider inner, int throwOnNthCall, bool throwAfterInner = false) : IStorageProvider
     {
         private int _deleteCalls;
 
@@ -580,14 +740,18 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         public string ProviderType => inner.ProviderType;
 
-        public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
+        public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
         {
             var n = Interlocked.Increment(ref _deleteCalls);
-            if (n == throwOnNthCall)
+            if (n == throwOnNthCall && !throwAfterInner)
             {
-                throw new IOException($"Simulated provider failure on DeleteAsync call #{n} (path: {path})");
+                throw new IOException($"Simulated provider failure BEFORE inner delete on call #{n} (path: {path})");
             }
-            return inner.DeleteAsync(path, cancellationToken);
+            await inner.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+            if (n == throwOnNthCall && throwAfterInner)
+            {
+                throw new IOException($"Simulated provider failure AFTER inner delete on call #{n} (path: {path})");
+            }
         }
 
         public Task<IStorageFile?> GetFileAsync(string path, CancellationToken cancellationToken = default)

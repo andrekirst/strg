@@ -179,6 +179,25 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
         return admin;
     }
 
+    /// <summary>
+    /// Clears the admin user's lockout state (FailedLoginAttempts + LockedUntil). Tests that
+    /// force lockouts call this up front so they don't inherit another test's locked state
+    /// — the fixture is class-scoped, so admin state bleeds across tests by default.
+    /// </summary>
+    public async Task ResetAdminLockoutAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
+        await using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+        var admin = await db.Users.IgnoreQueryFilters().SingleAsync(u => u.Id == AdminUserId);
+        admin.FailedLoginAttempts = 0;
+        admin.LockedUntil = null;
+        await db.SaveChangesAsync();
+    }
+
     private async Task BootstrapSchemaAndSeedAsync()
     {
         // A throw-away service container so we can create the schema + insert the admin user

@@ -44,7 +44,11 @@ namespace Strg.Infrastructure.Storage;
 /// <see cref="EncryptDek"/> and <see cref="DecryptDek"/> throw
 /// <see cref="ObjectDisposedException"/> rather than silently producing enciphered output with a
 /// zeroed key. Registered as a DI singleton, so the container handles disposal at process
-/// shutdown — manual disposal is not expected in normal use.</para>
+/// shutdown — manual disposal is not expected in normal use. Note: <c>_kek</c> is a managed
+/// array; the GC may relocate it during compaction and <see cref="CryptographicOperations.ZeroMemory"/>
+/// scrubs only the current location. Prior relocated copies may persist in freed heap pages until
+/// reused. This is a known managed-memory limitation, strictly weaker than the env-var
+/// co-residency exposure already documented above.</para>
 /// </summary>
 public sealed class EnvVarKeyProvider : IKeyProvider, IDisposable
 {

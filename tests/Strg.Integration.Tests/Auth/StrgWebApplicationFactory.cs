@@ -180,6 +180,32 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     }
 
     /// <summary>
+    /// Idempotently inserts a tenant named <c>default</c>. Required by
+    /// <c>/api/v1/users/register</c>, which resolves the target tenant by that hard-coded name
+    /// (matching <c>FirstRunInitializationService</c>'s seed). The bootstrap tenant is named
+    /// <c>integration-test-tenant</c> specifically so registration tests that need the default
+    /// tenant missing (to cover the "tenant not seeded" branch) don't see one by accident.
+    /// </summary>
+    public async Task<Guid> SeedDefaultTenantAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
+        await using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+        var existing = await db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Name == "default");
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+        var tenant = new Tenant { Name = "default" };
+        db.Tenants.Add(tenant);
+        await db.SaveChangesAsync();
+        return tenant.Id;
+    }
+
+    /// <summary>
     /// Clears the admin user's lockout state (FailedLoginAttempts + LockedUntil). Tests that
     /// force lockouts call this up front so they don't inherit another test's locked state
     /// — the fixture is class-scoped, so admin state bleeds across tests by default.

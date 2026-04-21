@@ -9,6 +9,9 @@ public sealed class UserRepository(StrgDbContext db) : IUserRepository
     public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
         => db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
 
+    // IgnoreQueryFilters(): the login path runs before ITenantContext is populated (no JWT yet),
+    // so the global tenant filter would resolve against an empty TenantId. TenantId and IsDeleted
+    // are re-applied inline below so the bypass does not widen the search.
     public Task<User?> GetByEmailAsync(Guid tenantId, string email, CancellationToken cancellationToken = default)
         => db.Users.IgnoreQueryFilters()
                    .FirstOrDefaultAsync(u => u.TenantId == tenantId

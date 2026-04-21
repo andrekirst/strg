@@ -7,7 +7,9 @@ public sealed class Pbkdf2PasswordHasher : IPasswordHasher
 {
     private const int SaltSize = 16;
     private const int KeySize = 32;
-    private const int Iterations = 310_000;
+    // OWASP 2023 PBKDF2-HMAC-SHA256 guidance: 600,000 iterations.
+    // Matches ASP.NET Core Identity V3 default. Raising later requires a rehash-on-next-login shim.
+    private const int Iterations = 600_000;
     private static readonly HashAlgorithmName Algorithm = HashAlgorithmName.SHA256;
 
     public string Hash(string password)

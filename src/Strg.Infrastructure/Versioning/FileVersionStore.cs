@@ -138,24 +138,31 @@ public sealed class FileVersionStore(
 
         var provider = ResolveProvider(drive);
 
-        // Storage delete BEFORE DB delete — see contract on IFileVersionStore.PruneVersionsAsync.
-        // Any blob we can't delete (provider transient error) aborts the prune for the remaining
-        // versions too: a partial prune that leaves gaps in the version-number sequence would be
-        // harder to reason about than "retry the whole thing next time".
+        // Per-version atomic scope (STRG-043 M1). Each iteration is its own unit: blob delete →
+        // open tx → DB row remove + quota release → commit. Mid-loop failure at iteration k leaves
+        // a crisp "iterations [0..k-1] fully committed, iteration k not attempted or rolled back,
+        // iterations [k+1..] untouched" state.
+        //
+        // The previous shape (delete ALL blobs, then one big DB tx) had the inverse failure mode:
+        // a transient provider error mid-loop left storage partially gone and the DB still pointing
+        // at vanished blobs, with quota inflation lasting until a successful retry. N small
+        // transactions cost more than one large one, but for realistic N in [1..10] the overhead
+        // is negligible next to the semantic clarity.
+        //
+        // Gap semantics: since toPrune is ordered newest-of-old → very-oldest, mid-loop failure
+        // produces a middle gap in VersionNumber (e.g., {1,2,3,4,5,8,9,10}). The read path tolerates
+        // gaps — GetVersionsAsync returns whatever rows exist — and retry resumes by re-pruning
+        // from the same "beyond keepCount" tail.
         foreach (var version in toPrune)
         {
             await provider.DeleteAsync(version.StorageKey, cancellationToken).ConfigureAwait(false);
+
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            db.FileVersions.Remove(version);
+            await quotaService.ReleaseAsync(file.CreatedBy, version.Size, cancellationToken).ConfigureAwait(false);
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-
-        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        db.FileVersions.RemoveRange(toPrune);
-
-        var releasedBytes = toPrune.Sum(v => v.Size);
-        await quotaService.ReleaseAsync(file.CreatedBy, releasedBytes, cancellationToken).ConfigureAwait(false);
-
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

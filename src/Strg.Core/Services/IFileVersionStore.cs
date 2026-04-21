@@ -30,6 +30,15 @@ public interface IFileVersionStore
     /// commits the plaintext <paramref name="size"/> against the file owner's quota — all in a
     /// single transaction. Throws <see cref="QuotaExceededException"/> on shortfall (transaction
     /// rolls back, DB state unchanged, caller should delete the already-written blob).
+    ///
+    /// <para><b><paramref name="file"/> parameter state on exception.</b> The caller's
+    /// <paramref name="file"/> reference is mutated in-memory BEFORE the transaction commits —
+    /// <see cref="FileItem.VersionCount"/>, <see cref="FileItem.Size"/>,
+    /// <see cref="FileItem.ContentHash"/>, and <see cref="FileItem.StorageKey"/> are assigned to
+    /// the new-version values. If the transaction rolls back (quota exceeded or a later DB error),
+    /// those mutations persist on the caller's object but NOT in the DB. The reference is thus in
+    /// an indeterminate state; reload from <see cref="IFileRepository.GetByIdAsync"/> before
+    /// reusing it.</para>
     /// </summary>
     /// <param name="file">The owning <see cref="FileItem"/>. Its <c>VersionCount</c> is bumped.</param>
     /// <param name="storageKey">Opaque provider-internal key produced by the blob writer.</param>
@@ -67,6 +76,16 @@ public interface IFileVersionStore
     /// <para><b>keepCount semantics.</b> <c>0</c> means "keep all" (retention disabled — the
     /// default policy), NOT "delete all". <c>1</c> keeps only the latest. Any N ≥ 1 keeps the N
     /// newest and prunes the rest.</para>
+    ///
+    /// <para><b>Per-version atomicity (STRG-043 M1).</b> Each to-prune version is its own atomic
+    /// unit: blob delete → open tx → remove row + release quota → commit. Mid-loop failure at
+    /// iteration k leaves a crisp partial state: iterations <c>[0..k-1]</c> fully committed
+    /// (blob gone, row removed, quota released), iteration <c>k</c> not attempted or rolled back,
+    /// iterations <c>[k+1..]</c> untouched. Retry resumes by re-pruning the same "beyond
+    /// keepCount" tail. Because the batch is ordered newest-of-old → very-oldest, a partial
+    /// failure leaves a middle gap in <see cref="FileVersion.VersionNumber"/> (e.g., after partial
+    /// prune of {1..7} the surviving rows might be {1,2,3,4,5,8,9,10}) — read paths tolerate gaps
+    /// and never rely on contiguity.</para>
     /// </summary>
     Task PruneVersionsAsync(Guid fileId, int keepCount, CancellationToken cancellationToken = default);
 }

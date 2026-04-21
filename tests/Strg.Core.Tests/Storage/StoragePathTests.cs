@@ -90,4 +90,23 @@ public sealed class StoragePathTests
         var act = () => StoragePath.Parse("%2E%2E/secret");
         act.Should().Throw<StoragePathException>();
     }
+
+    [Fact]
+    public void Parse_PercentEncodedNullByte_Throws()
+    {
+        // %00 survives a raw-string null-byte check and only becomes \0 after URL-decode.
+        // The fix decodes first, so this must throw.
+        var act = () => StoragePath.Parse("legal%00.txt");
+        act.Should().Throw<StoragePathException>();
+    }
+
+    [Fact]
+    public void Parse_UncBackslashPath_Throws()
+    {
+        // \\server\share becomes //server/share after backslash normalization, which trips
+        // the "//" traversal rule. Without pre-normalization, the backslash form would
+        // slip past ContainsTraversal entirely.
+        var act = () => StoragePath.Parse(@"\\server\share\file.txt");
+        act.Should().Throw<StoragePathException>();
+    }
 }

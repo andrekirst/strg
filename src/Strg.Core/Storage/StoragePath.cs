@@ -9,20 +9,30 @@ public readonly struct StoragePath : IEquatable<StoragePath>
     public static StoragePath Parse(string raw)
     {
         ArgumentNullException.ThrowIfNull(raw);
-        if (raw.Contains('\0'))
+
+        // Decode BEFORE the null-byte check so `%00` cannot smuggle a NUL past the filter. A
+        // raw check first would accept "legal%00.txt" as clean, then materialize the null
+        // after decoding — classic check-then-decode ordering bug.
+        var decoded = Uri.UnescapeDataString(raw);
+        if (decoded.Contains('\0'))
         {
             throw new StoragePathException("Null byte in path");
         }
-        var decoded = Uri.UnescapeDataString(raw); // URL-decode before traversal check
-        if (ContainsTraversal(decoded))
+
+        // Collapse backslashes to forward slashes BEFORE traversal detection so UNC-style
+        // inputs (`\\server\share`) and Windows-style separators can't route around the
+        // `//` / leading-slash rules. Without this, `ContainsTraversal` sees backslashes as
+        // literal characters and the traversal check passes.
+        var normalized = decoded.Replace('\\', '/');
+        if (ContainsTraversal(normalized))
         {
             throw new StoragePathException($"Path traversal detected: {raw}");
         }
-        if (IsReservedName(decoded))
+        if (IsReservedName(normalized))
         {
             throw new StoragePathException($"Reserved path name: {raw}");
         }
-        return new StoragePath(Normalize(decoded));
+        return new StoragePath(Normalize(normalized));
     }
 
     public static bool TryParse(string raw, out StoragePath path)

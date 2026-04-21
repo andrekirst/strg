@@ -285,6 +285,43 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             + "a half-baked audit row would mislead a reader into treating the interrupted prune as complete");
     }
 
+    // STRG-043 I3 (cont): an audit-store outage must NOT fail the prune. Per IAuditService's
+    // class-level contract, non-auth callers "MUST guard their invocation against exceptions thrown
+    // by the implementation" — a logging outage turning into a data-retention-path availability
+    // failure would be a worse bug than the thing being logged. FileVersionStore.SafeAuditPruneAsync
+    // swallows non-cancellation exceptions after the prune loop already committed; this test pins
+    // that contract. A refactor that dropped the try/catch would fail here by propagating the
+    // simulated InvalidOperationException out of PruneVersionsAsync.
+    [Fact]
+    public async Task PruneVersionsAsync_succeeds_even_when_audit_write_throws()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+
+        var store = fx.BuildStoreWithAuditService(new ThrowingAuditService());
+
+        // No throw: the per-version loop committed before the audit write is attempted, so the
+        // simulated outage is swallowed per the IAuditService contract on non-auth paths.
+        await store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+
+        // Distinct assertions discriminate between the two regression shapes: (a) the swallow
+        // was removed — first assertion throws; (b) the swallow was moved somewhere that skipped
+        // the prune loop — DB/quota/storage state stays at pre-prune values.
+        (await fx.CountFileVersionsAsync(seed.File.Id)).Should().Be(1,
+            "every per-version tx committed despite the audit-layer outage");
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(300,
+            "quota release is part of the per-version tx and fires independently of the audit write");
+        (await fx.Provider.ExistsAsync("blob/v1")).Should().BeFalse("v1 blob deleted before its per-version tx");
+        (await fx.Provider.ExistsAsync("blob/v2")).Should().BeFalse("v2 blob deleted before its per-version tx");
+        (await fx.Provider.ExistsAsync("blob/v3")).Should().BeTrue("v3 retained (keepCount=1, newest-first)");
+    }
+
     [Fact]
     public async Task PruneVersionsAsync_when_existing_count_within_keep_limit_is_noop()
     {
@@ -788,6 +825,38 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var audit = new AuditService(db);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
+
+        /// <summary>
+        /// Builds a store wired against a test-supplied <see cref="IAuditService"/>. Used by the
+        /// audit-outage regression test to pin the "prune succeeds even if audit write throws"
+        /// contract — SafeAuditPruneAsync's swallow exists precisely for this shape.
+        /// </summary>
+        public IFileVersionStore BuildStoreWithAuditService(IAuditService audit)
+        {
+            var db = NewDbContext();
+            var versionRepo = new FileVersionRepository(db);
+            var fileRepo = new FileRepository(db);
+            var driveRepo = new DriveRepository(db);
+            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota, audit, NullLogger<FileVersionStore>.Instance);
+        }
+    }
+
+    // Test-only <see cref="IAuditService"/> that throws on every LogAsync. Lets the audit-outage
+    // regression test verify the prune loop commits regardless of audit-layer failures. The login
+    // helpers throw NotImplementedException on purpose — the prune path never reaches them, and a
+    // test that accidentally exercises a different code path surfaces loudly rather than silently
+    // no-op'ing on a hollow stub.
+    private sealed class ThrowingAuditService : IAuditService
+    {
+        public Task LogAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Simulated audit-store outage for regression test");
+
+        public Task LogLoginSuccessAsync(Guid userId, Guid tenantId, string? clientIp, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException("ThrowingAuditService only exercises LogAsync; prune path never invokes login helpers");
+
+        public Task LogLoginFailureAsync(string? email, string? clientIp, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException("ThrowingAuditService only exercises LogAsync; prune path never invokes login helpers");
     }
 
     /// <summary>

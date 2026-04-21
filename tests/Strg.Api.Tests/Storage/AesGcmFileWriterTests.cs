@@ -59,9 +59,9 @@ public sealed class AesGcmFileWriterTests
     [Fact]
     public async Task Two_writes_of_same_plaintext_produce_different_ciphertexts()
     {
-        // Fresh DEK per write + random nonce per write → even identical inputs produce distinct
-        // envelopes. Violation indicates either DEK reuse or nonce reuse — both are AES-GCM
-        // catastrophic failures.
+        // Fresh DEK per write + random file_nonce per write → even identical inputs produce
+        // distinct envelopes. Violation indicates either DEK reuse or nonce reuse — both are
+        // AES-GCM catastrophic failures.
         var (writer, inner) = CreateWriter();
         var plaintext = Encoding.UTF8.GetBytes("same bytes every time");
 
@@ -93,7 +93,8 @@ public sealed class AesGcmFileWriterTests
 
         var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
 
-        // Flip a byte inside the ciphertext region (after 12-byte nonce header, before 16-byte tag).
+        // Envelope: header(20) + ciphertext(21) + tag(16) = 57 bytes. Middle byte (28) lands in
+        // the ciphertext region — flip should break the final-chunk tag.
         var envelope = await ReadAllInnerAsync(inner, "file.txt");
         envelope[envelope.Length / 2] ^= 0xFF;
         await inner.WriteAsync("file.txt", new MemoryStream(envelope));
@@ -105,6 +106,141 @@ public sealed class AesGcmFileWriterTests
             await stream.CopyToAsync(buf);
         };
         await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public async Task ReadAsync_detects_nonce_tampering()
+    {
+        // The GCM tag is computed over (nonce, AAD, ciphertext). AAD carries the whole file_nonce
+        // (envelope bytes 8..19), so flipping any byte in that window must produce a tag mismatch —
+        // otherwise we'd accept envelopes whose nonce was re-targeted under the same DEK, a
+        // catastrophic GCM failure mode.
+        var (writer, inner) = CreateWriter();
+        var plaintext = Encoding.UTF8.GetBytes("nonce-tamper payload");
+
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+
+        var envelope = await ReadAllInnerAsync(inner, "file.txt");
+        envelope[10] ^= 0xFF; // inside the 12-byte file_nonce region (envelope bytes 8..19)
+        await inner.WriteAsync("file.txt", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public async Task ReadAsync_detects_file_nonce_padding_tampering()
+    {
+        // Bytes 4..11 of file_nonce are NOT consumed by the per-chunk nonce derivation (which
+        // only uses bytes 0..3). Without AAD binding, tampering them would slip through silently.
+        // This test pins down that the AAD covers the full 12-byte file_nonce, not just the 4-byte
+        // salt used in the nonce formula.
+        var (writer, inner) = CreateWriter();
+        var plaintext = Encoding.UTF8.GetBytes("padding-tamper payload");
+
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+
+        var envelope = await ReadAllInnerAsync(inner, "file.txt");
+        envelope[15] ^= 0xFF; // inside file_nonce bytes 4..11 (not used by nonce formula)
+        await inner.WriteAsync("file.txt", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public async Task ReadAsync_detects_tag_tampering()
+    {
+        // The trailing 16 bytes are the final chunk's GCM tag. Flipping any byte there is the
+        // cheapest possible forgery attempt — the library must still reject it. Paired with the
+        // nonce and mid-ciphertext tamper tests, this pins down that EVERY region of the envelope
+        // is authenticated, not just the ciphertext body.
+        var (writer, inner) = CreateWriter();
+        var plaintext = Encoding.UTF8.GetBytes("tag-tamper payload");
+
+        var result = await writer.WriteAsync("file.txt", new MemoryStream(plaintext));
+
+        var envelope = await ReadAllInnerAsync(inner, "file.txt");
+        envelope[^1] ^= 0xFF; // last byte of the 16-byte final-chunk tag
+        await inner.WriteAsync("file.txt", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("file.txt", result.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public async Task ReadAsync_detects_chunk_truncation()
+    {
+        // Drop the final chunk of a two-chunk envelope. The previous chunk was encoded with
+        // is_final=0 in its AAD, so replaying it against is_final=1 AAD on read (because the
+        // reader now sees it as the last chunk) must fail the tag check. This is the whole point
+        // of binding is_final into the AAD.
+        var (writer, inner) = CreateWriter();
+        var plaintext = new byte[130 * 1024]; // 3 chunks: 64K + 64K + 2K
+        RandomNumberGenerator.Fill(plaintext);
+
+        var result = await writer.WriteAsync("big.bin", new MemoryStream(plaintext));
+
+        var envelope = await ReadAllInnerAsync(inner, "big.bin");
+        // Chop the final (2K + 16-byte tag) chunk.
+        var truncated = envelope.AsSpan(0, envelope.Length - (2 * 1024 + 16)).ToArray();
+        await inner.WriteAsync("big.bin", new MemoryStream(truncated));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("big.bin", result.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<AuthenticationTagMismatchException>();
+    }
+
+    [Fact]
+    public async Task Concurrent_writes_and_reads_all_roundtrip()
+    {
+        // Regression guard: if a future refactor ever introduces shared mutable state on the
+        // writer (e.g., a pooled envelope buffer, a cached AesGcm instance), this test is
+        // engineered to surface the corruption — each iteration uses a distinct payload and
+        // asserts byte-exact recovery. 200 iterations is enough to shake loose rare races without
+        // making the suite annoyingly slow (fewer than the old single-shot version because each
+        // roundtrip is heavier now).
+        var (writer, _) = CreateWriter();
+        const int iterations = 200;
+
+        var plaintexts = new byte[iterations][];
+        for (var i = 0; i < iterations; i++)
+        {
+            plaintexts[i] = Encoding.UTF8.GetBytes($"concurrent-payload-{i:D4}");
+        }
+
+        var writeResults = new EncryptedWriteResult[iterations];
+        await Parallel.ForEachAsync(Enumerable.Range(0, iterations), async (i, ct) =>
+        {
+            writeResults[i] = await writer.WriteAsync($"concurrent/file-{i:D4}.bin", new MemoryStream(plaintexts[i]), ct);
+        });
+
+        await Parallel.ForEachAsync(Enumerable.Range(0, iterations), async (i, ct) =>
+        {
+            await using var stream = await writer.ReadAsync($"concurrent/file-{i:D4}.bin", writeResults[i].WrappedDek, cancellationToken: ct);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf, ct);
+            buf.ToArray().Should().Equal(plaintexts[i]);
+        });
     }
 
     [Fact]
@@ -192,9 +328,9 @@ public sealed class AesGcmFileWriterTests
     [Fact]
     public async Task ReadAsync_on_truncated_envelope_throws_invalid_data()
     {
-        // Envelope shorter than nonce+tag (12+16=28 bytes) can't even be a well-formed envelope —
-        // reject before handing to AesGcm so the error message is actionable. Use a legitimate
-        // wrapped DEK so the KEK-unwrap check (which fires BEFORE the envelope read) passes.
+        // Envelope shorter than the 20-byte header can't be well-formed — reject before handing
+        // any bytes to AesGcm so the error message is actionable. Use a legitimate wrapped DEK so
+        // the KEK-unwrap check (which fires BEFORE the envelope read) passes.
         var (writer, inner) = CreateWriter();
         var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }));
 
@@ -212,15 +348,38 @@ public sealed class AesGcmFileWriterTests
     }
 
     [Fact]
+    public async Task ReadAsync_rejects_wrong_magic_bytes()
+    {
+        // Header with an unknown magic is almost certainly either a corrupted strg envelope or a
+        // different file format that slipped into an encrypted drive. Reject fast with a clear
+        // error rather than letting AesGcm surface a tag mismatch on random header bytes.
+        var (writer, inner) = CreateWriter();
+        var good = await writer.WriteAsync("good", new MemoryStream(new byte[] { 1, 2, 3 }));
+
+        var envelope = await ReadAllInnerAsync(inner, "good");
+        envelope[0] ^= 0xFF; // flip first magic byte
+        await inner.WriteAsync("good", new MemoryStream(envelope));
+
+        var act = async () =>
+        {
+            await using var stream = await writer.ReadAsync("good", good.WrappedDek);
+            using var buf = new MemoryStream();
+            await stream.CopyToAsync(buf);
+        };
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*magic bytes*");
+    }
+
+    [Fact]
     public async Task Empty_file_roundtrips_correctly()
     {
-        // Zero-byte plaintext is a legitimate file — AES-GCM authenticates the empty string and
-        // produces a 28-byte envelope (nonce + tag only).
+        // Zero-byte plaintext still produces an explicit final chunk: header(20) + tag(16) = 36
+        // bytes. Without that trailing tag the reader couldn't tell "legitimate empty file" from
+        // "envelope truncated after header" — both would look like 20 bytes.
         var (writer, inner) = CreateWriter();
         var result = await writer.WriteAsync("empty.bin", new MemoryStream(Array.Empty<byte>()));
 
         var envelope = await ReadAllInnerAsync(inner, "empty.bin");
-        envelope.Should().HaveCount(28); // 12 nonce + 0 ciphertext + 16 tag
+        envelope.Should().HaveCount(36); // 8 magic + 12 file_nonce + 0 ciphertext + 16 tag
         result.Length.Should().Be(0);
 
         await using var stream = await writer.ReadAsync("empty.bin", result.WrappedDek);
@@ -230,15 +389,43 @@ public sealed class AesGcmFileWriterTests
     }
 
     [Fact]
-    public async Task WriteAsync_rejects_file_above_v0_1_cap()
+    public async Task Multi_chunk_file_roundtrips_correctly()
     {
+        // 130 KiB straddles two full chunks + a partial final chunk — exercises rotation of the
+        // lookahead buffers AND the is_final=false → is_final=true transition. A roundtrip failure
+        // here (but not on single-chunk files) almost always means the AAD is wrong on either the
+        // penultimate or the final chunk.
         var (writer, _) = CreateWriter();
-        var oversized = new MemoryStream(new byte[AesGcmFileWriter.MaxEncryptedFileSizeBytes + 1]);
+        var plaintext = new byte[130 * 1024];
+        RandomNumberGenerator.Fill(plaintext);
 
-        var act = () => writer.WriteAsync("big.bin", oversized);
+        var writeResult = await writer.WriteAsync("big.bin", new MemoryStream(plaintext));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*v0.1 encrypted-drive limit*");
+        await using var readStream = await writer.ReadAsync("big.bin", writeResult.WrappedDek);
+        using var buffer = new MemoryStream();
+        await readStream.CopyToAsync(buffer);
+
+        buffer.ToArray().Should().Equal(plaintext);
+        writeResult.Length.Should().Be(plaintext.Length);
+    }
+
+    [Fact]
+    public async Task Chunk_aligned_file_roundtrips_correctly()
+    {
+        // A file whose length is an exact multiple of the chunk size is the nastiest edge for
+        // lookahead-one-chunk streamers: the writer must still emit a 16-byte tag-only final
+        // chunk for the last index to satisfy the "every file ends with is_final=1" invariant.
+        var (writer, _) = CreateWriter();
+        var plaintext = new byte[64 * 1024 * 2]; // exactly two full chunks
+        RandomNumberGenerator.Fill(plaintext);
+
+        var writeResult = await writer.WriteAsync("aligned.bin", new MemoryStream(plaintext));
+
+        await using var readStream = await writer.ReadAsync("aligned.bin", writeResult.WrappedDek);
+        using var buffer = new MemoryStream();
+        await readStream.CopyToAsync(buffer);
+
+        buffer.ToArray().Should().Equal(plaintext);
     }
 
     [Fact]

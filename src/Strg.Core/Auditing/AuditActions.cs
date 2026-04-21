@@ -20,4 +20,18 @@ public static class AuditActions
     /// <see cref="System.Guid.Empty"/> to avoid revealing whether a given email or subject exists.
     /// </summary>
     public const string LoginFailure = "login.failure";
+
+    /// <summary>
+    /// A user-scoped tag was assigned (or its value replaced) on a file. ResourceType is
+    /// <c>"FileItem"</c>, ResourceId is the file id, Details carries the (userId, key, value)
+    /// triple so post-hoc reports can reconstruct the assignment without joining other tables.
+    /// </summary>
+    public const string TagAssigned = "tag.assigned";
+
+    /// <summary>
+    /// A user-scoped tag was removed from a file. ResourceType is <c>"FileItem"</c>,
+    /// ResourceId is the file id, Details carries (userId, key). Idempotent removes (no row
+    /// matched) do NOT emit — the audit log reflects state changes, not operator intent.
+    /// </summary>
+    public const string TagRemoved = "tag.removed";
 }

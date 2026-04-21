@@ -56,6 +56,8 @@ builder.Services.AddScoped<IQuotaService>(sp => sp.GetRequiredService<QuotaServi
 // because consumer-side policy enforcement (AuthPolicies.Admin) gates every call site.
 builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<QuotaService>());
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
+builder.Services.AddScoped<ITagRepository, TagRepository>();
+builder.Services.AddScoped<ITagService, TagService>();
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future

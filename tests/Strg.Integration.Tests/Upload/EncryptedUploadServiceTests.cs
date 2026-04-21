@@ -45,8 +45,9 @@ internal sealed class FixedTenantContext(Guid id) : ITenantContext
 ///   transaction commits the FileVersion row, and only then a promote-step moves the blob to
 ///   its final StorageKey. A short-window sweep collects temp keys whose owning tx rolled back.</item>
 /// </list>
-/// Neither exists at HEAD. <see cref="Upload_failure_on_quota_orphans_ciphertext_blob_TODO_STRG026_hash2"/>
-/// is the regression gate — its assertion polarity flips when either protocol lands.</para>
+/// Neither exists at HEAD. <see cref="Upload_failure_on_quota_orphans_ciphertext_blob_TODO_STRG034"/>
+/// is the regression gate — its assertion polarity flips when STRG-034's TUS endpoint lands with
+/// the two-phase temp→promote protocol (the orchestrator designated to close this gap in production).</para>
 ///
 /// <para><b>Second orphan shape (security-reviewer STRG-043 audit I8).</b> Soft-deleted FileItems
 /// leak BOTH their ciphertext blobs AND the quota charge on the owner until the reaper runs.
@@ -118,27 +119,35 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Upload_failure_on_quota_orphans_ciphertext_blob_TODO_STRG026_hash2()
+    public async Task Upload_failure_on_quota_orphans_ciphertext_blob_TODO_STRG034()
     {
         // REGRESSION GATE — codifies the orphan-ciphertext gap STRG-026 devils-advocate #2 tracks.
         //
-        // Today: IEncryptingFileWriter.WriteAsync commits the blob to storage BEFORE
-        // IFileVersionStore.CreateVersionAsync opens its transaction. When that transaction fails
-        // (quota here; could equally be a unique-index race on (FileId, VersionNumber), DB
-        // connectivity loss mid-SaveChanges, a killed process, etc.), the DB state rolls back
-        // cleanly but the blob persists on disk with no FileVersion row pointing at it — an
-        // unreachable leak that only a full-scan reaper can collect.
+        // Today (via the test-only NaiveEncryptedUploadService): IEncryptingFileWriter.WriteAsync
+        // commits the blob to storage BEFORE IFileVersionStore.CreateVersionAsync opens its
+        // transaction. When that transaction fails (quota here; could equally be a unique-index
+        // race on (FileId, VersionNumber), DB connectivity loss mid-SaveChanges, a killed process,
+        // etc.), the DB state rolls back cleanly but the blob persists on disk with no FileVersion
+        // row pointing at it — an unreachable leak.
         //
-        // STRG-036 as designed sweeps soft-deleted FileItems only
-        // (docs/issues/strg/STRG-036-soft-delete-purge-job.md, lines 117-126). It does NOT scan
-        // for blobs-without-matching-FileVersion. That's a separate sweep type — or alternatively
-        // a two-phase upload protocol (temp key → promote on tx-commit) prevents the orphan from
-        // ever reaching the final key space.
+        // The production closure is STRG-034 (TUS upload endpoint): its ITusStore implementation
+        // is designated as the two-phase orchestrator — write ciphertext to a temp-namespaced
+        // storage key, commit FileVersion + FileKey + quota in a single DB tx, and only then
+        // promote the temp key to the final key via IStorageProvider.MoveAsync. With that
+        // protocol, a DB-tx failure cleans up the temp blob via IStorageProvider.DeleteAsync
+        // (idempotent) and the final key is never reached. See
+        // docs/issues/strg/STRG-034-tus-upload-endpoint.md → "Two-Phase Upload Protocol" and
+        // Task #72 for the cross-reference checklist.
         //
-        // When STRG-032 / STRG-033 lands one of those protocols:
+        // STRG-036 (soft-delete purge job) is the backstop for phase-3 cleanup flakes
+        // (post-commit MoveAsync failure, DELETE-on-abort failure) via a temp-key sweep added in
+        // STRG-034's scope — it is NOT the primary recovery path.
+        //
+        // When STRG-034 lands:
         //   1. Flip the assertion below from BeTrue() to BeFalse().
-        //   2. Rename this test to drop the _TODO_ prefix (e.g. _reaps_or_prevents_orphan).
-        //   3. Delete this block comment (the fix will make it stale).
+        //   2. Rename this test to drop the _TODO_ prefix (e.g. _is_prevented_by_two_phase_protocol).
+        //   3. Retire NaiveEncryptedUploadService and route this test through the production orchestrator.
+        //   4. Delete this block comment (the fix will make it stale).
         // The red-now / green-after-fix polarity is the whole point: the fix author CANNOT
         // merge without updating the test, which is the only way to prevent a silent regression.
         var fx = await CreateFixtureAsync();
@@ -158,9 +167,9 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
 
         uploadService.LastStorageKey.Should().NotBeEmpty("the writer must have run before the DB tx failed");
         (await fx.Provider.ExistsAsync(uploadService.LastStorageKey)).Should().BeTrue(
-            "orphan ciphertext persists today because the writer commits before the DB tx — STRG-026 #2 gap; "
-            + "flip this to BeFalse when a blob-without-matching-FileVersion reaper OR a two-phase upload "
-            + "protocol lands, and update the test name + block comment above to match");
+            "orphan ciphertext persists today because NaiveEncryptedUploadService commits the blob before the "
+            + "DB tx — STRG-026 #2 gap; flip this to BeFalse when STRG-034's two-phase TUS orchestrator lands "
+            + "(temp-key write → DB commit → MoveAsync promote), and update the test name + block comment above to match");
     }
 
     [Fact]

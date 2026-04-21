@@ -14,6 +14,18 @@ namespace Strg.Core.Storage;
 /// stages the FileKey + FileVersion rows, and commits them together — DB failure rolls both back
 /// and the orphan ciphertext is reaped by the purge job (STRG-036).</para>
 ///
+/// <para><b>Two-phase upload contract (STRG-034).</b> The production caller — the TUS upload
+/// endpoint implemented in STRG-034 — MUST invoke this writer into a temp-namespaced storage key
+/// (e.g., <c>uploads/temp/{driveId}/{ulid}</c>), then on successful DB commit (FileVersion row +
+/// FileKey row + <see cref="Strg.Core.Services.IQuotaService.CommitAsync"/>) promote the temp key
+/// to the final key via <see cref="IStorageProvider.MoveAsync"/>. On DB-tx failure, the temp blob
+/// is cleaned up by <see cref="IStorageProvider.DeleteAsync"/> (best-effort, idempotent per the
+/// provider contract). This protocol closes the orphan-ciphertext gap captured in STRG-026 #2: the
+/// temp blob never reaches the final key space on failure, so the purge job referenced above is
+/// only a backstop for phase-4-cleanup flakes, not the primary recovery path. The test suite's
+/// <c>NaiveEncryptedUploadService</c> is deliberately NOT two-phase — it is the regression-pinning
+/// device for the gap, not production.</para>
+///
 /// <para><b>Out-of-scope (v0.2 trackers):</b> KEK rotation (needs a key-version return value),
 /// chunked streaming encryption (the v0.1 implementation buffers in memory; single-shot AES-GCM
 /// forces a file-size cap).</para>

@@ -18,7 +18,23 @@ namespace Strg.Infrastructure.Storage;
 /// NOT resolve symlinks — it only normalizes the textual form. A symlink inside <c>basePath</c>
 /// can therefore pass the <c>StartsWith</c> check and still point outside. We check
 /// <see cref="FileSystemInfo.LinkTarget"/> on every materialized node and treat any non-null
-/// target as <c>not found</c> to stay consistent with the "file does not exist" contract.</para>
+/// target as <c>not found</c> (reads) or reject the operation (writes/copies) to stay consistent
+/// with the "file does not exist" contract.</para>
+///
+/// <para><b>Drive-root guard.</b> Destructive and mutating ops (<see cref="DeleteAsync"/>,
+/// <see cref="WriteAsync"/>, both endpoints of <see cref="MoveAsync"/>) route through
+/// <c>ResolveChildPath</c>, which refuses paths that resolve to the base directory itself
+/// (<c>""</c>, <c>"."</c>, <c>"./"</c>, …). Without this guard, <c>DeleteAsync("")</c> would
+/// invoke <c>Directory.Delete(base, recursive: true)</c> and take the entire drive with it.</para>
+///
+/// <para><b>Known limitation — TOCTOU on symlink checks (tracked for v0.2).</b> The stat-based
+/// <c>LinkTarget</c> probe and the subsequent <c>FileStream</c> / <c>File.Copy</c> call are
+/// separate syscalls; an attacker with direct filesystem write under <c>basePath</c> could swap
+/// a regular file for a symlink between the check and the open. This class assumes a trust
+/// boundary where the drive root is owned by the strg service account and attackers can only
+/// reach the filesystem through the <see cref="IStorageProvider"/> API — which never creates
+/// symlinks. Closing the race requires <c>P/Invoke open(2)</c> with <c>O_NOFOLLOW</c>; .NET
+/// does not surface that flag on <see cref="FileStream"/>. See STRG-024 v0.2 hardening tracker.</para>
 /// </summary>
 public sealed class LocalFileSystemProvider : IStorageProvider
 {

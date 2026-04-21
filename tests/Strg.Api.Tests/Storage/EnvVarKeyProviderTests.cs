@@ -38,6 +38,32 @@ public sealed class EnvVarKeyProviderTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    // The empty-string case goes through the same IsNullOrWhiteSpace guard, but a whitespace-only
+    // input is the specific shape an operator tends to produce by accident (copy-paste newline,
+    // a YAML quirk that turns a blank line into a space-only value). Pinning it explicitly makes
+    // the guard's intent visible and catches a future refactor that narrows to IsNullOrEmpty.
+    [Fact]
+    public void Constructor_throws_when_env_var_is_whitespace_only()
+    {
+        var act = () => new EnvVarKeyProvider(base64Kek: "   \t\n  ");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{EnvVarKeyProvider.EnvVarName}*");
+    }
+
+    // All-zero KEK: a zero-initialised buffer accidentally base64-encoded is the most common
+    // shape of a "KEK not actually generated" misconfig. It passes the length check but defeats
+    // the envelope. The explicit guard in the constructor keeps the server from starting with
+    // a provably-useless key, even at the cost of rejecting the (vanishingly improbable) case
+    // of a genuine CSPRNG producing 32 zero bytes.
+    [Fact]
+    public void Constructor_throws_when_kek_is_all_zero()
+    {
+        var allZero = Convert.ToBase64String(new byte[32]);
+        var act = () => new EnvVarKeyProvider(base64Kek: allZero);
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*all-zero*");
+    }
+
     [Fact]
     public void Constructor_throws_when_env_var_is_not_base64()
     {
@@ -182,5 +208,76 @@ public sealed class EnvVarKeyProviderTests
         var act = () => provider.DecryptDek(truncated);
         act.Should().Throw<ArgumentException>()
             .WithMessage("*60 bytes*");
+    }
+
+    // Concurrency smoke: the provider is registered as a DI singleton and will be called from
+    // every upload/download request in parallel. Each EncryptDek constructs a fresh AesGcm, so
+    // the only shared state is the read-only _kek buffer — but a regression that accidentally
+    // introduces per-instance mutable state (shared nonce buffer, cached cipher) would corrupt
+    // envelopes under load and the symptom would be AuthenticationTagMismatchException under
+    // concurrent traffic only. 1000 iterations is enough to make a race reliably visible without
+    // making the test slow.
+    [Fact]
+    public void EncryptDek_handles_concurrent_calls()
+    {
+        var provider = new EnvVarKeyProvider(ValidKekBase64);
+        const int iterations = 1000;
+
+        Parallel.For(0, iterations, _ =>
+        {
+            var dek = provider.GenerateDataKey();
+            var wrapped = provider.EncryptDek(dek);
+            var unwrapped = provider.DecryptDek(wrapped);
+            unwrapped.Should().Equal(dek);
+        });
+    }
+
+    [Fact]
+    public void GenerateDataKey_throws_after_dispose()
+    {
+        var provider = new EnvVarKeyProvider(ValidKekBase64);
+        provider.Dispose();
+
+        var act = () => provider.GenerateDataKey();
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void EncryptDek_throws_after_dispose()
+    {
+        var provider = new EnvVarKeyProvider(ValidKekBase64);
+        var dek = provider.GenerateDataKey();
+        provider.Dispose();
+
+        // After Dispose, _kek is zeroed — if the disposal guard were missing, EncryptDek would
+        // silently produce an envelope under an all-zero KEK, and every future DecryptDek with
+        // the real KEK would fail. Throwing here is the fail-fast signal.
+        var act = () => provider.EncryptDek(dek);
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void DecryptDek_throws_after_dispose()
+    {
+        var provider = new EnvVarKeyProvider(ValidKekBase64);
+        var dek = provider.GenerateDataKey();
+        var wrapped = provider.EncryptDek(dek);
+        provider.Dispose();
+
+        var act = () => provider.DecryptDek(wrapped);
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void Dispose_is_idempotent()
+    {
+        // DI containers generally dispose singletons exactly once, but a double-dispose must not
+        // throw — otherwise a test-harness ServiceProvider with a manual Dispose followed by
+        // container shutdown would crash on the way down.
+        var provider = new EnvVarKeyProvider(ValidKekBase64);
+        provider.Dispose();
+
+        var act = () => provider.Dispose();
+        act.Should().NotThrow();
     }
 }

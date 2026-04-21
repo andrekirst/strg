@@ -16,10 +16,37 @@ namespace Strg.Infrastructure.Storage;
 /// for the <c>file_keys</c> table and will require a migration.</para>
 ///
 /// <para><b>Fail-fast on startup.</b> The constructor validates the env var and throws if it
-/// is missing, not base64, or not exactly 32 bytes. This is deliberate — an encryption-enabled
-/// Drive must not limp along with a misconfigured KEK and silently corrupt DEKs at write time.</para>
+/// is missing, not base64, not exactly 32 bytes, or all-zero. The all-zero guard catches the
+/// common operator misconfig where a zero-initialised buffer is accidentally base64-encoded
+/// into the env var; such a KEK would produce a valid AES-GCM envelope but with zero entropy.
+/// An encryption-enabled Drive must not limp along with a misconfigured KEK and silently
+/// corrupt DEKs at write time.</para>
+///
+/// <para><b>Operator responsibility: CSPRNG-generated KEK.</b> The 32-byte KEK MUST be generated
+/// with a cryptographically-secure random source — e.g., <c>openssl rand -base64 32</c> or
+/// <c>head -c 32 /dev/urandom | base64</c>. A predictable KEK (password-derived without a KDF,
+/// deterministic seed, non-random buffer) defeats the entire at-rest encryption envelope.
+/// The all-zero guard catches the most visible misconfig but CANNOT detect low-entropy inputs.</para>
+///
+/// <para><b>Env-var co-residency caveat.</b> Once loaded, the KEK material lives in managed
+/// memory (<c>_kek</c>) AND continues to be visible in the process environment block:
+/// <c>/proc/&lt;pid&gt;/environ</c> on Linux, <c>ps eww</c>, <c>docker inspect</c>'s
+/// <c>Config.Env</c>, and crash dumps that capture the env block. This is an intrinsic
+/// limitation of env-var-based secret delivery; operators who need stronger isolation (the KEK
+/// not reachable by sibling processes on the same host) should use a KMS-backed
+/// <see cref="IKeyProvider"/> implementation, not this one. <see cref="Dispose"/> zeros the
+/// managed copy but does NOT clear the env-var block — the caller would need to also
+/// <c>Environment.SetEnvironmentVariable(EnvVarName, null)</c> which is a separate concern and
+/// racy against concurrent readers of the environment.</para>
+///
+/// <para><b>Disposal.</b> The class implements <see cref="IDisposable"/> and zeros <c>_kek</c>
+/// on dispose via <see cref="CryptographicOperations.ZeroMemory"/>. After disposal, calls to
+/// <see cref="EncryptDek"/> and <see cref="DecryptDek"/> throw
+/// <see cref="ObjectDisposedException"/> rather than silently producing enciphered output with a
+/// zeroed key. Registered as a DI singleton, so the container handles disposal at process
+/// shutdown — manual disposal is not expected in normal use.</para>
 /// </summary>
-public sealed class EnvVarKeyProvider : IKeyProvider
+public sealed class EnvVarKeyProvider : IKeyProvider, IDisposable
 {
     public const string EnvVarName = "STRG_SECURITY__ENCRYPTIONKEY";
     private const int KekLengthBytes = 32;
@@ -28,6 +55,7 @@ public sealed class EnvVarKeyProvider : IKeyProvider
     private const int TagLengthBytes = 16;
 
     private readonly byte[] _kek;
+    private bool _disposed;
 
     public EnvVarKeyProvider()
         : this(Environment.GetEnvironmentVariable(EnvVarName))
@@ -63,13 +91,46 @@ public sealed class EnvVarKeyProvider : IKeyProvider
                 + $"AES-256 requires exactly {KekLengthBytes} bytes.");
         }
 
+        // All-zero KEK = operator misconfig. A zero-initialised buffer accidentally base64-encoded
+        // into the env var would produce a valid-shape but zero-entropy KEK. The explicit loop
+        // (vs LINQ All) avoids any iterator boxing of the secret buffer. FixedTimeEquals is used
+        // for habit even though timing doesn't matter at startup — it's still a secret-material
+        // comparison and unconditional branches on secrets are a bad pattern to establish.
+        if (CryptographicOperations.FixedTimeEquals(kek, new byte[KekLengthBytes]))
+        {
+            throw new InvalidOperationException(
+                $"Environment variable '{EnvVarName}' decoded to an all-zero buffer. "
+                + "Generate a cryptographically-random KEK (e.g., 'openssl rand -base64 32' or "
+                + "'head -c 32 /dev/urandom | base64') — a zero KEK defeats the at-rest envelope.");
+        }
+
         _kek = kek;
     }
 
-    public byte[] GenerateDataKey() => RandomNumberGenerator.GetBytes(DekLengthBytes);
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        CryptographicOperations.ZeroMemory(_kek);
+        _disposed = true;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    public byte[] GenerateDataKey()
+    {
+        ThrowIfDisposed();
+        return RandomNumberGenerator.GetBytes(DekLengthBytes);
+    }
 
     public byte[] EncryptDek(byte[] dek)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(dek);
         if (dek.Length != DekLengthBytes)
         {
@@ -93,6 +154,7 @@ public sealed class EnvVarKeyProvider : IKeyProvider
 
     public byte[] DecryptDek(byte[] encryptedDek)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(encryptedDek);
         var expected = NonceLengthBytes + DekLengthBytes + TagLengthBytes;
         if (encryptedDek.Length != expected)

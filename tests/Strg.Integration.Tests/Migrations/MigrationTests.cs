@@ -158,6 +158,52 @@ public sealed class MigrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task TC007_Drives_ProviderConfig_rejects_values_over_8192_chars()
+    {
+        await using var ctx = await BuildContextForFreshDatabaseAsync();
+        await ctx.Database.MigrateAsync();
+
+        // Defense-in-depth on admin-set ProviderConfig JSON (task #56 / STRG-043 L3).
+        // The DB column is varchar(8192); a raw INSERT with 8193 chars must fail with SqlState
+        // 22001 (string_data_right_truncation). If a future change drops the length cap, this
+        // test makes the regression loud.
+        var conn = ctx.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+        {
+            await conn.OpenAsync();
+        }
+
+        var oversized = new string('x', 8193);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO "Drives"
+                ("Id", "TenantId", "Name", "ProviderType", "ProviderConfig", "VersioningPolicy",
+                 "EncryptionEnabled", "IsDefault", "CreatedAt", "UpdatedAt", "DeletedAt")
+            VALUES
+                (@id, @tenantId, 'd', 'local', @cfg, '{}', false, false,
+                 NOW(), NOW(), NULL)
+            """;
+        AddParam(cmd, "id", Guid.NewGuid());
+        AddParam(cmd, "tenantId", Guid.NewGuid());
+        AddParam(cmd, "cfg", oversized);
+
+        var act = async () => await cmd.ExecuteNonQueryAsync();
+
+        var ex = await act.Should().ThrowAsync<PostgresException>();
+        ex.Which.SqlState.Should().Be("22001",
+            "Drives.ProviderConfig is capped at varchar(8192) as admin-hardening defense-in-depth");
+
+        static void AddParam(System.Data.Common.DbCommand cmd, string name, object value)
+        {
+            var p = cmd.CreateParameter();
+            p.ParameterName = name;
+            p.Value = value;
+            cmd.Parameters.Add(p);
+        }
+    }
+
+    [Fact]
     public async Task TC006_Tags_ValueType_check_constraint_rejects_invalid_values()
     {
         await using var ctx = await BuildContextForFreshDatabaseAsync();

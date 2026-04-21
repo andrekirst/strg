@@ -21,13 +21,22 @@ namespace Strg.Core.Services;
 /// expensive, and the failure mode (stale overwrite) is tractable as a caller-side rule.</para>
 ///
 /// <para><b>Missing-user surface.</b> A user that does not exist in the caller's tenant — a
-/// typo'd userId, a cross-tenant probe, or a soft-deleted account — collapses into
-/// <see cref="QuotaExceededException"/> on <see cref="CheckAsync"/>, <see cref="CommitAsync"/>,
-/// and <see cref="GetInfoAsync"/>. This is intentional: a distinguishing error would turn the
-/// three methods into enumeration oracles (is user X in my tenant? how much quota do they
-/// have?). Admin/diagnostic paths that legitimately need to distinguish "missing user" from
-/// "over quota" should use <see cref="IQuotaAdminService.TryCommitAsync"/>, which is wired
-/// only into authenticated admin endpoints.</para>
+/// typo'd userId, a cross-tenant probe, or a soft-deleted account — throws the same
+/// <see cref="QuotaExceededException"/> *type* as a real quota shortfall on
+/// <see cref="CheckAsync"/>, <see cref="CommitAsync"/>, and <see cref="GetInfoAsync"/>. This
+/// uniform exception type means a caller who only inspects the type cannot probe existence.</para>
+///
+/// <para><b>Asymmetry caveat (load-bearing).</b> Only <see cref="CommitAsync"/> is fully symmetric
+/// — it throws on both missing-user AND over-quota, so the throw-vs-success channel itself reveals
+/// nothing. <see cref="CheckAsync"/> and <see cref="GetInfoAsync"/> return a
+/// <see cref="QuotaCheckResult"/> / <see cref="QuotaInfo"/> on existing users (over quota or not)
+/// and throw only on missing — so a caller passing an arbitrary userId can still distinguish
+/// existence by throws-vs-returns. At v0.1 this is harmless because every Check/GetInfo call
+/// site passes the JWT-sub userId (the caller's own), but any future admin/sharing/impersonation
+/// path that accepts an arbitrary userId on these two methods would re-introduce the enumeration
+/// oracle. Such paths MUST go through <see cref="IQuotaAdminService.TryCommitAsync"/>, whose
+/// <see cref="CommitOutcome"/> return makes the distinction explicit and gates it behind
+/// <c>AuthPolicies.Admin</c>.</para>
 /// </summary>
 public interface IQuotaService
 {

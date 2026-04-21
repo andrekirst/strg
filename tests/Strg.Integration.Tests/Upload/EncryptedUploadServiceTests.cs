@@ -46,6 +46,15 @@ internal sealed class FixedTenantContext(Guid id) : ITenantContext
 /// </list>
 /// Neither exists at HEAD. <see cref="Upload_failure_on_quota_orphans_ciphertext_blob_TODO_STRG026_hash2"/>
 /// is the regression gate — its assertion polarity flips when either protocol lands.</para>
+///
+/// <para><b>Second orphan shape (security-reviewer STRG-043 audit I8).</b> Soft-deleted FileItems
+/// leak BOTH their ciphertext blobs AND the quota charge on the owner until the reaper runs.
+/// <see cref="FileVersionStore.PruneVersionsAsync"/> silent-no-ops on soft-deleted files because
+/// <see cref="IFileRepository.GetByIdAsync"/> returns null through the global soft-delete filter;
+/// that is correct at the prune entry-point but leaves the reaper as the sole recovery path.
+/// <see cref="Soft_deleted_FileItem_leaves_ciphertext_blob_and_quota_charged_TODO_reaper_I8"/>
+/// pins that gap — the same reaper that closes the storage-orphan gap above must ALSO release
+/// quota + delete blobs for versions whose owning FileItem is soft-deleted.</para>
 /// </summary>
 public sealed class EncryptedUploadServiceTests : IAsyncLifetime
 {
@@ -151,6 +160,51 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
             "orphan ciphertext persists today because the writer commits before the DB tx — STRG-026 #2 gap; "
             + "flip this to BeFalse when a blob-without-matching-FileVersion reaper OR a two-phase upload "
             + "protocol lands, and update the test name + block comment above to match");
+    }
+
+    [Fact]
+    public async Task Soft_deleted_FileItem_leaves_ciphertext_blob_and_quota_charged_TODO_reaper_I8()
+    {
+        // REGRESSION GATE — security-reviewer STRG-043 audit finding I8.
+        //
+        // A successful upload produces: ciphertext blob on disk + FileVersion row + quota charge on
+        // the owner. When the owning FileItem is later soft-deleted:
+        //   • FileVersion rows are NOT cascaded-deleted (soft-delete on FileItem only flips
+        //     DeletedAt; rows on child tables remain untouched by design — hard-cascade would
+        //     defeat the 30-day undelete window).
+        //   • The blob stays on disk because nothing sweeps it.
+        //   • UsedBytes on the owner stays charged — there is no release path on soft-delete.
+        //   • FileVersionStore.PruneVersionsAsync silent-no-ops for the soft-deleted FileItem
+        //     because IFileRepository.GetByIdAsync routes through the global filter and returns
+        //     null. That no-op is correct at the prune entry-point (caller has a stale fileId) but
+        //     removes prune as a recovery path — only the reaper can close this gap.
+        //
+        // The same reaper that closes the blob-orphan gap in the previous test MUST also cover
+        // this shape: blobs whose FileVersion row points at a soft-deleted FileItem. Missing it
+        // leaks quota permanently (until 30-day hard-delete runs, and only if THAT job remembers
+        // to release quota — STRG-036 as designed does not).
+        //
+        // Flip BOTH `.BeTrue()` assertions to `.BeFalse()` and drop the _TODO_reaper_I8 suffix
+        // when the reaper is wired to release quota + delete blob for soft-deleted-FileItem
+        // versions. Delete this block comment at the same time.
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 10_000_000);
+        var uploadService = fx.BuildUploadService();
+        var plaintext = "hello strg"u8.ToArray();
+
+        var version = await uploadService.UploadAsync(seed.File, plaintext, seed.UserId);
+
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(plaintext.Length,
+            "sanity: happy-path charged UsedBytes so the post-soft-delete assertion is meaningful");
+
+        await fx.SoftDeleteFileAsync(seed.File.Id);
+
+        (await fx.Provider.ExistsAsync(version.StorageKey)).Should().BeTrue(
+            "TODO STRG-043 I8: soft-delete leaves blob on disk today; flip to BeFalse when reaper sweeps "
+            + "blobs whose FileVersion.File.DeletedAt IS NOT NULL");
+        (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(plaintext.Length,
+            "TODO STRG-043 I8: soft-delete does not release quota today; flip the expected value to 0 "
+            + "when reaper releases quota alongside blob-delete for soft-deleted-FileItem versions");
     }
 
     // ── fixture helpers ────────────────────────────────────────────────────────
@@ -267,6 +321,21 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
             var user = await ctx.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.Id == userId);
             user.Should().NotBeNull($"user {userId} should exist for reload");
             return user!;
+        }
+
+        /// <summary>
+        /// Soft-deletes a <see cref="FileItem"/> by stamping <see cref="TenantedEntity.DeletedAt"/>.
+        /// Post-delete, the global filter hides the row from normal queries — exactly the state
+        /// that makes <c>PruneVersionsAsync</c> silent-no-op on the file (see I8 test xmldoc for
+        /// why that no-op is correct but leaves the reaper as the sole recovery path).
+        /// </summary>
+        public async Task SoftDeleteFileAsync(Guid fileId)
+        {
+            await using var ctx = NewDbContext();
+            var file = await ctx.Files.FirstOrDefaultAsync(f => f.Id == fileId);
+            file.Should().NotBeNull($"file {fileId} should exist prior to soft-delete");
+            file!.DeletedAt = DateTimeOffset.UtcNow;
+            await ctx.SaveChangesAsync();
         }
 
         private StrgDbContext NewDbContext() => new(options, tenantContext);

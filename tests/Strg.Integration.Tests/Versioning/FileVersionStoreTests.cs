@@ -238,6 +238,51 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         (await fx.Provider.ExistsAsync("blob/v2")).Should().BeTrue();
     }
 
+    // Security-reviewer STRG-043 audit finding I10: cross-tenant Prune must silent-no-op. A tenant B
+    // caller passing a fileId belonging to tenant A must not delete rows, must not delete blobs,
+    // must not mutate the owner's quota, and must not leak an error that reveals the file's
+    // existence in another tenant. The no-op flows from IFileRepository.GetByIdAsync routing
+    // through the global tenant filter and returning null — the store's early-return on null keeps
+    // the whole operation silent. This test pins that behaviour so a future refactor of the prune
+    // entry-point (e.g. replacing the fileRepo lookup with a direct FileVersion scan) cannot
+    // regress it invisibly.
+    [Fact]
+    public async Task PruneVersionsAsync_cross_tenant_is_silent_noop_and_does_not_mutate_owner_quota()
+    {
+        var fxA = await CreateFixtureAsync();
+        var seedA = await fxA.SeedFileAsync(quotaBytes: 100_000_000);
+        await fxA.Store.CreateVersionAsync(seedA.File, "blob/cross/v1", Hash("v1"), 100, 120, seedA.UserId, default);
+        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v2", Hash("v2"), 200, 220, seedA.UserId, default);
+        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v3", Hash("v3"), 300, 320, seedA.UserId, default);
+        await fxA.Provider.WriteAsync("blob/cross/v1", new MemoryStream([0x01]));
+        await fxA.Provider.WriteAsync("blob/cross/v2", new MemoryStream([0x02]));
+        await fxA.Provider.WriteAsync("blob/cross/v3", new MemoryStream([0x03]));
+
+        var fxB = await fxA.WithNewTenantAsync();
+
+        // Act — tenant B attempts to prune tenant A's file. Must not throw (no oracle via
+        // exception type) and must silently return.
+        var act = () => fxB.Store.PruneVersionsAsync(seedA.File.Id, keepCount: 1, default);
+        await act.Should().NotThrowAsync(
+            "a cross-tenant Prune is a silent no-op — throwing NotFoundException would leak existence to tenant B");
+
+        // FileVersion rows in tenant A must be intact.
+        (await fxA.Store.GetVersionsAsync(seedA.File.Id, default)).Should().HaveCount(3,
+            "cross-tenant Prune must NOT delete rows belonging to another tenant");
+
+        // Blobs must be intact — a reaper that bypassed the tenant check would orphan tenant A's
+        // ciphertext based on tenant B's call.
+        (await fxA.Provider.ExistsAsync("blob/cross/v1")).Should().BeTrue();
+        (await fxA.Provider.ExistsAsync("blob/cross/v2")).Should().BeTrue();
+        (await fxA.Provider.ExistsAsync("blob/cross/v3")).Should().BeTrue();
+
+        // Quota on tenant A's owner must be exactly what the three successful creates charged
+        // (100 + 200 + 300 = 600). Any cross-tenant release would silently grant unlimited quota
+        // by letting tenant B credit tenant A's owner.
+        (await fxA.ReloadUserAsync(seedA.UserId)).UsedBytes.Should().Be(600,
+            "cross-tenant Prune must NOT release quota on another tenant's user");
+    }
+
     // TC-002 extended: 5 versions with keepCount 3 → oldest 2 pruned.
     [Fact]
     public async Task PruneVersionsAsync_keepCount_3_prunes_oldest_when_five_versions_exist()

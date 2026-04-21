@@ -7,6 +7,7 @@ using Strg.Api.Endpoints;
 using Strg.Core.Domain;
 using Strg.Core.Identity;
 using Strg.Core.Services;
+using Strg.Core.Storage;
 using Strg.GraphQL.DataLoaders;
 using Strg.GraphQL.Errors;
 using Strg.GraphQL.Mutations;
@@ -17,6 +18,7 @@ using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
 using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
+using Strg.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +40,12 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
+
+// Storage providers (STRG-021/023). Singleton — registry is stateless and constructed from
+// IEnumerable<IStorageProvider>. Without this, .NET 10's minimal-API metadata inference
+// crashes the host at startup because DriveEndpoints.CreateDrive injects IStorageProviderRegistry
+// directly as a parameter and the resolver cannot bind it.
+builder.Services.AddSingleton<IStorageProviderRegistry, StorageProviderRegistry>();
 
 // ---- Identity (STRG-014) ----
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();

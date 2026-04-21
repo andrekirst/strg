@@ -34,6 +34,11 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
                     OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OpenId,
                     OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
                     OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
+                    // offline_access is the OAuth/OIDC scope that gates refresh-token issuance.
+                    // Without this client permission, the password-flow handler would rotate the
+                    // access token but never emit a refresh token — the RefreshToken grant-type
+                    // permission above would be unreachable.
+                    OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess,
                 },
             }, cancellationToken);
         }

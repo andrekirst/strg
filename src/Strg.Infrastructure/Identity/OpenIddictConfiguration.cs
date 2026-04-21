@@ -46,7 +46,11 @@ public static class OpenIddictConfiguration
                     "tags.write", "admin",
                     OpenIddictConstants.Scopes.OpenId,
                     OpenIddictConstants.Scopes.Profile,
-                    OpenIddictConstants.Scopes.Email);
+                    OpenIddictConstants.Scopes.Email,
+                    // Required for refresh-token issuance: OpenIddict 7.x only emits a refresh
+                    // token when both the request and the client permission set include this
+                    // scope. Without it, RefreshToken grant-type is dead code.
+                    OpenIddictConstants.Scopes.OfflineAccess);
 
                 o.SetAccessTokenLifetime(TimeSpan.FromMinutes(15));
                 // Sliding expiration is enabled by default; SetRefreshTokenLifetime sets the rolling window

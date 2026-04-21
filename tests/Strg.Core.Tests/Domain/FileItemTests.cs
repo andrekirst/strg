@@ -23,4 +23,41 @@ public sealed class FileItemTests
         file.IsDirectory.Should().BeFalse();
         file.ContentHash.Should().BeNull();
     }
+
+    [Fact]
+    public void Directory_HasNullContentHash()
+    {
+        var folder = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "docs",
+            Path = "docs",
+            IsDirectory = true,
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid()
+        };
+
+        folder.ContentHash.Should().BeNull();
+        folder.IsDirectory.Should().BeTrue();
+        folder.IsFolder.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsDeleted_DerivedFromDeletedAt()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "report.pdf",
+            Path = "docs/report.pdf",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid()
+        };
+
+        file.IsDeleted.Should().BeFalse();
+
+        file.DeletedAt = DateTimeOffset.UtcNow;
+
+        file.IsDeleted.Should().BeTrue();
+    }
 }

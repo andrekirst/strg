@@ -45,6 +45,7 @@ builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 builder.Services.AddScoped<IFileRepository, FileRepository>();
 builder.Services.AddScoped<IFileVersionRepository, FileVersionRepository>();
+builder.Services.AddScoped<IFileKeyRepository, FileKeyRepository>();
 builder.Services.AddScoped<ITenantRepository, TenantRepository>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 
@@ -58,6 +59,12 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 // window where IStorageProviderRegistry resolves to an empty registry before startup wires the
 // factories in.
 builder.Services.AddStrgStorageProviders();
+
+// KEK provider (STRG-026). Singleton because the KEK byte array is immutable after construction
+// and all crypto operations on it are allocation-local. Env-var reading happens inside the
+// parameterless ctor on the first resolution — failure surfaces at the first encrypted-drive
+// write, which is the point where operator feedback is most actionable.
+builder.Services.AddSingleton<IKeyProvider, EnvVarKeyProvider>();
 
 // ---- Identity (STRG-014) ----
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();

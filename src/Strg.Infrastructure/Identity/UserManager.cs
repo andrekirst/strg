@@ -174,14 +174,18 @@ public sealed class UserManager(
     {
         // Pre-auth: token endpoint records failures before any JWT exists.
         var user = await FindByIdPreAuthAsync(userId, cancellationToken);
-        if (user is null || user.IsLocked)
+        if (user is null)
         {
-            // Currently-locked accounts: silent no-op. Prevents an attacker from keeping the
-            // account locked indefinitely by hammering it, which would otherwise grow the counter
-            // past 10 and continuously extend the 1h lock window.
             return;
         }
 
+        // The counter still increments while the account is locked — that's how 10 cumulative
+        // failures (during a single attack burst) reach the 1h tier. Lock-EXTENSION is what we
+        // prevent (the indefinite-DoS vector), via the `==` threshold checks in
+        // ApplyFailedLoginAsync — only the EXACT counts of 5 and 10 set LockedUntil; anything
+        // beyond that increments the counter but leaves LockedUntil at the most recent
+        // threshold transition. So the maximum lock per attack cycle is 1h, after which expiry
+        // resets the counter (in ValidateCredentialsAsync) and the cycle restarts.
         await ApplyFailedLoginAsync(user, cancellationToken);
     }
 
@@ -213,10 +217,11 @@ public sealed class UserManager(
     /// <summary>
     /// Single timing-envelope credentials check for the password-grant token endpoint. Every
     /// failure path — empty input, unknown email, locked account, wrong password — costs exactly
-    /// one PBKDF2 verify (against <see cref="_dummyHash"/> when there is no real hash to check),
-    /// so an observer cannot distinguish failure modes from request latency. Internally manages
-    /// the lockout counter; callers MUST NOT layer <see cref="RecordFailedLoginAsync"/> or
-    /// <see cref="ResetFailedLoginsAsync"/> on top of the result.
+    /// one PBKDF2 verify (against <see cref="IPasswordHasher.CanaryHash"/> when there is no real
+    /// hash to check), so an observer cannot distinguish failure modes from request latency.
+    /// Internally manages the lockout counter; callers MUST NOT layer
+    /// <see cref="RecordFailedLoginAsync"/> or <see cref="ResetFailedLoginsAsync"/> on top of
+    /// the result.
     /// </summary>
     public async Task<User?> ValidateCredentialsAsync(string email, string password, CancellationToken cancellationToken = default)
     {
@@ -257,19 +262,24 @@ public sealed class UserManager(
         return user;
     }
 
-    // Threshold uses >= so concurrent wrong-password attempts that race past the boundary still
-    // trigger the lock — `==` would silently miss when two attempts both increment from 4 to 5/6
-    // in parallel. RecordFailedLoginAsync no-ops on already-locked users, so the lock window is
-    // not extended past 1h by subsequent failures (no escalating ladder).
+    // Threshold checks use `==` so the lock is set EXACTLY at the tier transitions (5 and 10)
+    // and not re-applied on every subsequent failure. Combined with RecordFailedLoginAsync NOT
+    // no-op'ing on locked accounts, this gives the desired shape: counter grows while locked,
+    // 10 cumulative failures escalate to 1h, but failures past 10 do not extend the lock window
+    // (no indefinite-DoS via lock extension). Concurrency: under EF Core without optimistic
+    // tokens, two parallel increments from N to N+1 both write N+1 last-write-wins; both
+    // observe FailedLoginAttempts == N+1 in their local context, so a threshold transition is
+    // not missed — the threshold is only "missed" if the same fail-count is incremented from
+    // two different start points, which cannot happen since both transactions read the same row.
     private async Task ApplyFailedLoginAsync(User user, CancellationToken cancellationToken)
     {
         user.FailedLoginAttempts++;
         var now = DateTimeOffset.UtcNow;
-        if (user.FailedLoginAttempts >= LongLockoutThreshold)
+        if (user.FailedLoginAttempts == LongLockoutThreshold)
         {
             user.LockedUntil = now + LongLockout;
         }
-        else if (user.FailedLoginAttempts >= ShortLockoutThreshold)
+        else if (user.FailedLoginAttempts == ShortLockoutThreshold)
         {
             user.LockedUntil = now + ShortLockout;
         }

@@ -61,13 +61,14 @@ public record CreateUserRequest(
 - [ ] Email is validated (format check, uniqueness within tenant)
 - [ ] `ValidatePasswordAsync` returns true ONLY when password matches AND user is not locked AND user exists
 - [ ] `ValidatePasswordAsync` runs `IPasswordHasher.Verify` against a cached dummy hash when the user is missing, so wall-clock timing is identical to the existing-user path (defeats user enumeration via timing)
-- [ ] `RecordFailedLoginAsync` is a NO-OP when the account is already locked (prevents indefinite-DoS where attacker hammers a locked account to extend its lock)
 - [ ] `RecordFailedLoginAsync` and `ResetFailedLoginsAsync` are silent no-ops for missing users (don't throw, don't return Result — consistent with no-enumeration)
 - [ ] Lockout schedule:
-  - 5 failures → `LockedUntil = now + 15 min`
-  - 10 failures → `LockedUntil = now + 1 hour`
-  - Beyond 10 failures → counter keeps incrementing but lock stays at 1h (no escalating ladder)
-  - Successful login or natural lock expiry → counter resets to 0
+  - At EXACTLY 5 failures → `LockedUntil = now + 15 min` (transition into the short tier)
+  - At EXACTLY 10 failures → `LockedUntil = now + 1 hour` (transition into the long tier)
+  - Beyond 10 failures → counter keeps incrementing but `LockedUntil` is NOT re-applied (the `==` threshold check in ApplyFailedLoginAsync is what caps the lock at 1h — no indefinite-DoS via lock extension)
+  - The counter increments while the account is locked too — that's how 10 cumulative failures during one attack burst can reach the long tier
+  - Successful login → counter resets to 0
+  - Natural lock expiry (detected on next ValidateCredentialsAsync) → counter resets to 0 so a single post-expiry failure does not immediately re-lock at 1h
 - [ ] Concurrent same-email registration: `CreateUserAsync` catches `DbUpdateException` with `PostgresException { SqlState: "23505" }` → `Result.Failure(EmailAlreadyExists, ...)` (NOT a 500)
 - [ ] `CreateUserAsync` rejects `QuotaBytes < 0` with `Result.Failure(InvalidQuota, ...)`
 - [ ] `FirstRunInitializationService` uses `pg_advisory_lock(7390023145001)` to single-leader the seed across replicas; uses `IgnoreQueryFilters().AnyAsync` to detect existing users; prints the generated password to stdout exactly once with a clear warning

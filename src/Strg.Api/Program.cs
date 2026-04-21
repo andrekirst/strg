@@ -51,11 +51,11 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 // validated endpoints) can resolve IValidator<T> from DI without hand-wiring each.
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
-// Storage providers (STRG-021/023). Singleton — registry is stateless and constructed from
-// IEnumerable<IStorageProvider>. Without this, .NET 10's minimal-API metadata inference
-// crashes the host at startup because DriveEndpoints.CreateDrive injects IStorageProviderRegistry
-// directly as a parameter and the resolver cannot bind it.
-builder.Services.AddSingleton<IStorageProviderRegistry, StorageProviderRegistry>();
+// Storage providers (STRG-021/023/024). AddStrgStorageProviders registers the singleton registry
+// AND the "local" built-in factory atomically — splitting these into two steps would leave a
+// window where IStorageProviderRegistry resolves to an empty registry before startup wires the
+// factories in.
+builder.Services.AddStrgStorageProviders();
 
 // ---- Identity (STRG-014) ----
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();

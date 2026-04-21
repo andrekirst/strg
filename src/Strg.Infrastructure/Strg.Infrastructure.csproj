@@ -1,5 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!--
+      RS1035 ("do not do file IO in analyzers") is a Roslyn-analyzer-authoring rule that fires
+      here because Directory.Build.props enables EnforceExtendedAnalyzerRules repo-wide. This is
+      not an analyzer assembly — LocalFileSystemProvider MUST call System.IO.File/Directory to
+      do its job. Suppress narrowly rather than touching the shared property.
+    -->
+    <NoWarn>$(NoWarn);RS1035</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

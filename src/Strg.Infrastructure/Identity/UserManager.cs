@@ -1,5 +1,4 @@
 using System.Net.Mail;
-using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Strg.Core;
@@ -20,12 +19,6 @@ public sealed class UserManager(
     private const string PostgresUniqueViolation = "23505";
     private static readonly TimeSpan ShortLockout = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan LongLockout = TimeSpan.FromHours(1);
-
-    // Precomputed on first unknown-user validation and reused within this UserManager instance,
-    // so the PBKDF2 verify runtime on the missing-user path matches the existing-user path
-    // and cannot be used as a timing oracle for account enumeration.
-    private readonly Lazy<string> _dummyHash = new(() =>
-        passwordHasher.Hash(Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))));
 
     public async Task<Result<User>> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
     {
@@ -154,7 +147,7 @@ public sealed class UserManager(
         {
             // Run a real PBKDF2 verify against a dummy hash and discard the result, so the wall-
             // clock time for the unknown-user path matches the existing-user wrong-password path.
-            _ = passwordHasher.Verify(password, _dummyHash.Value);
+            _ = passwordHasher.Verify(password, passwordHasher.CanaryHash);
             return false;
         }
 
@@ -170,7 +163,7 @@ public sealed class UserManager(
         if (user.IsLocked)
         {
             // Same equalization as the missing-user path — don't reveal lock state via wall clock.
-            _ = passwordHasher.Verify(password, _dummyHash.Value);
+            _ = passwordHasher.Verify(password, passwordHasher.CanaryHash);
             return false;
         }
 
@@ -229,14 +222,14 @@ public sealed class UserManager(
     {
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
         {
-            _ = passwordHasher.Verify(password ?? string.Empty, _dummyHash.Value);
+            _ = passwordHasher.Verify(password ?? string.Empty, passwordHasher.CanaryHash);
             return null;
         }
 
         var user = await FindForLoginAsync(email, cancellationToken);
         if (user is null)
         {
-            _ = passwordHasher.Verify(password, _dummyHash.Value);
+            _ = passwordHasher.Verify(password, passwordHasher.CanaryHash);
             return null;
         }
 
@@ -250,7 +243,7 @@ public sealed class UserManager(
         if (user.IsLocked)
         {
             // Equalize wall-clock with the wrong-password path so lock state isn't probeable.
-            _ = passwordHasher.Verify(password, _dummyHash.Value);
+            _ = passwordHasher.Verify(password, passwordHasher.CanaryHash);
             return null;
         }
 
@@ -264,17 +257,19 @@ public sealed class UserManager(
         return user;
     }
 
-    // Threshold matches are exact: reaching exactly 10 triggers the 1h lock; reaching 5 the
-    // 15min lock. Counts past the thresholds keep growing without further escalation.
+    // Threshold uses >= so concurrent wrong-password attempts that race past the boundary still
+    // trigger the lock — `==` would silently miss when two attempts both increment from 4 to 5/6
+    // in parallel. RecordFailedLoginAsync no-ops on already-locked users, so the lock window is
+    // not extended past 1h by subsequent failures (no escalating ladder).
     private async Task ApplyFailedLoginAsync(User user, CancellationToken cancellationToken)
     {
         user.FailedLoginAttempts++;
         var now = DateTimeOffset.UtcNow;
-        if (user.FailedLoginAttempts == LongLockoutThreshold)
+        if (user.FailedLoginAttempts >= LongLockoutThreshold)
         {
             user.LockedUntil = now + LongLockout;
         }
-        else if (user.FailedLoginAttempts == ShortLockoutThreshold)
+        else if (user.FailedLoginAttempts >= ShortLockoutThreshold)
         {
             user.LockedUntil = now + ShortLockout;
         }

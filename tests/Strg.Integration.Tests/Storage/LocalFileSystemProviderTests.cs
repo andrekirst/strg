@@ -274,6 +274,63 @@ public sealed class LocalFileSystemProviderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CopyAsync_refuses_symlinked_file_source()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var outsideFile = Path.Combine(Path.GetTempPath(), "strg-copy-victim-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(outsideFile, "SECRET");
+        try
+        {
+            var linkPath = Path.Combine(_root, "planted-link.txt");
+            File.CreateSymbolicLink(linkPath, outsideFile);
+
+            // File.Copy follows symlinks: a naive copy would materialize SECRET at dst.txt. The
+            // LinkTarget check must reject the source as "not found" just like the read path.
+            var act = async () => await _sut.CopyAsync("planted-link.txt", "dst.txt");
+            await act.Should().ThrowAsync<FileNotFoundException>();
+
+            (await _sut.GetFileAsync("dst.txt")).Should().BeNull();
+        }
+        finally
+        {
+            File.Delete(outsideFile);
+        }
+    }
+
+    [Fact]
+    public async Task CopyAsync_skips_symlinks_inside_recursive_source()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var outsideFile = Path.Combine(Path.GetTempPath(), "strg-recursive-victim-" + Guid.NewGuid().ToString("N") + ".txt");
+        await File.WriteAllTextAsync(outsideFile, "SECRET");
+        try
+        {
+            // Real file sits alongside a planted symlink in the same source directory — a
+            // recursive copy must reproduce the real file and skip the link, not dereference it.
+            await _sut.WriteAsync("box/real.txt", new MemoryStream([1, 2, 3]));
+            File.CreateSymbolicLink(Path.Combine(_root, "box", "planted-link.txt"), outsideFile);
+
+            await _sut.CopyAsync("box", "box-copy");
+
+            (await _sut.GetFileAsync("box-copy/real.txt")).Should().NotBeNull();
+            (await _sut.GetFileAsync("box-copy/planted-link.txt")).Should().BeNull();
+            File.Exists(Path.Combine(_root, "box-copy", "planted-link.txt")).Should().BeFalse();
+        }
+        finally
+        {
+            File.Delete(outsideFile);
+        }
+    }
+
+    [Fact]
     public async Task WriteAsync_rejects_symlink_target()
     {
         // Linux-only — Windows symlink creation requires elevated privileges we don't have in CI,

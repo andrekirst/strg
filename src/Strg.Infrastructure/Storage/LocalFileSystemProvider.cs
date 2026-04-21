@@ -214,10 +214,21 @@ public sealed class LocalFileSystemProvider : IStorageProvider
 
         if (File.Exists(sourceFull))
         {
+            // File.Copy follows symlinks — a planted link inside the drive would give an attacker
+            // a read-anywhere primitive by copying outside content into a drive-visible location.
+            // Treat a symlinked source the same way the read path does: report "not found".
+            if (new FileInfo(sourceFull).LinkTarget is not null)
+            {
+                throw new FileNotFoundException($"Source not found: {source}");
+            }
             File.Copy(sourceFull, destinationFull, overwrite: false);
         }
         else if (Directory.Exists(sourceFull))
         {
+            if (new DirectoryInfo(sourceFull).LinkTarget is not null)
+            {
+                throw new FileNotFoundException($"Source not found: {source}");
+            }
             CopyDirectoryRecursive(sourceFull, destinationFull);
         }
         else
@@ -345,12 +356,23 @@ public sealed class LocalFileSystemProvider : IStorageProvider
 
         foreach (var file in Directory.EnumerateFiles(source))
         {
+            // Skip symlinked files: the whole point of a recursive copy is to reproduce the
+            // drive's own state, not to materialize outside content via followed links. Matches
+            // the ListAsync behaviour (symlinks are invisible in enumeration).
+            if (new FileInfo(file).LinkTarget is not null)
+            {
+                continue;
+            }
             var target = Path.Combine(destination, Path.GetFileName(file));
             File.Copy(file, target, overwrite: false);
         }
 
         foreach (var subDir in Directory.EnumerateDirectories(source))
         {
+            if (new DirectoryInfo(subDir).LinkTarget is not null)
+            {
+                continue;
+            }
             var target = Path.Combine(destination, Path.GetFileName(subDir));
             CopyDirectoryRecursive(subDir, target);
         }

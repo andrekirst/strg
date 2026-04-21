@@ -252,6 +252,39 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         entry.Details.Should().Be("retained_count=1; pruned_count=2; bytes_released=300");
     }
 
+    // STRG-043 I3 (cont): partial-failure emits ZERO audit rows. The post-loop emission is load-
+    // bearing because a half-baked row would mislead a reader into treating an interrupted prune
+    // as complete. The committed [0..k-1] iterations remain observable via DB state; the next
+    // successful retry emits its own audit row with the final pruned_count. This test pins the
+    // "no audit on partial failure" contract against accidental drift to per-iteration emission.
+    [Fact]
+    public async Task PruneVersionsAsync_emits_no_audit_entry_on_partial_failure()
+    {
+        var fx = await CreateFixtureAsync();
+        var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
+
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), 400, 420, seed.UserId, default);
+        await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
+        await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
+        await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
+        await fx.Provider.WriteAsync("blob/v4", new MemoryStream([0x04]));
+
+        // toPrune (keepCount=1) is [v3, v2, v1]; iter 1 deletes v3, iter 2 throws on v2.
+        var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 2);
+        var store = fx.BuildStore(failingProvider);
+
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await act.Should().ThrowAsync<IOException>();
+
+        var entries = await fx.LoadPruneAuditEntriesAsync(seed.File.Id);
+        entries.Should().BeEmpty(
+            "partial-failure path propagates the exception and skips the post-loop audit write; "
+            + "a half-baked audit row would mislead a reader into treating the interrupted prune as complete");
+    }
+
     [Fact]
     public async Task PruneVersionsAsync_when_existing_count_within_keep_limit_is_noop()
     {

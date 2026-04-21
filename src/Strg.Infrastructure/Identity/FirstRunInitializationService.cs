@@ -14,6 +14,16 @@ namespace Strg.Infrastructure.Identity;
 /// whenever the <c>users</c> table is empty. Idempotent across multi-replica startups via a
 /// process-wide PostgreSQL advisory lock, so exactly one replica performs the seed and prints
 /// the generated admin password to <see cref="Console.Out"/>.
+///
+/// <para><b>Stdout delivery is not log-free.</b> The generated password is written to
+/// <see cref="Console.Out"/>, which any realistic deployment captures: Docker's json-file /
+/// journald log drivers, Kubernetes' kubelet, systemd's journald, and common sidecars
+/// (Fluent Bit, Vector, Datadog). The message to the operator acknowledges this — a prior
+/// revision claimed the password was "NOT persisted to logs," which was false and could cause
+/// an operator to skip the post-bootstrap log-scrub step. The v0.2 backlog covers optional
+/// persistence to <c>/var/lib/strg/first-run-password</c> (mode 0600) and
+/// <c>STRG_INITIAL_ADMIN_PASSWORD</c> env-var injection to skip generation entirely; this
+/// revision ships the honest warning only.</para>
 /// </summary>
 public sealed class FirstRunInitializationService(IServiceProvider services) : IHostedService
 {
@@ -123,7 +133,10 @@ public sealed class FirstRunInitializationService(IServiceProvider services) : I
     private static void PrintInitialPassword(string password)
     {
         // Write directly to Console.Out to bypass ILogger — Serilog sinks (file, OTLP, Seq)
-        // must not see this secret. STRG-014 requires one-shot stdout delivery.
+        // must not see this secret via the structured-logging pipeline. Note this does NOT mean
+        // the password stays local: stdout is captured by Docker / Kubernetes / journald and most
+        // sidecar log shippers. The warning below tells the operator the truth.
+        //
         // RS1035 flags Console use project-wide (EnforceExtendedAnalyzerRules in Directory.Build.props),
         // but that rule targets Roslyn analyzer assemblies; this is runtime host startup code.
 #pragma warning disable RS1035
@@ -132,8 +145,11 @@ public sealed class FirstRunInitializationService(IServiceProvider services) : I
         Console.Out.WriteLine("  strg first-run initialization: SuperAdmin account created");
         Console.Out.WriteLine($"  Email:    {SuperAdminEmail}");
         Console.Out.WriteLine($"  Password: {password}");
-        Console.Out.WriteLine("  WARNING: this password is shown ONCE, is NOT persisted to logs,");
-        Console.Out.WriteLine("  and cannot be recovered. Save it now and rotate after first login.");
+        Console.Out.WriteLine("  WARNING: this is the ONLY time this password is shown.");
+        Console.Out.WriteLine("  stdout is typically captured by container runtimes (docker logs,");
+        Console.Out.WriteLine("  kubectl logs, journald) and by log-shipping sidecars. Copy the");
+        Console.Out.WriteLine("  password to a secrets manager NOW, scrub the bootstrap log");
+        Console.Out.WriteLine("  stream, then rotate the password after first login.");
         Console.Out.WriteLine(bar);
         Console.Out.Flush();
 #pragma warning restore RS1035

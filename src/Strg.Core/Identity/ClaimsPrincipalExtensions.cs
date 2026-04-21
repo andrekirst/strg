@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Strg.Core.Constants;
 
 namespace Strg.Core.Identity;
 
@@ -8,18 +9,14 @@ namespace Strg.Core.Identity;
 /// </summary>
 public static class ClaimsPrincipalExtensions
 {
-    private const string SubClaim = "sub";
-    private const string TenantIdClaim = "tenant_id";
-    private const string ScopeClaim = "scope";
-
     /// <summary>Returns the authenticated user's ID from the JWT <c>sub</c> claim.</summary>
     public static Guid GetUserId(this ClaimsPrincipal user) =>
-        Guid.Parse(user.FindFirst(SubClaim)?.Value
+        Guid.Parse(user.FindFirst(StrgClaimNames.Subject)?.Value
             ?? throw new InvalidOperationException("The 'sub' claim is missing from the current principal."));
 
     /// <summary>Returns the tenant ID from the JWT <c>tenant_id</c> claim.</summary>
     public static Guid GetTenantId(this ClaimsPrincipal user) =>
-        Guid.Parse(user.FindFirst(TenantIdClaim)?.Value
+        Guid.Parse(user.FindFirst(StrgClaimNames.TenantId)?.Value
             ?? throw new InvalidOperationException("The 'tenant_id' claim is missing from the current principal."));
 
     /// <summary>
@@ -27,7 +24,7 @@ public static class ClaimsPrincipalExtensions
     /// Handles both space-separated single claims and multiple individual scope claims.
     /// </summary>
     public static bool HasScope(this ClaimsPrincipal user, string scope) =>
-        user.FindAll(ScopeClaim)
+        user.FindAll(StrgClaimNames.Scope)
             .Any(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                        .Contains(scope, StringComparer.Ordinal));
 }

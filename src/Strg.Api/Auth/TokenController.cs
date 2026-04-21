@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using Strg.Core.Constants;
 using Strg.Core.Identity;
 using System.Net.Mime;
 using System.Security.Claims;
@@ -13,10 +14,6 @@ namespace Strg.Api.Auth;
 [ApiController]
 public sealed class TokenController(IUserManager userManager) : ControllerBase
 {
-    // Custom claim type — kept in sync with HttpTenantContext which reads "tenant_id"
-    // from the authenticated user's claims.
-    private const string TenantIdClaim = "tenant_id";
-
     /// <summary>
     /// Token endpoint passthrough — OpenIddict validates the request and calls
     /// <see cref="SignInAsync"/> with the principal produced here.
@@ -116,7 +113,7 @@ public sealed class TokenController(IUserManager userManager) : ControllerBase
         identity.AddClaim(new Claim(OpenIddictConstants.Claims.Email, user.Email));
         identity.AddClaim(new Claim(OpenIddictConstants.Claims.Name, user.DisplayName));
         identity.AddClaim(new Claim(OpenIddictConstants.Claims.Role, user.Role.ToString()));
-        identity.AddClaim(new Claim(TenantIdClaim, user.TenantId.ToString()));
+        identity.AddClaim(new Claim(StrgClaimNames.TenantId, user.TenantId.ToString()));
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(requestedScopes);

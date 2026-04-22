@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Strg.Api.Tests/Strg.Api.Tests.csproj" />
+    <Project Path="tests/Strg.Architecture.Tests/Strg.Architecture.Tests.csproj" />
     <Project Path="tests/Strg.Core.Tests/Strg.Core.Tests.csproj" />
     <Project Path="tests/Strg.GraphQL.Tests/Strg.GraphQL.Tests.csproj" />
     <Project Path="tests/Strg.Integration.Tests/Strg.Integration.Tests.csproj" />

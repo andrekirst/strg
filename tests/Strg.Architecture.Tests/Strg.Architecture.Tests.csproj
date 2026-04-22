@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- Needed by #101 + #105 to stand up a minimal DI container that exercises
+         the production MassTransit + EF-outbox wiring without a live broker. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.EntityFrameworkCore" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- References every library src/Strg.* project so the test project's load context
+         mirrors the production bin/ graph. Transitive NuGet packages show up here too,
+         which is the invariant #118 pins (NWebDav.Server.AspNetCore must NOT appear).
+
+         Strg.Api is intentionally NOT referenced: the only ArchTest that inspects
+         Program.cs (#105) reads the source file directly via RepoPath.Read — we pin a
+         specific line of wiring, not the built assembly. Skipping the project reference
+         keeps Architecture.Tests buildable when Strg.Api has transient compile errors
+         from in-flight work on other tranches. -->
+    <ProjectReference Include="..\..\src\Strg.Core\Strg.Core.csproj" />
+    <ProjectReference Include="..\..\src\Strg.GraphQL\Strg.GraphQL.csproj" />
+    <ProjectReference Include="..\..\src\Strg.Infrastructure\Strg.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Strg.WebDav\Strg.WebDav.csproj" />
+  </ItemGroup>
+
+</Project>

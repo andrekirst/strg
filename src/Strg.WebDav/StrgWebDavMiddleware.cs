@@ -13,11 +13,14 @@ namespace Strg.WebDav;
 /// Non-WebDAV HTTP methods fall through to <c>_next</c> so GraphQL, REST controllers, and any
 /// other pipeline segments keep working unchanged.
 ///
-/// <para><b>Verb dispatch surface.</b> The full RFC 4918 + RFC 3253 method set — <c>OPTIONS</c>,
-/// <c>HEAD</c>, <c>GET</c>, <c>PUT</c>, <c>DELETE</c>, <c>PROPFIND</c>, <c>PROPPATCH</c>,
-/// <c>MKCOL</c>, <c>COPY</c>, <c>MOVE</c>, <c>LOCK</c>, <c>UNLOCK</c>. A missing entry here means
-/// that verb will be treated as non-WebDAV and leak into the rest of the pipeline, so the list is
-/// a pin, not a default.</para>
+/// <para><b>Verb dispatch surface.</b> The RFC 4918 method set — <c>OPTIONS</c>, <c>HEAD</c>,
+/// <c>GET</c>, <c>PUT</c>, <c>DELETE</c>, <c>PROPFIND</c>, <c>PROPPATCH</c>, <c>MKCOL</c>,
+/// <c>COPY</c>, <c>MOVE</c>, <c>LOCK</c>, <c>UNLOCK</c>. RFC 3253 versioning verbs (<c>REPORT</c>,
+/// <c>VERSION-CONTROL</c>, <c>CHECKIN</c>/<c>CHECKOUT</c>, <c>MKWORKSPACE</c>, <c>UPDATE</c>,
+/// <c>LABEL</c>, <c>MERGE</c>, <c>BASELINE-CONTROL</c>, <c>MKACTIVITY</c>) are out of scope for
+/// v0.1 and MUST be added to <see cref="WebDavMethods"/> before any per-verb handler is
+/// registered — a missing entry here means that verb will fall through to <c>_next</c> and leak
+/// into the rest of the pipeline, so the list is a pin, not a default.</para>
 ///
 /// <para><b>OPTIONS is pre-auth and pre-resolve.</b> RFC 4918 §10.1 allows clients to probe
 /// server capabilities without credentials; enforcing auth here would break every WebDAV client's

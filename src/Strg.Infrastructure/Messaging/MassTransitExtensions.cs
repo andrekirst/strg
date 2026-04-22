@@ -46,7 +46,12 @@ public static class MassTransitExtensions
         var username = configuration["RabbitMQ:Username"];
         var password = configuration["RabbitMQ:Password"];
 
-        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        // IsNullOrWhiteSpace not IsNullOrEmpty: whitespace-only values ("   ") are a common
+        // copy-paste artefact from secret managers — they'd pass an IsNullOrEmpty guard and
+        // then fail at the first broker publish with an opaque RabbitMQ ACCESS_REFUSED that
+        // sends operators chasing vault/env-vars/k8s-secrets before suspecting whitespace
+        // padding. Strong guard up-front turns a deep-pipeline failure into a startup crash.
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
         {
             if (!isDevelopment)
             {
@@ -58,8 +63,8 @@ public static class MassTransitExtensions
 
             // Development-only fallback. The literal lives here (not in appsettings.json) so
             // a prod config overlay cannot silently inherit it.
-            username ??= "guest";
-            password ??= "guest";
+            username = "guest";
+            password = "guest";
         }
 
         services.AddMassTransit(bus =>

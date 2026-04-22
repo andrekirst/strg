@@ -331,9 +331,9 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
             var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
             var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
 
-            // Seed the event's tenant so downstream FKs are consistent. Ambient tenant is still
-            // Guid.Empty — the Tenant row is added via IgnoreQueryFilters by convention of the
-            // outbox publish path which doesn't read AuditEntries.
+            // Seed the event's tenant so AuditEntry.TenantId FK resolves. Tenant is not
+            // tenant-scoped (it's the root entity, not a TenantedEntity), so no filter bypass
+            // is needed regardless of ambient context.
             db.Tenants.Add(new Tenant { Id = eventTenantId, Name = "info2-regression" });
 
             await bus.Publish(new FileUploadedEvent(
@@ -358,9 +358,11 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
             .IgnoreQueryFilters()
             .SingleAsync(e => e.ResourceId == fileId);
 
+        // Single assertion — comparing to a freshly-minted Guid.NewGuid() already rules out
+        // Guid.Empty, so a separate NotBe(Guid.Empty) line would be logically redundant and
+        // mislead readers into treating them as independent guards against different bug shapes.
         row.TenantId.Should().Be(eventTenantId,
             "AuditEntry.TenantId must come from the event payload, not ambient ITenantContext (which is Guid.Empty here)");
-        row.TenantId.Should().NotBe(Guid.Empty);
     }
 
     [Fact]

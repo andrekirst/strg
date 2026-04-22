@@ -44,4 +44,26 @@ public interface IWebDavJwtCache
     /// minted for the previous credential until natural TTL.
     /// </summary>
     void InvalidateUser(string username);
+
+    /// <summary>
+    /// Evicts the single cached entry for the <c>(username, password)</c> pair. No-op if the entry
+    /// is absent. Distinct from <see cref="InvalidateUser"/>: this is surgical — sibling entries
+    /// for the same user under a DIFFERENT password hash (e.g. the user's legitimate session in
+    /// their own tenant) are untouched.
+    ///
+    /// <para><b>Why single-entry and not user-sweep on tenant mismatch.</b> The verification-gate
+    /// rejection in <see cref="BasicAuthJwtBridgeMiddleware"/> fires when a credential pair
+    /// <c>(alice@example.com, pw)</c> has a cached JWT whose <c>tenant_id</c> claim doesn't match
+    /// the drive's tenant. The cache key today is <c>webdav-jwt:{username}:{HEX(SHA256(password))}</c>
+    /// — it does NOT include the tenant, so <c>alice@tenant-A</c> and <c>alice@tenant-B</c>
+    /// (same email, same password, different accounts) collide on the same slot. Without this
+    /// method, the colliding tenant would be stuck in a 401 loop for the full 14-min JWT TTL —
+    /// self-DoS by cache-key collision. Calling <see cref="InvalidateUser"/> instead would also
+    /// evict the OTHER tenant's legitimate entry, doubling the disruption. Single-entry removal
+    /// collapses the self-DoS to one round-trip: the next request misses, re-exchanges against
+    /// <c>/connect/token</c> using the credentials now resolved under the REQUESTED drive's
+    /// tenant (per #142), and proceeds. A proper tenant-scoped cache key (task #146) is the
+    /// structural fix; this hook is the narrow availability win that ships first.</para>
+    /// </summary>
+    void Remove(string username, string password);
 }

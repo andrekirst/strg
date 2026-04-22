@@ -222,6 +222,44 @@ public sealed class BasicAuthJwtBridgeMiddlewareTests
     }
 
     [Fact]
+    public async Task Cross_tenant_mismatch_evicts_colliding_cache_entry_to_break_self_dos_loop()
+    {
+        // STRG-073 #145 regression. The cache key shape (webdav-jwt:{username}:{HEX(SHA256(password))})
+        // does NOT include tenant, so alice@tenant-A and alice@tenant-B collide on the same slot.
+        // Without surgical eviction on the verification-gate 401 path, whichever tenant is currently
+        // cached pins the collision for the full ≤14-min JWT TTL — a self-DoS by cache-key collision.
+        // This test pins that the bridge calls cache.Remove(username, password) with the EXACT
+        // credential pair on tenant mismatch, so a retry re-exchanges via /connect/token with
+        // fresh tenant-resolution. Must NOT be InvalidateUser(username) — that would also evict
+        // the OTHER tenant's legitimate session under the same email, doubling the disruption.
+        var driveTenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var jwtTenant = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("victim-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)driveTenant);
+
+        var jwt = BuildJwtWithTenantClaim(jwtTenant);
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet("alice@example.com", "right-pw").Returns(jwt);
+
+        var handler = new StubTokenHandler(HttpStatusCode.OK, "{}");
+        var factory = new StubHttpClientFactory(handler);
+
+        var middleware = new BasicAuthJwtBridgeMiddleware(
+            _ => Task.CompletedTask,
+            factory, cache, NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/victim-drive/foo", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        cache.Received(1).Remove("alice@example.com", "right-pw");
+        cache.DidNotReceive().InvalidateUser(Arg.Any<string>());
+    }
+
+    [Fact]
     public async Task Matching_tenant_claim_rewrites_bearer_and_invokes_downstream()
     {
         // Positive-path pin: when the JWT's tenant_id claim matches the drive's tenant, the

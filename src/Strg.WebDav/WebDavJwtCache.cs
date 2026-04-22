@@ -77,6 +77,18 @@ public sealed class WebDavJwtCache : IWebDavJwtCache
         }
     }
 
+    public void Remove(string username, string password)
+    {
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            return;
+        }
+        // _cache.Remove fires OnEviction with reason=Removed, which prunes the side-index entry
+        // via the post-eviction callback registered at Set time. No manual _userIndex touch here —
+        // doing so would double-remove on the eviction callback's read of the set.
+        _cache.Remove(BuildKey(username, password));
+    }
+
     public void InvalidateUser(string username)
     {
         if (string.IsNullOrEmpty(username))

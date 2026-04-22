@@ -207,6 +207,18 @@ public sealed class BasicAuthJwtBridgeMiddleware
                 context, accessToken, driveName, username, context.RequestAborted);
             if (verification == TenantVerificationOutcome.Mismatch)
             {
+                // Evict the colliding cache entry so the next retry re-exchanges against
+                // /connect/token with fresh tenant-resolution. The cache key today is
+                // webdav-jwt:{username}:{HEX(SHA256(password))} — it carries no tenant component,
+                // so alice@tenant-A and alice@tenant-B collide on the same slot. Without this
+                // surgical eviction, whichever tenant lost the race is stuck in a 401 loop for
+                // the full ≤14-min JWT TTL (self-DoS by cache-key collision). Single-entry Remove
+                // is deliberate over InvalidateUser(username): sibling entries for the same email
+                // under a DIFFERENT password hash (e.g. the OTHER tenant's legitimate session)
+                // must survive. A tenant-scoped cache key (task #146) is the structural fix; this
+                // is the narrow availability win that ships first.
+                _cache.Remove(username, password);
+
                 // RespondUnauthorizedAsync — SAME shape as a credential rejection. Returning 403
                 // would tell the attacker "credential was accepted, but not for this tenant";
                 // returning 404 would tell them "drive doesn't exist in your tenant (so it exists

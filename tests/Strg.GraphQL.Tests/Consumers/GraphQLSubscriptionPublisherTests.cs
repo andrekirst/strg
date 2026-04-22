@@ -48,7 +48,7 @@ public sealed class GraphQLSubscriptionPublisherTests
         await _consumer.Consume(ContextFor(evt));
 
         await _sender.Received(1).SendAsync(
-            Topics.FileEvents(driveId),
+            Topics.FileEvents(evt.TenantId, driveId),
             Arg.Is<FileEvent>(fe =>
                 fe.EventType == FileEventType.Uploaded
                 && fe.FileId == evt.FileId
@@ -74,7 +74,7 @@ public sealed class GraphQLSubscriptionPublisherTests
         await _consumer.Consume(ContextFor(evt));
 
         await _sender.Received(1).SendAsync(
-            Topics.FileEvents(driveId),
+            Topics.FileEvents(evt.TenantId, driveId),
             Arg.Is<FileEvent>(fe => fe.EventType == FileEventType.Deleted && fe.OldPath == null && fe.NewPath == null),
             Arg.Any<CancellationToken>());
     }
@@ -95,7 +95,7 @@ public sealed class GraphQLSubscriptionPublisherTests
         await _consumer.Consume(ContextFor(evt));
 
         await _sender.Received(1).SendAsync(
-            Topics.FileEvents(driveId),
+            Topics.FileEvents(evt.TenantId, driveId),
             Arg.Is<FileEvent>(fe =>
                 fe.EventType == FileEventType.Moved
                 && fe.OldPath == "/docs/old.txt"
@@ -121,7 +121,7 @@ public sealed class GraphQLSubscriptionPublisherTests
         await _consumer.Consume(ContextFor(evt));
 
         await _sender.Received(1).SendAsync(
-            Topics.FileEvents(driveId),
+            Topics.FileEvents(evt.TenantId, driveId),
             Arg.Is<FileEvent>(fe =>
                 fe.EventType == FileEventType.Copied
                 && fe.OldPath == null
@@ -148,7 +148,7 @@ public sealed class GraphQLSubscriptionPublisherTests
         await _consumer.Consume(ContextFor(evt));
 
         await _sender.Received(1).SendAsync(
-            Topics.FileEvents(driveId),
+            Topics.FileEvents(evt.TenantId, driveId),
             Arg.Is<FileEvent>(fe =>
                 fe.EventType == FileEventType.Renamed
                 && fe.OldPath == "draft.txt"
@@ -159,11 +159,16 @@ public sealed class GraphQLSubscriptionPublisherTests
     // TC-005 — pins the topic string shape shared with FileSubscriptions.SubscribeToFileEventsAsync.
     // Hardcoded format keeps the test from circular-referencing the Topics helper it is defending.
     // If someone renames the topic convention in one place and forgets the other, this fires.
+    // Tenant-prefix is load-bearing: a receiver-side-only filter (driveId-keyed) would expose a
+    // timing/cadence/error-log oracle to a cross-tenant subscriber holding a leaked driveId. See
+    // Topics.FileEvents xmldoc for the full rationale.
     [Fact]
     public void Topics_FileEvents_format_matches_subscription_receiver_contract()
     {
+        var tenantId = Guid.Parse("00000000-0000-0000-0000-0000000000aa");
         var driveId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        Topics.FileEvents(driveId).Should().Be("file-events:00000000-0000-0000-0000-000000000001");
+        Topics.FileEvents(tenantId, driveId).Should()
+            .Be("file-events:00000000-0000-0000-0000-0000000000aa:00000000-0000-0000-0000-000000000001");
     }
 
     private static ConsumeContext<T> ContextFor<T>(T message) where T : class

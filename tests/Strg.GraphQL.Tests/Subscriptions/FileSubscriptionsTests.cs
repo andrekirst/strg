@@ -61,7 +61,7 @@ public class FileSubscriptionsTests
             NewPath: null,
             OccurredAt: DateTimeOffset.UtcNow);
 
-        await sender.SendAsync(Topics.FileEvents(driveId), fileEvent, CancellationToken.None);
+        await sender.SendAsync(Topics.FileEvents(tenantId, driveId), fileEvent, CancellationToken.None);
 
         await using var stream = (IResponseStream)subscriptionResult;
         await using var enumerator = stream.ReadResultsAsync().GetAsyncEnumerator(CancellationToken.None);
@@ -78,9 +78,10 @@ public class FileSubscriptionsTests
     }
 
     // TC-002: events for a different drive must NOT reach a subscriber scoped to driveA. The
-    // guarantee here is topic-level (Topics.FileEvents(driveId) returns a per-drive string), so
-    // this is a first-order routing test — if the publisher ever fans out to a shared topic and
-    // relies on resolver-side filtering, this test breaks before users see events bleed across.
+    // guarantee here is topic-level (Topics.FileEvents returns a (tenantId, driveId)-scoped
+    // string), so this is a first-order routing test — if the publisher ever fans out to a shared
+    // topic and relies on resolver-side filtering, this test breaks before users see events
+    // bleed across drives or tenants.
     [Fact]
     public async Task FileEvents_DoesNotReceiveEventsFromOtherDrive()
     {
@@ -105,7 +106,7 @@ public class FileSubscriptionsTests
             OldPath: null,
             NewPath: null,
             OccurredAt: DateTimeOffset.UtcNow);
-        await sender.SendAsync(Topics.FileEvents(driveB), driveBEvent, CancellationToken.None);
+        await sender.SendAsync(Topics.FileEvents(tenantId, driveB), driveBEvent, CancellationToken.None);
 
         await using var stream = (IResponseStream)subscriptionResult;
         using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
@@ -149,7 +150,7 @@ public class FileSubscriptionsTests
             OldPath: null,
             NewPath: null,
             OccurredAt: DateTimeOffset.UtcNow);
-        await sender.SendAsync(Topics.FileEvents(driveId), fileEvent, CancellationToken.None);
+        await sender.SendAsync(Topics.FileEvents(tenantId, driveId), fileEvent, CancellationToken.None);
 
         await using var stream1 = (IResponseStream)sub1;
         await using var stream2 = (IResponseStream)sub2;
@@ -199,5 +200,68 @@ public class FileSubscriptionsTests
         Assert.Contains("driveId", fieldNames);
         Assert.Contains("occurredAt", fieldNames);
         Assert.Contains("file", fieldNames);
+    }
+
+    // INFO-1 — Corollary 6: name the test after the invariant.
+    //
+    // The topic key (tenantId, driveId) makes the cross-tenant subscribe path structurally empty
+    // under normal routing, but the per-event resolver guard is kept as defence-in-depth against
+    // a future bug that bypasses topic keys — a custom SubscribeToFileEventsAsync impl, broken
+    // [GlobalState("tenantId")] propagation, or an accidental topic-key downgrade. This test
+    // drives the cross-tenant event directly into the topic the subscriber is bound to (same
+    // tenantId, same driveId), but with a payload whose TenantId is spoofed to a different
+    // tenant — the only way to reach the resolver with a mismatched event under normal routing
+    // would be via such a bug. The resolver must reject the event with UnauthorizedAccessException
+    // rather than delivering the payload.
+    [Fact]
+    public async Task FileEvents_throws_UnauthorizedAccessException_when_subscriber_tenant_does_not_match_event_tenant()
+    {
+        var subscriberTenant = Guid.NewGuid();
+        var foreignTenant = Guid.NewGuid();
+        SharedTenantCtx.TenantId = subscriberTenant;
+
+        var driveId = Guid.NewGuid();
+        var executor = await CreateExecutorAsync(subscriberTenant, Guid.NewGuid(), Guid.NewGuid().ToString());
+        var sender = executor.Services.GetRequiredService<ITopicEventSender>();
+
+        var subscriptionResult = await executor.ExecuteAsync(
+            $"subscription {{ fileEvents(driveId: \"{driveId}\") {{ eventType }} }}");
+
+        // Spoof path: publish directly to the subscriber's own topic key, but with a payload
+        // whose TenantId is foreignTenant. This is the exact scenario the resolver-side guard
+        // exists to catch if topic routing is ever bypassed or regressed.
+        var spoofed = new FileEvent(
+            EventType: FileEventType.Uploaded,
+            FileId: Guid.NewGuid(),
+            DriveId: driveId,
+            UserId: Guid.NewGuid(),
+            TenantId: foreignTenant,
+            OldPath: null,
+            NewPath: null,
+            OccurredAt: DateTimeOffset.UtcNow);
+        await sender.SendAsync(Topics.FileEvents(subscriberTenant, driveId), spoofed, CancellationToken.None);
+
+        await using var stream = (IResponseStream)subscriptionResult;
+        await using var enumerator = stream.ReadResultsAsync().GetAsyncEnumerator(CancellationToken.None);
+
+        // The resolver throws UnauthorizedAccessException; Hot Chocolate surfaces it as a GraphQL
+        // error on the result rather than raising it to the caller of MoveNextAsync. The payload
+        // MUST NOT be delivered — assert that the result carries errors and no data field, or
+        // (depending on HC version) a null data.fileEvents with an error entry.
+        Assert.True(await enumerator.MoveNextAsync(), "Expected a subscription frame carrying the rejection.");
+        var json = enumerator.Current.ToJson();
+        using var doc = JsonDocument.Parse(json);
+
+        Assert.True(doc.RootElement.TryGetProperty("errors", out var errors),
+            $"Expected errors on resolver rejection, got: {json}");
+        Assert.True(errors.GetArrayLength() >= 1, "Expected at least one error entry.");
+
+        // Defensive: if data is present, its fileEvents payload must be null — the event MUST
+        // NOT have crossed the wire with a materialised FileEventPayload.
+        if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object
+            && data.TryGetProperty("fileEvents", out var fe))
+        {
+            Assert.Equal(JsonValueKind.Null, fe.ValueKind);
+        }
     }
 }

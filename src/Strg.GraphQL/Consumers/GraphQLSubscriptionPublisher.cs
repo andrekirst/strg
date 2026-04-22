@@ -65,7 +65,8 @@ public sealed class GraphQLSubscriptionPublisher :
         string? oldPath, string? newPath, CancellationToken cancellationToken)
     {
         var evt = new FileEvent(type, fileId, driveId, userId, tenantId, oldPath, newPath, DateTimeOffset.UtcNow);
-        await _sender.SendAsync(Topics.FileEvents(driveId), evt, cancellationToken);
-        _logger.LogDebug("Published {EventType} event to topic {Topic}", type, Topics.FileEvents(driveId));
+        var topic = Topics.FileEvents(tenantId, driveId);
+        await _sender.SendAsync(topic, evt, cancellationToken);
+        _logger.LogDebug("Published {EventType} event to topic {Topic}", type, topic);
     }
 }

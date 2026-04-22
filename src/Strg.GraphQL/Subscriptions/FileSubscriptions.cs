@@ -10,38 +10,39 @@ namespace Strg.GraphQL.Subscriptions;
 
 /// <summary>
 /// Exposes the <c>fileEvents(driveId: ID!)</c> GraphQL subscription. Events published via
-/// <see cref="Consumers.GraphQLSubscriptionPublisher"/> (STRG-065) are filtered per-drive on the
-/// topic level and per-tenant on the resolver level before a payload reaches the subscriber.
+/// <see cref="Consumers.GraphQLSubscriptionPublisher"/> (STRG-065) are routed per-(tenant, drive)
+/// at the topic layer and re-checked per-event at the resolver layer before a payload reaches
+/// the subscriber.
 /// </summary>
 /// <remarks>
 /// <para><b>Trust model (subscribe-time vs deliver-time auth).</b> The
 /// <see cref="AuthorizeAttribute"/> on <see cref="FileEvents"/> is the subscribe-time gate: it
 /// runs against the caller's JWT during the WebSocket handshake and establishes the
 /// <c>files.read</c> scope. It does <i>not</i> verify that the caller's tenant owns the requested
-/// <c>driveId</c> — drive-level tenancy is enforced at deliver-time by the
-/// <c>fileEvent.TenantId != tenantId</c> guard inside the resolver. This means a subscriber on
-/// a drive outside their tenant will still see messages fan out to their stream handler, but the
-/// resolver throws <see cref="UnauthorizedAccessException"/> before the payload is materialised,
-/// so nothing crosses the wire. This is intentional: it keeps the subscribe-path cheap
-/// (no repository lookup on connect) and moves the check to the single point where data would
-/// otherwise leak. If this assumption ever breaks — e.g. events start carrying tenant-scoped
-/// payloads at the ISourceStream layer — the guard must move to <see cref="SubscribeToFileEventsAsync"/>.</para>
+/// <c>driveId</c> — drive-ownership is enforced structurally by the topic key, which is keyed on
+/// the caller's <b>ambient tenantId</b> (from <c>[GlobalState("tenantId")]</c>). A caller
+/// subscribing with a leaked foreign-tenant driveId ends up bound to
+/// <c>file-events:{own-tenant}:{foreign-drive}</c>, which is a topic nothing ever publishes to —
+/// the channel is structurally empty. This closes the timing/cadence/error-log oracle that a
+/// receiver-side-only filter (driveId-keyed topic + per-event resolver reject) would have exposed;
+/// see the detailed rationale on <see cref="Topics.FileEvents"/>.</para>
+///
+/// <para>The resolver-side guard (<c>fileEvent.TenantId != tenantId</c> throws
+/// <see cref="UnauthorizedAccessException"/>) is kept as defence-in-depth against a future bug
+/// that bypasses the topic key: a custom <see cref="SubscribeToFileEventsAsync"/> impl with regex
+/// routing, broken <c>[GlobalState]</c> propagation, or an accidental topic-key downgrade to
+/// driveId-only. The regression test
+/// <c>FileEvents_throws_UnauthorizedAccessException_when_subscriber_tenant_does_not_match_event_tenant</c>
+/// names this invariant and pins it by constructing the cross-tenant scenario directly at the
+/// <see cref="ITopicEventSender"/> layer.</para>
 ///
 /// <para><b>Snapshot vs live authorization.</b> The resolver re-checks the tenant on every event,
-/// so authorization tracks the event's payload, not a snapshot captured at subscribe-time. Drives
+/// so authorization tracks the event payload, not a snapshot captured at subscribe-time. Drives
 /// do not cross tenants today (the domain has no move-drive-between-tenants operation), so the
-/// distinction is currently moot, but the contract is "deliver-time tenancy wins" — a future
-/// drive-transfer feature will not silently leak events already in flight.</para>
-///
-/// <para><b>Topic naming (<c>file-events:{driveId}</c>).</b> Per-drive rather than
-/// <c>file-events:{tenantId}:{driveId}</c> because drives are tenant-scoped by their
-/// <see cref="Core.Domain.Drive.TenantId"/> invariant and cannot be reassigned. A per-drive topic
-/// is therefore safe-by-construction: two drives in different tenants cannot collide on
-/// <see cref="Guid"/> allocation, so the tenant prefix would be redundant. Contrast with
-/// <see cref="Topics.QuotaWarnings"/>, which is per-(tenant, user) because <c>userId</c> alone
-/// is theoretically collidable across tenants and defence-in-depth at the topic level is cheap
-/// insurance. If drives ever become transferable between tenants, this rationale breaks and the
-/// topic must include the tenant prefix — see ArchTest #102 and STRG-065.</para>
+/// distinction is currently moot. If a future feature allows drive transfer, the topic-key
+/// invariant (events published under the new tenant key) carries the authorization transfer
+/// atomically — subscribers of the old tenant stop receiving events at the moment the publisher
+/// switches tenants on the source event.</para>
 /// </remarks>
 [ExtendObjectType("Subscription")]
 public sealed class FileSubscriptions
@@ -53,6 +54,9 @@ public sealed class FileSubscriptions
         [EventMessage] FileEvent fileEvent,
         [GlobalState("tenantId")] Guid tenantId)
     {
+        // Defence-in-depth: the topic key is keyed on (tenantId, driveId) so cross-tenant events
+        // should not reach this resolver at all. This guard pins the invariant against any future
+        // regression in the topic-routing layer (see Topics.FileEvents xmldoc).
         if (fileEvent.TenantId != tenantId)
         {
             throw new UnauthorizedAccessException("Subscription event tenant mismatch.");
@@ -63,7 +67,8 @@ public sealed class FileSubscriptions
 
     public ValueTask<ISourceStream<FileEvent>> SubscribeToFileEventsAsync(
         Guid driveId,
+        [GlobalState("tenantId")] Guid tenantId,
         [Service] ITopicEventReceiver receiver,
         CancellationToken cancellationToken)
-        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(driveId), cancellationToken);
+        => receiver.SubscribeAsync<FileEvent>(Topics.FileEvents(tenantId, driveId), cancellationToken);
 }

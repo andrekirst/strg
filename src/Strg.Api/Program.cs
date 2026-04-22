@@ -24,6 +24,7 @@ using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
 using Strg.Infrastructure.Versioning;
+using Strg.WebDav;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,6 +60,9 @@ builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<Quota
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITagService, TagService>();
+
+// ---- WebDAV (STRG-067) ----
+builder.Services.AddStrgWebDav();
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future
@@ -184,9 +188,22 @@ var app = builder.Build();
 
 app.UseRouting();
 app.UseAuthentication();
+
+// STRG-067 — WebDAV branches off BEFORE the app-level UseAuthorization() so its middleware
+// terminal (no endpoint metadata) doesn't get caught by the FallbackPolicy
+// (RequireAuthenticatedUser) that would reject OPTIONS with 401 and break RFC 4918 §10.1's
+// pre-auth capability probe. HttpContext.User is already populated by the parent-pipeline
+// UseAuthentication above; StrgWebDavMiddleware enforces auth explicitly for non-OPTIONS verbs
+// via its own IsAuthenticated check (TC-004 pin).
+app.Map("/dav", webdavApp =>
+{
+    webdavApp.UseMiddleware<StrgWebDavMiddleware>();
+});
+
 app.UseAuthorization();
 
 app.UseWebSockets();
+
 app.MapGraphQL("/graphql");
 app.MapControllers();
 app.MapDriveEndpoints();

@@ -35,4 +35,13 @@ public sealed class WebDavOptions
     /// lock via the RFC 4918 §7.6 LOCK-with-If-header dance.
     /// </summary>
     public int MaxLockTimeoutSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// STRG-073 — base address the Basic-Auth bridge uses to reach <c>/connect/token</c>. In the
+    /// default single-process deployment this is a loopback URL on the same Kestrel instance; a
+    /// future split that moves the token endpoint to a sidecar would flip this to the sidecar's
+    /// URL with no code change on the bridge. Kept on <see cref="WebDavOptions"/> rather than a
+    /// top-level <c>Oidc</c> section so the WebDAV-only coupling stays visible in config.
+    /// </summary>
+    public string OidcBaseAddress { get; set; } = "http://127.0.0.1:5000";
 }

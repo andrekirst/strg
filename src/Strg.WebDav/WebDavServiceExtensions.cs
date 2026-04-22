@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Strg.WebDav;
 
@@ -43,6 +44,29 @@ public static class WebDavServiceExtensions
         // Scoped for the same reason — DbLockManager owns an EF query stream against FileLocks
         // and depends on ITenantContext which is per-request.
         services.AddScoped<IStrgWebDavLockManager, DbLockManager>();
+
+        // STRG-073 — in-process IMemoryCache shared with any other consumer in the same host.
+        // IServiceCollection.AddMemoryCache is idempotent (calls TryAddSingleton internally), so a
+        // second caller adding it elsewhere is a no-op rather than a duplicate-registration error.
+        services.AddMemoryCache();
+
+        // STRG-073 — Singleton: the cache is process-wide and its side-index must survive across
+        // requests for InvalidateUser to work correctly. Scoped would discard the side-index at
+        // the end of every request, making eviction-on-password-change unenforceable.
+        services.AddSingleton<IWebDavJwtCache, WebDavJwtCache>();
+
+        // STRG-073 — named "oidc" client consumed exclusively by BasicAuthJwtBridgeMiddleware. The
+        // BaseAddress is read at resolve-time from WebDavOptions so tests can inject a TestServer
+        // handler via IHttpClientFactory without rebuilding the DI graph; production loopback
+        // points back at the same Kestrel listener. A longer-than-default timeout would let a
+        // hung token endpoint pile up WebDAV requests past the cache-miss fanout — stick with the
+        // 100-second default HttpClient budget, which is already more lenient than any WebDAV
+        // client will tolerate.
+        services.AddHttpClient(BasicAuthJwtBridgeMiddleware.OidcHttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<WebDavOptions>>().Value;
+            client.BaseAddress = new Uri(options.OidcBaseAddress);
+        });
         return services;
     }
 }

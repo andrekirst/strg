@@ -198,8 +198,20 @@ app.UseAuthentication();
 // pre-auth capability probe. HttpContext.User is already populated by the parent-pipeline
 // UseAuthentication above; StrgWebDavMiddleware enforces auth explicitly for non-OPTIONS verbs
 // via its own IsAuthenticated check (TC-004 pin).
+//
+// STRG-073 — the bridge runs FIRST inside the branch. It rewrites a valid Basic header to a
+// Bearer JWT (by exchanging credentials with /connect/token), then the branch-local
+// UseAuthentication() re-runs the OIDC validator against the rewritten header so the request
+// reaches StrgWebDavMiddleware with HttpContext.User populated. Why re-run auth inside the
+// branch: the outer UseAuthentication above already ran against the ORIGINAL Basic header, saw
+// "no valid scheme", and left the principal anonymous — if we didn't re-run, the freshly
+// minted Bearer token in the rewritten Authorization header would be ignored. The bridge is
+// restricted to the branch (not global) so password-grant exchanges never occur on GraphQL,
+// REST, or token endpoints — surfaces that have their own Bearer-only auth story.
 app.Map("/dav", webdavApp =>
 {
+    webdavApp.UseMiddleware<BasicAuthJwtBridgeMiddleware>();
+    webdavApp.UseAuthentication();
     webdavApp.UseMiddleware<StrgWebDavMiddleware>();
 });
 

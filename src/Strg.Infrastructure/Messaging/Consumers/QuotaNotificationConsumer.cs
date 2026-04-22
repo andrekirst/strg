@@ -30,7 +30,11 @@ public sealed class QuotaNotificationConsumer :
     public Task Consume(ConsumeContext<Fault<QuotaWarningEvent>> context)
     {
         _logger.LogError(
-            "Dead-letter: QuotaWarningEvent dispatch failed. Tenant={TenantId} User={UserId} Exceptions={@Exceptions}",
+            // {Exceptions} not {@Exceptions}: destructuring the Fault exception graph flows EF
+            // parameter values (path strings, neighbouring-row tenant IDs from FK-violation
+            // messages) into the structured payload. Plain ToString keeps type + top stack frame
+            // without cross-tenant leakage.
+            "Dead-letter: QuotaWarningEvent dispatch failed. Tenant={TenantId} User={UserId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.UserId, context.Message.Exceptions);
         return Task.CompletedTask;
     }

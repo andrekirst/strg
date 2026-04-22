@@ -16,6 +16,21 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// so the forensic trail lives alongside auth/tag/prune entries in the same <c>AuditEntries</c>
 /// table.
 ///
+/// <para><b>Tenant sourcing — load-bearing.</b> Every <see cref="AuditEntry.TenantId"/> here is
+/// taken directly from the event payload (<c>msg.TenantId</c>), NOT from the ambient
+/// <c>ITenantContext</c>. MassTransit consumers execute in a background-service DI scope outside
+/// any HTTP request, so the ambient <c>HttpTenantContext</c> resolves to <see cref="Guid.Empty"/>.
+/// Any refactor that routes writes through an ambient-tenant helper (e.g. <c>IAuditService.LogAsync</c>
+/// today fills TenantId from scope in other call sites) will silently land every consumed event
+/// in the zero-tenant bucket and defeat per-tenant admin queries. Pinned by a regression test in
+/// <c>AuditLogConsumerTests</c>.</para>
+///
+/// <para><b>Reads inside the consumer scope must use explicit tenant filters.</b> The global
+/// EF query filter on <see cref="AuditEntry"/> binds to the same ambient-empty tenant context, so
+/// a naive <c>db.AuditEntries.Where(...)</c> inside <c>Consume</c> would return zero rows. The
+/// idempotency path here avoids that by relying on the DB-level unique constraint + Npgsql
+/// exception inspection instead of a pre-insert existence check.</para>
+///
 /// <para><b>Idempotency via EventId.</b> The outbox guarantees at-least-once delivery — on retry
 /// or after a dispatcher restart the same message can arrive twice. Each row is tagged with
 /// <see cref="ConsumeContext.MessageId"/> into <see cref="AuditEntry.EventId"/>, and a partial
@@ -26,7 +41,10 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 ///
 /// <para><b>Fault observability.</b> When retries are exhausted MassTransit publishes
 /// <see cref="Fault{T}"/> messages. We keep log-only handlers here for v0.1; the Notification
-/// entity + admin-visible DLQ surface is STRG-064's territory.</para>
+/// entity + admin-visible DLQ surface is STRG-064's territory. Dead-letter logs use the plain
+/// <c>{Exceptions}</c> template (not <c>{@Exceptions}</c>) to avoid flowing EF parameter values
+/// — path strings, neighbouring-row tenant IDs from FK violations — through Serilog's
+/// destructuring into the structured log payload.</para>
 /// </summary>
 public sealed class AuditLogConsumer :
     IConsumer<FileUploadedEvent>,
@@ -103,7 +121,7 @@ public sealed class AuditLogConsumer :
     public Task Consume(ConsumeContext<Fault<FileUploadedEvent>> context)
     {
         _logger.LogError(
-            "Dead-letter: FileUploadedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={@Exceptions}",
+            "Dead-letter: FileUploadedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
         return Task.CompletedTask;
     }
@@ -111,7 +129,7 @@ public sealed class AuditLogConsumer :
     public Task Consume(ConsumeContext<Fault<FileDeletedEvent>> context)
     {
         _logger.LogError(
-            "Dead-letter: FileDeletedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={@Exceptions}",
+            "Dead-letter: FileDeletedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
         return Task.CompletedTask;
     }
@@ -119,7 +137,7 @@ public sealed class AuditLogConsumer :
     public Task Consume(ConsumeContext<Fault<FileMovedEvent>> context)
     {
         _logger.LogError(
-            "Dead-letter: FileMovedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={@Exceptions}",
+            "Dead-letter: FileMovedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
         return Task.CompletedTask;
     }

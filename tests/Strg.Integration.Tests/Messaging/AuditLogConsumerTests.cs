@@ -299,6 +299,61 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
             .Which.Details.Should().Be("{\"source\":\"seed\"}");
     }
 
+    [Fact]
+    public async Task TenantId_on_audit_row_comes_from_event_payload_not_ambient_context()
+    {
+        // Regression test for STRG-061 audit INFO-2: MassTransit consumers execute in a
+        // background-service scope where the ambient ITenantContext resolves to Guid.Empty
+        // (no HTTP request). If a future refactor routes AuditEntry writes through a helper that
+        // fills TenantId from ambient context, every consumed event would land in the zero-tenant
+        // bucket. This test pins the contract by *explicitly* disagreeing — ambient Guid.Empty,
+        // event TenantId = tenantX — and asserting the row uses the event's value.
+        var eventTenantId = Guid.NewGuid();
+        var fileId = Guid.NewGuid();
+
+        // Build with ambient tenant = Guid.Empty, matching production consumer scope where no
+        // HttpContext is present.
+        await using var provider = await BuildServiceProviderAsync(Guid.Empty);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+
+            // Seed the event's tenant so downstream FKs are consistent. Ambient tenant is still
+            // Guid.Empty — the Tenant row is added via IgnoreQueryFilters by convention of the
+            // outbox publish path which doesn't read AuditEntries.
+            db.Tenants.Add(new Tenant { Id = eventTenantId, Name = "info2-regression" });
+
+            await bus.Publish(new FileUploadedEvent(
+                TenantId: eventTenantId,
+                FileId: fileId,
+                DriveId: Guid.NewGuid(),
+                UserId: Guid.NewGuid(),
+                Size: 1,
+                MimeType: "text/plain"));
+            await db.SaveChangesAsync();
+        }
+
+        (await harness.Consumed.Any<FileUploadedEvent>()).Should().BeTrue();
+
+        // Read back with IgnoreQueryFilters — the audit query filter is keyed on ambient
+        // ITenantContext.TenantId = Guid.Empty, and a filtered query would return nothing even
+        // if the row landed correctly under eventTenantId. We need the raw row to assert its
+        // TenantId column value.
+        await using var assertScope = provider.CreateAsyncScope();
+        var auditDb = assertScope.ServiceProvider.GetRequiredService<StrgDbContext>();
+        var row = await auditDb.AuditEntries
+            .IgnoreQueryFilters()
+            .SingleAsync(e => e.ResourceId == fileId);
+
+        row.TenantId.Should().Be(eventTenantId,
+            "AuditEntry.TenantId must come from the event payload, not ambient ITenantContext (which is Guid.Empty here)");
+        row.TenantId.Should().NotBe(Guid.Empty);
+    }
+
     private static async Task PublishAsync<TEvent>(ServiceProvider provider, Guid tenantId, TEvent message)
         where TEvent : class
     {

@@ -1,6 +1,7 @@
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Strg.WebDav;
 
@@ -55,17 +56,46 @@ public static class WebDavServiceExtensions
         // the end of every request, making eviction-on-password-change unenforceable.
         services.AddSingleton<IWebDavJwtCache, WebDavJwtCache>();
 
-        // STRG-073 — named "oidc" client consumed exclusively by BasicAuthJwtBridgeMiddleware. The
-        // BaseAddress is read at resolve-time from WebDavOptions so tests can inject a TestServer
-        // handler via IHttpClientFactory without rebuilding the DI graph; production loopback
-        // points back at the same Kestrel listener. A longer-than-default timeout would let a
-        // hung token endpoint pile up WebDAV requests past the cache-miss fanout — stick with the
-        // 100-second default HttpClient budget, which is already more lenient than any WebDAV
-        // client will tolerate.
+        // STRG-073 — named "oidc" client consumed exclusively by BasicAuthJwtBridgeMiddleware.
+        //
+        // STRG-073 fold-in #2 (security-reviewer baseline #4) — BaseAddress is resolved from the
+        // ACTUAL running Kestrel binding via IServer.Features, not from IConfiguration or
+        // WebDavOptions. Any config-bound base address is a credential-exfiltration vector: a
+        // deploy-time typo would redirect every WebDAV user's cleartext password to the
+        // misconfigured URL. By reading from IServerAddressesFeature we guarantee the bridge
+        // only ever POSTs to the process's OWN token endpoint.
+        //
+        // The callback fires at HttpClient resolve-time; by then Kestrel has finished binding
+        // (StartAsync runs before any request arrives), so Features.Addresses is populated.
+        // Wildcard bindings ("http://+:5000", "http://*:5000") are normalized to loopback so the
+        // request targets 127.0.0.1 directly rather than relying on DNS or external routing.
+        //
+        // A longer-than-default timeout would let a hung token endpoint pile up WebDAV requests
+        // past the cache-miss fanout — stick with the 100-second default HttpClient budget.
         services.AddHttpClient(BasicAuthJwtBridgeMiddleware.OidcHttpClientName, (sp, client) =>
         {
-            var options = sp.GetRequiredService<IOptions<WebDavOptions>>().Value;
-            client.BaseAddress = new Uri(options.OidcBaseAddress);
+            var server = sp.GetRequiredService<IServer>();
+            var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
+            if (addresses is null || addresses.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "STRG-073: IServerAddressesFeature has no addresses — the WebDAV Basic-Auth " +
+                    "bridge cannot resolve the in-process /connect/token endpoint. This indicates " +
+                    "the Kestrel server has not started listening; the named 'oidc' HttpClient " +
+                    "must not be resolved before application startup completes.");
+            }
+
+            // Prefer http:// over https:// for loopback to avoid TLS handshake + cert-validation
+            // against a self-signed dev cert. If only https:// is bound we still have to use it,
+            // but ServerCertificateCustomValidationCallback would be a bigger foot-gun than a TLS
+            // round-trip on the same host.
+            var raw = addresses.FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                ?? addresses.First();
+            var normalized = raw
+                .Replace("://*", "://127.0.0.1", StringComparison.Ordinal)
+                .Replace("://+", "://127.0.0.1", StringComparison.Ordinal)
+                .Replace("://[::]", "://[::1]", StringComparison.Ordinal);
+            client.BaseAddress = new Uri(normalized);
         });
         return services;
     }

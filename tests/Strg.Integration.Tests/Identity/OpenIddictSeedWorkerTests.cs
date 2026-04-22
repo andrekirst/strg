@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using OpenIddict.Abstractions;
+using Strg.Core.Constants;
 using Strg.Core.Identity;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
@@ -140,14 +141,44 @@ public sealed class OpenIddictSeedWorkerTests : IAsyncLifetime
             "the bridge has no secret-storage surface — public client matches reality");
 
         var permissions = await manager.GetPermissionsAsync(client!);
-        var expected = ImmutableArray.Create(
-            OpenIddictConstants.Permissions.Endpoints.Token,
-            OpenIddictConstants.Permissions.GrantTypes.Password,
-            OpenIddictConstants.Permissions.Prefixes.Scope + "files.read",
-            OpenIddictConstants.Permissions.Prefixes.Scope + "files.write",
-            OpenIddictConstants.Permissions.Prefixes.Scope + "tags.write");
-        permissions.Should().BeEquivalentTo(expected,
+
+        // STRG-073 fold-in #1 — the expected scope permissions are sourced from
+        // Strg.Core.Constants.WebDavScopes.All, NOT hardcoded here. This is the load-bearing
+        // drift guard: if a future edit widens WebDavScopes.All (e.g., adds "files.share"),
+        // the bridge will silently request the wider scope AND the seed will silently grant it.
+        // Sourcing both sides from the same array means the test only fires on the intended
+        // security invariant — "nothing beyond the three WebDavScopes gets granted" — rather
+        // than on innocuous scope-set evolution.
+        var expectedBuilder = ImmutableArray.CreateBuilder<string>();
+        expectedBuilder.Add(OpenIddictConstants.Permissions.Endpoints.Token);
+        expectedBuilder.Add(OpenIddictConstants.Permissions.GrantTypes.Password);
+        foreach (var scopeName in WebDavScopes.All)
+        {
+            expectedBuilder.Add(OpenIddictConstants.Permissions.Prefixes.Scope + scopeName);
+        }
+        permissions.Should().BeEquivalentTo(expectedBuilder.ToImmutable(),
             "webdav-internal scopes deliberately exclude RefreshToken, admin, offline_access, and the OIDC identity scopes — widening requires a deliberate review, not a silent edit");
+    }
+
+    [Fact]
+    public void WebDavScopes_does_not_grant_elevated_or_identity_scopes()
+    {
+        // STRG-073 fold-in #1 — pins the CONTENTS of WebDavScopes.All, not just its shape. The
+        // whole-scope-set invariant ("nothing beyond the three") from the seed test above is only
+        // meaningful if WebDavScopes itself stays narrow. If a future edit adds "admin",
+        // "files.share", or "offline_access" here, the bridge would silently request them AND
+        // the seed would silently grant them — the seed test wouldn't catch it because both sides
+        // move together. This test is the fence around WebDavScopes itself.
+        WebDavScopes.All.Should().NotContain("admin",
+            "a stolen Basic-Auth credential must not be able to mint admin-scoped tokens through the bridge");
+        WebDavScopes.All.Should().NotContain("files.share",
+            "WebDAV clients cannot usefully share via the protocol — granting files.share would let a stolen WebDAV credential mint shareable links");
+        WebDavScopes.All.Should().NotContain("offline_access",
+            "refresh tokens would outlive the 14-minute cache window that is the intended revocation surface");
+        WebDavScopes.All.Should().NotContain("openid",
+            "the bridge issues access tokens only; identity tokens have no WebDAV use case and would expose identity claims to cache layers");
+        WebDavScopes.All.Should().NotContain("profile",
+            "profile-claim tokens have no WebDAV use case");
     }
 
     // Regression test for the documented "no mutation on subsequent boots" contract: an operator

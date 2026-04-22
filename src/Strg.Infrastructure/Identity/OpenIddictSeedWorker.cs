@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenIddict.Abstractions;
+using Strg.Core.Constants;
 
 namespace Strg.Infrastructure.Identity;
 
@@ -158,20 +159,33 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
     /// and a process-local secret would be security theatre — any attacker with the ability to
     /// read the bridge's config can already read the database.
     /// </summary>
-    internal static OpenIddictApplicationDescriptor BuildWebDavInternalDescriptor() => new()
+    internal static OpenIddictApplicationDescriptor BuildWebDavInternalDescriptor()
     {
-        ClientId = WebDavInternalClientId,
-        ClientType = OpenIddictConstants.ClientTypes.Public,
-        ClientSecret = null,
-        DisplayName = "strg WebDAV Internal Bridge",
-        ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
-        Permissions =
+        var descriptor = new OpenIddictApplicationDescriptor
         {
-            OpenIddictConstants.Permissions.Endpoints.Token,
-            OpenIddictConstants.Permissions.GrantTypes.Password,
-            OpenIddictConstants.Permissions.Prefixes.Scope + "files.read",
-            OpenIddictConstants.Permissions.Prefixes.Scope + "files.write",
-            OpenIddictConstants.Permissions.Prefixes.Scope + "tags.write",
-        },
-    };
+            ClientId = WebDavInternalClientId,
+            ClientType = OpenIddictConstants.ClientTypes.Public,
+            ClientSecret = null,
+            DisplayName = "strg WebDAV Internal Bridge",
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.GrantTypes.Password,
+            },
+        };
+
+        // STRG-073 fold-in #1 — scope permissions are enumerated from the single source of truth
+        // in Strg.Core.Constants.WebDavScopes.All so the bridge's form-scope param cannot drift
+        // from the granted permission set. A drift (bridge asks for X not in Y, or Y is wider than
+        // X) is silent: OpenIddict rejects the token with "invalid_scope" at request time, WebDAV
+        // clients see a generic 401, and the cause lives in two files that only diff-review would
+        // catch. Iterating the same array here removes that surface entirely.
+        foreach (var scope in WebDavScopes.All)
+        {
+            descriptor.Permissions.Add(OpenIddictConstants.Permissions.Prefixes.Scope + scope);
+        }
+
+        return descriptor;
+    }
 }

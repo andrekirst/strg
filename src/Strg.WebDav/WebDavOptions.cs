@@ -36,12 +36,12 @@ public sealed class WebDavOptions
     /// </summary>
     public int MaxLockTimeoutSeconds { get; set; } = 3600;
 
-    /// <summary>
-    /// STRG-073 — base address the Basic-Auth bridge uses to reach <c>/connect/token</c>. In the
-    /// default single-process deployment this is a loopback URL on the same Kestrel instance; a
-    /// future split that moves the token endpoint to a sidecar would flip this to the sidecar's
-    /// URL with no code change on the bridge. Kept on <see cref="WebDavOptions"/> rather than a
-    /// top-level <c>Oidc</c> section so the WebDAV-only coupling stays visible in config.
-    /// </summary>
-    public string OidcBaseAddress { get; set; } = "http://127.0.0.1:5000";
+    // STRG-073 fold-in #2 — an OidcBaseAddress option lived here in an earlier draft of the
+    // bridge. It was REMOVED as a security-reviewer baseline: any config-bound base address for
+    // the bridge's token-endpoint client is a credential-exfiltration vector — a deploy-time typo
+    // on "WebDav:OidcBaseAddress" would redirect every WebDAV user's cleartext password to the
+    // misconfigured URL. The bridge now resolves its target from IServer.Features at request time
+    // (see WebDavServiceExtensions), which is the actual running Kestrel binding rather than any
+    // settable value. Do NOT re-introduce an OidcBaseAddress option without pairing it with a
+    // same-process-loopback validator.
 }

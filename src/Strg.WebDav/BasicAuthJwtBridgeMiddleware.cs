@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
+using Strg.Core.Constants;
 
 namespace Strg.WebDav;
 
@@ -70,13 +71,10 @@ public sealed class BasicAuthJwtBridgeMiddleware
     internal const string OidcHttpClientName = "oidc";
     private const string WebDavClientId = "webdav-internal";
 
-    /// <summary>
-    /// Scope bundle the bridge requests from the token endpoint. Matches the permission set
-    /// granted to <c>webdav-internal</c> in <c>OpenIddictSeedWorker.BuildWebDavInternalDescriptor</c>.
-    /// A narrower set here would force clients to use less-privileged tokens; a wider set would
-    /// be rejected by OpenIddict as an unauthorized-scope grant.
-    /// </summary>
-    private const string RequestedScopes = "files.read files.write tags.write";
+    // STRG-073 fold-in #1 — the requested-scope string is intentionally NOT a const here.
+    // Both this middleware and OpenIddictSeedWorker.BuildWebDavInternalDescriptor read from
+    // Strg.Core.Constants.WebDavScopes so a scope addition/removal lands in one place. See
+    // WebDavScopes.cs for the rationale on why these three and no more.
 
     /// <summary>
     /// Safety margin subtracted from the server-issued <c>expires_in</c> before setting the
@@ -212,7 +210,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
             new KeyValuePair<string, string>("grant_type", "password"),
             new KeyValuePair<string, string>("username", username),
             new KeyValuePair<string, string>("password", password),
-            new KeyValuePair<string, string>("scope", RequestedScopes),
+            new KeyValuePair<string, string>("scope", WebDavScopes.SpaceSeparated),
             new KeyValuePair<string, string>("client_id", WebDavClientId),
         ]);
 

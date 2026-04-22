@@ -236,6 +236,39 @@ public sealed class WebDavPutGetTests(StrgWebApplicationFactory factory)
             because: "authenticated-but-unscoped clients must hit 403, not 401 — the credential is valid, the permission is missing");
     }
 
+    [Fact]
+    public async Task WebDav_GET_responses_force_attachment_disposition_to_prevent_inline_HTML_rendering()
+    {
+        // STRG-070 MED-1 stored-XSS gate. PUT echoes the client's Content-Type straight to
+        // FileItem.MimeType, so a same-tenant attacker can stash <script>…</script> with
+        // `Content-Type: text/html`. Without `Content-Disposition: attachment`, any victim who
+        // later opens the /dav URL in an authenticated browser would render the HTML inline with
+        // access to /graphql on the same origin — a full stored-XSS. The pin is that every
+        // GET response (regardless of MIME) forces attachment disposition, so browsers download
+        // rather than render.
+        var payload = Encoding.UTF8.GetBytes("<script>alert('xss')</script>");
+        var client = await CreateAuthenticatedClientAsync();
+
+        using var putRequest = new HttpRequestMessage(HttpMethod.Put, $"/dav/{DriveName}/xss-probe.html")
+        {
+            Content = new ByteArrayContent(payload),
+        };
+        putRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("text/html");
+        using var putResponse = await client.SendAsync(putRequest);
+        putResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var getResponse = await client.GetAsync($"/dav/{DriveName}/xss-probe.html");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var disposition = getResponse.Content.Headers.ContentDisposition;
+        disposition.Should().NotBeNull(
+            because: "every GET response must carry Content-Disposition: the XSS gate is unconditional, not opt-in per MIME");
+        disposition!.DispositionType.Should().Be("attachment",
+            because: "`attachment` forces a download dialog; `inline` (the default) would let browsers render the HTML and fire the script");
+        disposition.FileName.Should().NotBeNullOrEmpty(
+            because: "the filename parameter gives the saved file a sensible name; browsers fall back to the URL path otherwise");
+    }
+
     // ---- helpers ----
 
     private static async Task<HttpResponseMessage> PutAsync(HttpClient client, string path, byte[] body)

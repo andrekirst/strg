@@ -148,6 +148,15 @@ internal static class WebDavResponseWriter
         CancellationToken cancellationToken)
     {
         context.Response.ContentType = document.ContentType;
+        // Defense-in-depth against stored-XSS via client-uploaded Content-Type: PUT echoes the
+        // client's Content-Type straight through to FileItem.MimeType, and without this header a
+        // same-tenant attacker who PUTs <script>…</script> with `Content-Type: text/html` would
+        // get it rendered inline for any victim navigating /dav/... in an authenticated browser,
+        // with access to /graphql on the same origin. `attachment` disposition forces download,
+        // not inline render, regardless of Content-Type. Phase-10 global CSP/nosniff middleware
+        // will close this at the pipeline root; this is the v0.1 backstop on the WebDAV surface.
+        context.Response.Headers[HeaderNames.ContentDisposition] =
+            BuildAttachmentDisposition(document.Name);
         context.Response.Headers[HeaderNames.LastModified] =
             document.UpdatedAt.UtcDateTime.ToString("R", CultureInfo.InvariantCulture);
         context.Response.Headers[HeaderNames.AcceptRanges] = "bytes";
@@ -203,6 +212,56 @@ internal static class WebDavResponseWriter
         {
             await source.CopyToAsync(context.Response.Body, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// STRG-070 MED-1 — builds an RFC 6266 <c>Content-Disposition: attachment</c> header that
+    /// forces browsers to download the response rather than render it inline. See the call site in
+    /// <see cref="WriteGetAsync"/> for the XSS rationale.
+    ///
+    /// <para><b>Why the dual form.</b> RFC 6266 §4.3 recommends emitting both <c>filename="..."</c>
+    /// (ASCII-only quoted-string, understood by every HTTP client including legacy ones) and
+    /// <c>filename*=UTF-8''...</c> (RFC 5987 ext-value, preferred by modern browsers). Emitting
+    /// only ASCII loses non-Latin filenames on save; emitting only the ext-value form breaks
+    /// ancient clients. Both together round-trip correctly everywhere. The <c>filename*</c>
+    /// parameter is only appended when the original name actually contains non-ASCII — appending
+    /// it unconditionally costs bytes without adding information.</para>
+    ///
+    /// <para><b>Sanitization.</b> The ASCII fallback replaces control chars, <c>"</c>, and
+    /// <c>\</c> with <c>_</c>; those bytes would either break the quoted-string grammar or open
+    /// a header-injection avenue if a filename ever slipped past upload-time validation.
+    /// <see cref="Uri.EscapeDataString"/> on the ext-value side already percent-escapes everything
+    /// outside RFC 3986 unreserved, which is a strict subset of RFC 5987's attr-char — so the raw
+    /// UTF-8 name can be fed in without pre-sanitization.</para>
+    /// </summary>
+    private static string BuildAttachmentDisposition(string filename)
+    {
+        var asciiSafe = new StringBuilder(filename.Length);
+        var hasNonAscii = false;
+        foreach (var c in filename)
+        {
+            if (c > 127)
+            {
+                hasNonAscii = true;
+                asciiSafe.Append('_');
+            }
+            else if (c < 32 || c == 127 || c == '"' || c == '\\')
+            {
+                asciiSafe.Append('_');
+            }
+            else
+            {
+                asciiSafe.Append(c);
+            }
+        }
+
+        var fallback = asciiSafe.Length == 0 ? "download" : asciiSafe.ToString();
+        if (hasNonAscii)
+        {
+            var encoded = Uri.EscapeDataString(filename);
+            return $"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}";
+        }
+        return $"attachment; filename=\"{fallback}\"";
     }
 
     private static (long Start, long Length, bool IsPartial, bool IsUnsatisfiable) TryParseSingleRange(

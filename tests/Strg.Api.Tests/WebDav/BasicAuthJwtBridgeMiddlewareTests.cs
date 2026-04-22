@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using NSubstitute;
@@ -135,6 +136,214 @@ public sealed class BasicAuthJwtBridgeMiddlewareTests
         observedHeader.Should().Be("Bearer cached-jwt");
         handler.InvocationCount.Should().Be(0,
             "cache hit must bypass the token endpoint — re-exchange on every request would defeat the 14-minute cache contract");
+    }
+
+    [Fact]
+    public async Task Cross_tenant_mismatch_on_exchange_yields_401_with_basic_challenge()
+    {
+        // STRG-073 fold-in #3 — cross-tenant credential-oracle defense. Attacker presents
+        // Basic auth creds valid in Tenant B and targets a drive owned by Tenant A. Before the
+        // fix, OpenIddict's pre-auth GetByEmailAsync would succeed and issue a JWT for Tenant
+        // B's alice; StrgWebDavMiddleware would then resolve the drive under Tenant B, find
+        // nothing, and return 404 — leaking to the attacker that their guessed password
+        // matched *some* Alice *somewhere*. The bridge must collapse that signal by returning
+        // 401 — indistinguishable from a wrong-password failure.
+        var driveTenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var jwtTenant = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("victim-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)driveTenant);
+
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet(Arg.Any<string>(), Arg.Any<string>()).ReturnsNull();
+
+        var jwt = BuildJwtWithTenantClaim(jwtTenant);
+        var factory = new StubHttpClientFactory(new StubTokenHandler(
+            HttpStatusCode.OK,
+            $$"""{"access_token":"{{jwt}}","token_type":"Bearer","expires_in":900}"""));
+
+        var downstreamCalled = false;
+        var middleware = new BasicAuthJwtBridgeMiddleware(
+            _ => { downstreamCalled = true; return Task.CompletedTask; },
+            factory, cache, NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/victim-drive/some/file.txt", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers[HeaderNames.WWWAuthenticate].ToString()
+            .Should().Be("Basic realm=\"strg\"",
+                "the challenge must be identical to the wrong-password 401 — leaving the WWW-Authenticate " +
+                "header off or using a different scheme would tell the attacker the request reached past " +
+                "credential validation, re-opening the oracle");
+        downstreamCalled.Should().BeFalse(
+            "the request must NOT reach StrgWebDavMiddleware — otherwise the downstream 404 response " +
+            "for the wrong-tenant drive would leak the existence bit the bridge is collapsing");
+    }
+
+    [Fact]
+    public async Task Cross_tenant_mismatch_on_cache_hit_yields_401_without_reexchange()
+    {
+        // Cache-path mirror of the cross-tenant defense. A cached JWT (issued when the user
+        // first hit their own tenant's drive) must NOT be usable as a skeleton key against a
+        // different tenant's drive just because (username, password-hash) is the same cache
+        // key. A bug that verified tenant only on exchange-miss would silently re-open the
+        // oracle the moment the 14-minute cache warmed up.
+        var driveTenant = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var jwtTenant = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("victim-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)driveTenant);
+
+        var jwt = BuildJwtWithTenantClaim(jwtTenant);
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet("alice@example.com", "right-pw").Returns(jwt);
+
+        var handler = new StubTokenHandler(HttpStatusCode.OK, "{}");
+        var factory = new StubHttpClientFactory(handler);
+
+        var downstreamCalled = false;
+        var middleware = new BasicAuthJwtBridgeMiddleware(
+            _ => { downstreamCalled = true; return Task.CompletedTask; },
+            factory, cache, NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/victim-drive/foo", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        handler.InvocationCount.Should().Be(0,
+            "cache-hit path must still bypass /connect/token — the tenant verification runs " +
+            "against the cached JWT's claims, no re-exchange needed");
+        downstreamCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Matching_tenant_claim_rewrites_bearer_and_invokes_downstream()
+    {
+        // Positive-path pin: when the JWT's tenant_id claim matches the drive's tenant, the
+        // bridge rewrites the Authorization header and calls _next. Without this test a bug
+        // that 401-ed on every tenant check would pass the mismatch tests above but break
+        // every real WebDAV session.
+        var sharedTenant = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("alice-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)sharedTenant);
+
+        var jwt = BuildJwtWithTenantClaim(sharedTenant);
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet(Arg.Any<string>(), Arg.Any<string>()).ReturnsNull();
+
+        var factory = new StubHttpClientFactory(new StubTokenHandler(
+            HttpStatusCode.OK,
+            $$"""{"access_token":"{{jwt}}","token_type":"Bearer","expires_in":900}"""));
+
+        string? observedHeader = null;
+        var middleware = new BasicAuthJwtBridgeMiddleware(
+            ctx => { observedHeader = ctx.Request.Headers.Authorization.ToString(); return Task.CompletedTask; },
+            factory, cache, NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/alice-drive/file.txt", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        observedHeader.Should().Be("Bearer " + jwt);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK,
+            "no body written means the test pipeline's default status sticks — the bridge must " +
+            "not have short-circuited with 401/502");
+    }
+
+    [Fact]
+    public async Task Nonexistent_drive_does_not_401_and_passes_through_to_downstream()
+    {
+        // A URL for a drive that exists nowhere (typo, dangling client bookmark) must fall
+        // through to StrgWebDavMiddleware so it can 404 consistently with the "drive missing
+        // in your tenant" case. 401ing here would drop a legitimate user into a credential
+        // re-prompt loop: Explorer/Finder would re-request the password that was never wrong.
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("typo-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)null);
+
+        var jwt = BuildJwtWithTenantClaim(Guid.Parse("55555555-5555-5555-5555-555555555555"));
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet(Arg.Any<string>(), Arg.Any<string>()).ReturnsNull();
+
+        var factory = new StubHttpClientFactory(new StubTokenHandler(
+            HttpStatusCode.OK,
+            $$"""{"access_token":"{{jwt}}","token_type":"Bearer","expires_in":900}"""));
+
+        var downstreamCalled = false;
+        var middleware = new BasicAuthJwtBridgeMiddleware(
+            _ => { downstreamCalled = true; return Task.CompletedTask; },
+            factory, cache, NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/typo-drive/foo", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        downstreamCalled.Should().BeTrue(
+            "no-drive-anywhere must reach StrgWebDavMiddleware so the user sees a 404 — 401 " +
+            "would create an auth-prompt loop for a user who just mistyped the drive name");
+    }
+
+    [Fact]
+    public async Task Malformed_jwt_payload_yields_502_not_401()
+    {
+        // Defense for a token-endpoint bug: if /connect/token returns 200 with an
+        // unparseable access_token, the bridge must NOT fall back to 401 (which would lie
+        // about the credentials) and must NOT pass the garbage through to UseAuthentication
+        // (which would produce a confusing 500). 502 matches the upstream-failure posture
+        // used elsewhere in the bridge — token endpoint produced something we can't use.
+        var driveResolver = Substitute.For<IDriveResolver>();
+        driveResolver.GetDriveTenantIdAsync("alice-drive", Arg.Any<CancellationToken>())
+            .Returns((Guid?)Guid.NewGuid());
+
+        var cache = Substitute.For<IWebDavJwtCache>();
+        cache.TryGet(Arg.Any<string>(), Arg.Any<string>()).ReturnsNull();
+
+        var factory = new StubHttpClientFactory(new StubTokenHandler(
+            HttpStatusCode.OK,
+            """{"access_token":"not-a-jwt-at-all","token_type":"Bearer","expires_in":900}"""));
+
+        var middleware = new BasicAuthJwtBridgeMiddleware(_ => Task.CompletedTask, factory, cache,
+            NullLogger<BasicAuthJwtBridgeMiddleware>.Instance);
+
+        var context = BuildContextWithBasicAuthAndPath(
+            "alice@example.com", "right-pw", "/alice-drive/foo", driveResolver);
+        await middleware.InvokeAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status502BadGateway);
+    }
+
+    /// <summary>
+    /// Builds a non-validated JWT with a <c>tenant_id</c> claim in the payload. The bridge
+    /// only peeks at the payload via <see cref="Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler.ReadJsonWebToken"/>
+    /// which does not verify the signature, so the opaque signature segment here is sufficient.
+    /// </summary>
+    private static string BuildJwtWithTenantClaim(Guid tenantId)
+    {
+        static string Base64Url(ReadOnlySpan<byte> bytes) =>
+            Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var header = Base64Url(Encoding.UTF8.GetBytes("""{"alg":"RS256","typ":"JWT"}"""));
+        var payload = Base64Url(Encoding.UTF8.GetBytes(
+            $$"""{"sub":"alice","tenant_id":"{{tenantId}}"}"""));
+        var signature = Base64Url([0x01, 0x02, 0x03]);
+        return $"{header}.{payload}.{signature}";
+    }
+
+    private static DefaultHttpContext BuildContextWithBasicAuthAndPath(
+        string username, string password, string path, IDriveResolver driveResolver)
+    {
+        var context = BuildContextWithBasicAuth(username, password);
+        context.Request.Path = path;
+        var services = new ServiceCollection();
+        services.AddSingleton(driveResolver);
+        context.RequestServices = services.BuildServiceProvider();
+        return context;
     }
 
     private static DefaultHttpContext BuildContextWithBasicAuth(string username, string password)

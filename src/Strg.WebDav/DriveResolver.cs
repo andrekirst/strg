@@ -40,6 +40,36 @@ internal sealed partial class DriveResolver(StrgDbContext db) : IDriveResolver
             .FirstOrDefaultAsync(d => d.TenantId == tenantId && d.Name == normalized, cancellationToken);
     }
 
+    public async Task<Guid?> GetDriveTenantIdAsync(string driveName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(driveName) || !ValidDriveName.IsMatch(driveName))
+        {
+            return null;
+        }
+
+        var normalized = driveName.ToLowerInvariant();
+
+        // STRG-073 fold-in #3 — CLAUDE.md pre-auth carve-out applies here. The bridge calls this
+        // BEFORE the branch's UseAuthentication has validated the JWT and populated ITenantContext,
+        // so a tenant-filtered query would resolve TenantId to Guid.Empty and always return null,
+        // defeating the cross-tenant verification the bridge needs. IgnoreQueryFilters drops the
+        // tenant scope while the explicit `DeletedAt == null` predicate keeps soft-delete
+        // enforcement intact — a soft-deleted drive must not surface its tenant via this path.
+        //
+        // Predicate uses `!d.DeletedAt.HasValue` (the mapped column) rather than `!d.IsDeleted`
+        // (a computed CLR property that DriveConfiguration explicitly .Ignore()s). Mirroring the
+        // global soft-delete filter's shape in StrgDbContext keeps the two in lockstep.
+        //
+        // Returning only the TenantId (not the Drive row) keeps the bridge's surface minimal: it
+        // has no business with drive metadata, only with the tenant-match comparison.
+        return await db.Drives
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(d => d.Name == normalized && !d.DeletedAt.HasValue)
+            .Select(d => (Guid?)d.TenantId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.CultureInvariant)]
     private static partial Regex CompiledValidDriveName();
 }

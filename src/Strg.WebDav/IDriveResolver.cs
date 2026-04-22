@@ -22,4 +22,29 @@ public interface IDriveResolver
     /// soft-deleted, or the name fails the <c>[a-z0-9-]</c> validation.
     /// </summary>
     Task<Drive?> ResolveAsync(string driveName, Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// STRG-073 fold-in #3 — returns the <see cref="Drive.TenantId"/> for the drive whose
+    /// <see cref="Drive.Name"/> matches <paramref name="driveName"/> <b>across all tenants</b>,
+    /// or <c>null</c> if no drive by that name exists anywhere (or the name fails validation,
+    /// or the drive is soft-deleted). Sole consumer is
+    /// <see cref="BasicAuthJwtBridgeMiddleware"/>'s cross-tenant verification step, which runs
+    /// before the branch's <c>UseAuthentication</c> populates <c>ITenantContext</c> — a
+    /// tenant-scoped lookup would always return <c>null</c> at that point in the pipeline.
+    ///
+    /// <para><b>Why this method exists on top of <see cref="ResolveAsync"/>.</b> The attack the
+    /// bridge defends against is a cross-tenant credential oracle: without this check, a 404 on
+    /// mismatched-tenant drives vs a 401 on wrong passwords would let an attacker probe whether
+    /// any tenant's alice has a given password (valid creds → tenant-mismatched drive → 404;
+    /// invalid creds → 401). The bridge collapses both cases to 401 by verifying the JWT's
+    /// tenant claim equals the drive's tenant; this requires looking up the drive's tenant
+    /// independently of the caller's claimed tenant.</para>
+    ///
+    /// <para><b>CLAUDE.md carve-out.</b> This is a pre-auth resolver path (JWT just issued, not
+    /// yet validated by <c>UseAuthentication</c>). The implementation MAY use
+    /// <c>IgnoreQueryFilters()</c> to bypass the tenant filter, but MUST keep soft-delete
+    /// (<c>IsDeleted = false</c>) enforcement inline so a deleted drive cannot leak its tenant
+    /// via this surface.</para>
+    /// </summary>
+    Task<Guid?> GetDriveTenantIdAsync(string driveName, CancellationToken cancellationToken = default);
 }

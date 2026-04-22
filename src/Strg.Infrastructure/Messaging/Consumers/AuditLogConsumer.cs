@@ -216,7 +216,13 @@ public sealed class AuditLogConsumer :
         }
     }
 
-    private static bool IsEventIdUniqueViolation(DbUpdateException ex)
+    // internal (not private) so the negative-case discrimination invariant — "any 23505 whose
+    // ConstraintName is NOT the EventId unique index must return false so the catch filter
+    // lets the exception propagate" — can be unit-tested directly from Strg.Api.Tests without
+    // booting a Postgres container to manufacture a real second-constraint collision.
+    // InternalsVisibleTo is set at Strg.Infrastructure.csproj. Pinned by
+    // ConsumerIdempotencyDiscriminationTests in Strg.Api.Tests.
+    internal static bool IsEventIdUniqueViolation(DbUpdateException ex)
     {
         // Npgsql wraps the PG error; SqlState 23505 is unique_violation. ConstraintName is
         // matched by exact equality against the EF-pinned index name — a prior substring

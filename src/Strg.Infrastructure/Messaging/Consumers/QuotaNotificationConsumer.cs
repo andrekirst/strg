@@ -112,7 +112,11 @@ public sealed class QuotaNotificationConsumer :
     // UQ_Notifications_Idempotency or an unrelated unique index whose name contains
     // "EventId" would previously have been mis-classified. The MigrationTests schema
     // pin + EF HasDatabaseName + this equality check are the three anchors.
-    private static bool IsDuplicateEventId(DbUpdateException ex) =>
+    //
+    // internal (not private) for the same reason as AuditLogConsumer.IsEventIdUniqueViolation
+    // — the negative-case discriminator (non-EventId 23505 must not be swallowed) is pinned
+    // by a unit test in Strg.Api.Tests.ConsumerIdempotencyDiscriminationTests.
+    internal static bool IsDuplicateEventId(DbUpdateException ex) =>
         ex.InnerException is PostgresException pg
         && pg.SqlState == "23505"
         && pg.ConstraintName == NotificationConstraintNames.EventIdUniqueIndex;

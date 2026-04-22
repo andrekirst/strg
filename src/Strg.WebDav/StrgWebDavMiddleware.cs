@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using Strg.Core.Exceptions;
+using Strg.Core.Identity;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Data;
 
@@ -41,10 +43,11 @@ namespace Strg.WebDav;
 /// shape, and the enumeration-oracle argument there still holds: distinguishing "wrong tenant"
 /// from "no such drive" would leak drive existence across tenant boundaries.</para>
 ///
-/// <para><b>PROPFIND / GET / HEAD (STRG-068).</b> These three verbs get real handling because
-/// the STRG-068 tests (TC-001 PROPFIND XML, TC-003 GET stream) pin them. Write verbs (PUT,
-/// MKCOL, DELETE, COPY, MOVE, PROPPATCH, LOCK, UNLOCK) still return 501 — STRG-069/070/071/072
-/// replace each in turn.</para>
+/// <para><b>PROPFIND / GET / HEAD / PUT (STRG-068 + STRG-070).</b> PROPFIND and GET/HEAD are the
+/// STRG-068 reads (PROPFIND XML + byte streaming, Range support added with STRG-070). PUT is
+/// the STRG-070 upload path — <c>files.write</c> scope-gated, Commit-first quota-gated, returns
+/// 201/204/409/507 per RFC 4918 §9.7. Remaining write verbs (MKCOL, DELETE, COPY, MOVE,
+/// PROPPATCH, LOCK, UNLOCK) still return 501 — STRG-071/072 replace each in turn.</para>
 /// </summary>
 public sealed class StrgWebDavMiddleware
 {
@@ -127,6 +130,71 @@ public sealed class StrgWebDavMiddleware
                 "WebDAV: rejected unsafe path {Path} on drive {DriveName}",
                 context.Request.Path.Value, driveName);
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        if (HttpMethods.IsPut(method))
+        {
+            // Scope gate: WebDAV has no endpoint-routing metadata so the FilesWrite policy doesn't
+            // fire automatically. Enforcing here matches what [Authorize(Policy="FilesWrite")] does
+            // on every GraphQL/REST write surface. Short-circuit with 403 (authenticated but
+            // lacking the scope) — 401 would lie about the auth state.
+            if (!context.User.HasScope("files.write"))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            Guid userId;
+            try
+            {
+                userId = context.User.GetUserId();
+            }
+            catch (InvalidOperationException)
+            {
+                // sub claim missing: the token is malformed rather than unauthorized. 401 is the
+                // honest status — the client should re-authenticate rather than retry with
+                // different scopes.
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return;
+            }
+
+            try
+            {
+                var (document, created) = await store.PutDocumentAsync(
+                    drive,
+                    itemPath,
+                    context.Request.Body,
+                    context.Request.ContentType,
+                    userId,
+                    context.RequestAborted);
+
+                // 201 Created for new resources, 204 No Content for overwrites — the RFC 4918 §9.7
+                // response shape clients like Windows Explorer and macOS Finder key off.
+                context.Response.StatusCode = created
+                    ? StatusCodes.Status201Created
+                    : StatusCodes.Status204NoContent;
+                if (!string.IsNullOrEmpty(document.ContentHash))
+                {
+                    context.Response.Headers[HeaderNames.ETag] = $"\"{document.ContentHash}\"";
+                }
+            }
+            catch (QuotaExceededException)
+            {
+                // RFC 4918 §9.7.3 — 507 Insufficient Storage is the exact status WebDAV defines for
+                // quota-denied writes, so no need for a JSON error body here.
+                context.Response.StatusCode = StatusCodes.Status507InsufficientStorage;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Store raises this for "parent folder missing", "overwriting a folder", and
+                // "PUT on root" — all RFC 4918 §9.7.1 / §9.7.2 "409 Conflict" territory. The
+                // message is diagnostic; we log it but don't echo to the client.
+                _logger.LogInformation(
+                    "WebDAV PUT refused on drive {DriveName} path {Path}: {Reason}",
+                    drive.Name, itemPath, ex.Message);
+                context.Response.StatusCode = StatusCodes.Status409Conflict;
+            }
             return;
         }
 

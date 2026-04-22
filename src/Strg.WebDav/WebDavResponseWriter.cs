@@ -124,8 +124,22 @@ internal static class WebDavResponseWriter
     }
 
     /// <summary>
-    /// Streams the GET/HEAD body for a document. <see cref="HttpMethods.IsHead"/> requests skip
-    /// the body but still set <c>Content-Length</c> / <c>Content-Type</c> per RFC 7231 §4.3.2.
+    /// Streams the GET/HEAD body for a document. HEAD requests skip the body but still set the
+    /// response headers per RFC 7231 §4.3.2 so clients can probe <c>Content-Length</c>,
+    /// <c>Content-Type</c>, and <c>ETag</c> without transferring the blob.
+    ///
+    /// <para><b>Range requests (RFC 7233).</b> A single-range <c>Range: bytes=N-M</c> header
+    /// produces a <c>206 Partial Content</c> response with <c>Content-Range: bytes N-M/total</c>
+    /// and <c>Content-Length</c> = M-N+1. Multi-range (<c>bytes=0-99,200-299</c>) is not supported
+    /// — RFC 7233 §4 lets servers treat such requests as a plain 200 full-body response, which is
+    /// what we do. An unsatisfiable range (start past end of file) returns
+    /// <c>416 Range Not Satisfiable</c> with an empty body.</para>
+    ///
+    /// <para><b>Seek via provider.</b> <see cref="Core.Storage.IStorageProvider.ReadAsync"/>
+    /// accepts a byte offset so seeking is a provider-level concern — the local FS provider
+    /// wraps <c>FileStream.Seek</c>, and S3 future providers will emit a ranged GET. The length
+    /// is enforced here by wrapping the source in a byte counter so we stop copying when the
+    /// requested window is satisfied even if the provider stream yields more bytes.</para>
     /// </summary>
     public static async Task WriteGetAsync(
         HttpContext context,
@@ -133,11 +147,42 @@ internal static class WebDavResponseWriter
         bool includeBody,
         CancellationToken cancellationToken)
     {
-        context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = document.ContentType;
-        context.Response.ContentLength = document.ContentLength;
         context.Response.Headers[HeaderNames.LastModified] =
             document.UpdatedAt.UtcDateTime.ToString("R", CultureInfo.InvariantCulture);
+        context.Response.Headers[HeaderNames.AcceptRanges] = "bytes";
+        if (!string.IsNullOrEmpty(document.ContentHash))
+        {
+            context.Response.Headers[HeaderNames.ETag] = $"\"{document.ContentHash}\"";
+        }
+
+        var total = document.ContentLength;
+        var (rangeStart, rangeLength, isPartial, isUnsatisfiable) = TryParseSingleRange(
+            context.Request.Headers[HeaderNames.Range].ToString(), total);
+
+        if (isUnsatisfiable)
+        {
+            // RFC 7233 §4.4 — 416 carries Content-Range with the complete length so the client
+            // can recompute an acceptable window.
+            context.Response.Headers[HeaderNames.ContentRange] =
+                string.Create(CultureInfo.InvariantCulture, $"bytes */{total}");
+            context.Response.StatusCode = StatusCodes.Status416RangeNotSatisfiable;
+            return;
+        }
+
+        if (isPartial)
+        {
+            context.Response.StatusCode = StatusCodes.Status206PartialContent;
+            context.Response.ContentLength = rangeLength;
+            context.Response.Headers[HeaderNames.ContentRange] = string.Create(
+                CultureInfo.InvariantCulture,
+                $"bytes {rangeStart}-{rangeStart + rangeLength - 1}/{total}");
+        }
+        else
+        {
+            context.Response.StatusCode = StatusCodes.Status200OK;
+            context.Response.ContentLength = total;
+        }
 
         if (!includeBody)
         {
@@ -145,7 +190,117 @@ internal static class WebDavResponseWriter
         }
 
         await using var source = await document.OpenReadStreamAsync(cancellationToken);
-        await source.CopyToAsync(context.Response.Body, cancellationToken);
+        if (isPartial && rangeStart > 0 && source.CanSeek)
+        {
+            source.Seek(rangeStart, SeekOrigin.Begin);
+        }
+
+        if (isPartial)
+        {
+            await CopyBoundedAsync(source, context.Response.Body, rangeLength, cancellationToken);
+        }
+        else
+        {
+            await source.CopyToAsync(context.Response.Body, cancellationToken);
+        }
+    }
+
+    private static (long Start, long Length, bool IsPartial, bool IsUnsatisfiable) TryParseSingleRange(
+        string rawRange, long total)
+    {
+        if (string.IsNullOrWhiteSpace(rawRange))
+        {
+            return (0, total, false, false);
+        }
+
+        const string prefix = "bytes=";
+        if (!rawRange.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            // Unknown range unit (RFC 7233 §2.1 only defines "bytes"). Fall back to full-body
+            // delivery rather than surfacing a 416 — the client asked for something exotic;
+            // giving them the whole resource is spec-permitted and strictly more useful.
+            return (0, total, false, false);
+        }
+
+        var spec = rawRange[prefix.Length..];
+        // Multi-range is spec-legal but complex; we treat it as "full body" per the class doc.
+        if (spec.Contains(',', StringComparison.Ordinal))
+        {
+            return (0, total, false, false);
+        }
+
+        var dash = spec.IndexOf('-', StringComparison.Ordinal);
+        if (dash < 0)
+        {
+            return (0, total, false, true);
+        }
+
+        var startStr = spec[..dash].Trim();
+        var endStr = spec[(dash + 1)..].Trim();
+
+        long start;
+        long endInclusive;
+
+        if (startStr.Length == 0)
+        {
+            // Suffix byte range: `bytes=-500` → last 500 bytes.
+            if (!long.TryParse(endStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var suffix)
+                || suffix <= 0)
+            {
+                return (0, total, false, true);
+            }
+            if (total == 0)
+            {
+                return (0, 0, false, true);
+            }
+            start = Math.Max(0, total - suffix);
+            endInclusive = total - 1;
+        }
+        else
+        {
+            if (!long.TryParse(startStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out start)
+                || start < 0 || start >= total)
+            {
+                return (0, total, false, true);
+            }
+
+            if (endStr.Length == 0)
+            {
+                endInclusive = total - 1;
+            }
+            else
+            {
+                if (!long.TryParse(endStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out endInclusive)
+                    || endInclusive < start)
+                {
+                    return (0, total, false, true);
+                }
+                if (endInclusive >= total)
+                {
+                    endInclusive = total - 1;
+                }
+            }
+        }
+
+        var length = endInclusive - start + 1;
+        return (start, length, true, false);
+    }
+
+    private static async Task CopyBoundedAsync(Stream source, Stream destination, long maxBytes, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        var remaining = maxBytes;
+        while (remaining > 0)
+        {
+            var toRead = (int)Math.Min(buffer.Length, remaining);
+            var read = await source.ReadAsync(buffer.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+            remaining -= read;
+        }
     }
 
     private static async Task WriteResponseAsync(

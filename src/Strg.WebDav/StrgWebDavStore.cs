@@ -1,8 +1,12 @@
+using System.Net.Mime;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Domain;
+using Strg.Core.Exceptions;
+using Strg.Core.Services;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Data;
 
@@ -28,6 +32,7 @@ namespace Strg.WebDav;
 public sealed class StrgWebDavStore(
     StrgDbContext db,
     IStorageProviderRegistry registry,
+    IQuotaService quotaService,
     ILogger<StrgWebDavStore> logger) : IStrgWebDavStore
 {
     public async Task<IStrgWebDavStoreItem?> GetItemAsync(Drive drive, string path, CancellationToken cancellationToken = default)
@@ -57,6 +62,224 @@ public sealed class StrgWebDavStore(
         return item.IsDirectory
             ? new StrgWebDavCollection(drive, item, db, registry, this)
             : new StrgWebDavDocument(drive, item, registry);
+    }
+
+    public async Task<(IStrgWebDavStoreDocument Document, bool Created)> PutDocumentAsync(
+        Drive drive,
+        string path,
+        Stream content,
+        string? contentType,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(drive);
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (path.Length == 0)
+        {
+            // RFC 4918 §9.7.2: PUT on a collection is undefined. Middleware translates to 409.
+            throw new InvalidOperationException("PUT on the drive root is not supported.");
+        }
+
+        // Parent path is everything before the final '/'. Empty parent ⇒ the new item lives at
+        // drive root (ParentId = null). Non-empty parent ⇒ the folder FileItem must already
+        // exist; an auto-mkcol would violate RFC 4918 §9.7.1 (the client should MKCOL first).
+        var lastSlash = path.LastIndexOf('/');
+        var parentPath = lastSlash < 0 ? string.Empty : path[..lastSlash];
+        var leafName = lastSlash < 0 ? path : path[(lastSlash + 1)..];
+
+        if (leafName.Length == 0)
+        {
+            throw new InvalidOperationException($"PUT path ends with a slash: {path}");
+        }
+
+        Guid? parentId = null;
+        if (parentPath.Length > 0)
+        {
+            var parentItem = await db.Files
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    f => f.DriveId == drive.Id && f.Path == parentPath && f.IsDirectory,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (parentItem is null)
+            {
+                // RFC 4918 §9.7.1: the server SHOULD return 409 when the parent doesn't exist.
+                // WebDAV clients are expected to create directories with MKCOL before uploading.
+                throw new InvalidOperationException(
+                    $"Parent folder {parentPath} does not exist on drive {drive.Name}.");
+            }
+            parentId = parentItem.Id;
+        }
+
+        var existing = await db.Files
+            .FirstOrDefaultAsync(
+                f => f.DriveId == drive.Id && f.Path == path,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is { IsDirectory: true })
+        {
+            // Overwriting a folder with a file would corrupt the hierarchy — refuse. Maps to 409.
+            throw new InvalidOperationException(
+                $"Path {path} is an existing folder; PUT would replace it with a file.");
+        }
+
+        var created = existing is null;
+        var provider = ResolveProvider(registry, drive);
+
+        // Each write gets its own opaque storage key so historical FileVersion rows keep pointing
+        // at intact blobs — overwriting the previous key in-place would silently destroy v1's
+        // content the moment v2 lands. STRG-043 Prune can reclaim stale blobs later.
+        var storageKey = $"{drive.Id:N}/{Guid.NewGuid():N}.blob";
+
+        using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        long bytesWritten;
+        string hashHex;
+
+        // Wrap the HTTP request body so the provider reads through us — bytes hash + count as a
+        // side-effect of CopyToAsync. leaveInnerOpen: true because ASP.NET Core owns the request
+        // body stream lifecycle; disposing it here would corrupt the pipeline.
+        await using (var hashStream = new HashingStream(content, hasher, leaveInnerOpen: true))
+        {
+            try
+            {
+                await provider.WriteAsync(storageKey, hashStream, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort cleanup — any bytes the provider managed to land are orphaned
+                // storage if we don't reap them here. CancellationToken.None because the outer
+                // token has likely already fired (cancellation is one of the failure paths).
+                await TryDeleteBlobAsync(provider, storageKey).ConfigureAwait(false);
+                throw;
+            }
+
+            bytesWritten = hashStream.BytesRead;
+            hashHex = Convert.ToHexString(hashStream.GetHashAndReset()).ToLowerInvariant();
+        }
+
+        var mime = string.IsNullOrWhiteSpace(contentType) ? MediaTypeNames.Application.Octet : contentType;
+
+        try
+        {
+            // Commit-first quota (STRG-032). The atomic UPDATE is the ONLY race-safe budget gate;
+            // a pre-write CheckAsync can and will be beaten by a concurrent upload. We charge
+            // the actually-written byte count because client-supplied Content-Length can lie
+            // (or be absent for chunked encoding).
+            await quotaService.CommitAsync(userId, bytesWritten, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Commit failed (most likely QuotaExceededException). Reclaim the blob before the
+            // exception propagates so over-quota PUTs don't leak storage.
+            await TryDeleteBlobAsync(provider, storageKey).ConfigureAwait(false);
+            throw;
+        }
+
+        // DB-side transaction: insert/update FileItem + append FileVersion. If this rolls back
+        // we'd have charged quota for bytes with no DB pointer — rare (EF insert failures post-
+        // quota-commit are either connection loss or unique-constraint collisions under race),
+        // so we compensate with ReleaseAsync in the catch.
+        FileItem file;
+        int nextVersion;
+        try
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+            if (created)
+            {
+                file = new FileItem
+                {
+                    TenantId = drive.TenantId,
+                    DriveId = drive.Id,
+                    ParentId = parentId,
+                    Name = leafName,
+                    Path = path,
+                    Size = bytesWritten,
+                    ContentHash = hashHex,
+                    MimeType = mime,
+                    StorageKey = storageKey,
+                    CreatedBy = userId,
+                    VersionCount = 1,
+                };
+                db.Files.Add(file);
+                nextVersion = 1;
+            }
+            else
+            {
+                file = existing!;
+                nextVersion = file.VersionCount + 1;
+                file.Size = bytesWritten;
+                file.ContentHash = hashHex;
+                file.MimeType = mime;
+                file.StorageKey = storageKey;
+                file.VersionCount = nextVersion;
+                db.Files.Update(file);
+            }
+
+            // Every write records a FileVersion row (v1 for creates, v(n+1) for overwrites) so
+            // STRG-043 Prune has history to act on and clients calling strg:version see a
+            // monotonically-increasing number.
+            db.FileVersions.Add(new FileVersion
+            {
+                FileId = file.Id,
+                VersionNumber = nextVersion,
+                Size = bytesWritten,
+                BlobSizeBytes = bytesWritten,
+                ContentHash = hashHex,
+                StorageKey = storageKey,
+                CreatedBy = userId,
+            });
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // DB roll-back already happened when the transaction went out of scope without
+            // Commit; compensate the quota charge and reap the blob. ReleaseAsync on a missing
+            // user is a silent no-op per IQuotaService contract, so double-compensating from a
+            // concurrent reaper path can't go negative.
+            await TryReleaseQuotaAsync(userId, bytesWritten).ConfigureAwait(false);
+            await TryDeleteBlobAsync(provider, storageKey).ConfigureAwait(false);
+            throw;
+        }
+
+        logger.LogDebug(
+            "WebDAV PUT: drive {DriveId} path {Path} bytes {Bytes} created={Created} version={Version}",
+            drive.Id, path, bytesWritten, created, nextVersion);
+
+        return (new StrgWebDavDocument(drive, file, registry), created);
+    }
+
+    private async Task TryDeleteBlobAsync(IStorageProvider provider, string storageKey)
+    {
+        try
+        {
+            await provider.DeleteAsync(storageKey, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Compensating delete is best-effort: the orphan-reaper (STRG-026 #2) is the
+            // authoritative sweep. Surfacing this exception would mask the original failure that
+            // caused the cleanup path to run.
+            logger.LogWarning(ex, "WebDAV PUT: failed to delete orphan blob {StorageKey}", storageKey);
+        }
+    }
+
+    private async Task TryReleaseQuotaAsync(Guid userId, long bytes)
+    {
+        try
+        {
+            await quotaService.ReleaseAsync(userId, bytes, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "WebDAV PUT: failed to release quota ({Bytes} bytes) for user {UserId}", bytes, userId);
+        }
     }
 
     /// <summary>

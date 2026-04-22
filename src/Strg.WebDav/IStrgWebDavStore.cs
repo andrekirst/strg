@@ -24,6 +24,46 @@ public interface IStrgWebDavStore
     /// collection when the target is the drive root itself (empty <paramref name="path"/>).
     /// </summary>
     Task<IStrgWebDavStoreItem?> GetItemAsync(Drive drive, string path, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// STRG-070 — PUT handler. Writes <paramref name="content"/> to the blob store, computes its
+    /// SHA-256 in-flight, and persists (or updates) the <see cref="FileItem"/> + <see cref="FileVersion"/>
+    /// rows. <paramref name="path"/> MUST already be through <see cref="Core.Storage.StoragePath.Parse"/>
+    /// (the middleware runs <c>WebDavUriParser.ExtractValidatedPath</c> before reaching here, so the
+    /// path-traversal defence is a caller obligation, not a store one).
+    ///
+    /// <para><b>Semantics.</b>
+    /// <list type="bullet">
+    ///   <item><description>Returns <c>(document, created: true)</c> when no prior file existed —
+    ///     middleware maps to <c>201 Created</c>.</description></item>
+    ///   <item><description>Returns <c>(document, created: false)</c> on overwrite — middleware
+    ///     maps to <c>204 No Content</c>, and a new <see cref="FileVersion"/> row is appended
+    ///     while the FileItem's <c>StorageKey</c> flips to the fresh blob.</description></item>
+    ///   <item><description>Throws <see cref="Core.Exceptions.QuotaExceededException"/> if the
+    ///     Commit-first gate rejects the uploaded size — the written blob is cleaned up before the
+    ///     exception propagates so an over-quota PUT doesn't orphan storage.</description></item>
+    ///   <item><description>Throws <see cref="InvalidOperationException"/> if <paramref name="path"/>
+    ///     resolves to a folder (PUT on a collection is RFC 4918 §9.7 undefined; middleware maps to
+    ///     <c>409 Conflict</c>) or if the parent path doesn't exist.</description></item>
+    /// </list>
+    /// </para>
+    ///
+    /// <para><b>Quota order (STRG-032 Commit-first).</b> The blob is written first, then the
+    /// atomic <see cref="Core.Services.IQuotaService.CommitAsync"/> charges the user for the
+    /// actually-written byte count (which is the only value trustworthy enough to charge — HTTP
+    /// <c>Content-Length</c> is client-supplied and chunked encoding can omit it entirely). The
+    /// spec's check-then-commit sketch is wrong for the same reason CheckAsync is advisory:
+    /// another upload can drain the budget between Check and Commit. On Commit failure the blob
+    /// is deleted before the exception surfaces — the storage provider's idempotent Delete
+    /// contract (STRG-043) is what makes this safe under retries.</para>
+    /// </summary>
+    Task<(IStrgWebDavStoreDocument Document, bool Created)> PutDocumentAsync(
+        Drive drive,
+        string path,
+        Stream content,
+        string? contentType,
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

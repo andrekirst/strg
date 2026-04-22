@@ -37,8 +37,36 @@ public class FileSubscriptionsTests
             },
             globalState: new Dictionary<string, object?> { ["tenantId"] = tenantId, ["userId"] = userId });
 
-    [Fact]
-    public async Task FileEvents_ReceivesEventAfterPublish()
+    // One row per FileEventType enum value. Paired with the GraphQL wire name Hot Chocolate
+    // emits for the enum (upper-snake by default), so a future [GraphQLName] override or
+    // enum-renaming PR flips both the enum and the expected string in lockstep — the pairing
+    // is intentional.
+    public static IEnumerable<object[]> AllFileEventTypes()
+    {
+        yield return new object[] { FileEventType.Uploaded, "UPLOADED" };
+        yield return new object[] { FileEventType.Deleted, "DELETED" };
+        yield return new object[] { FileEventType.Moved, "MOVED" };
+        yield return new object[] { FileEventType.Copied, "COPIED" };
+        yield return new object[] { FileEventType.Renamed, "RENAMED" };
+    }
+
+    // Parameterised replacement for the pre-#106 single-event happy path. Defends against the
+    // "one event type routed to a shared payload type" regression shape: if a future bug maps
+    // all 5 FileEventType values onto a single wire constant (or onto the enum default), this
+    // theory fails on 4 of 5 iterations rather than passing silently. Envelope-level round-trip
+    // of driveId is also asserted — a payload-mapper cross-wiring that rewrites driveId would
+    // flip the second assertion even if EventType happens to survive.
+    //
+    // Wire note: FileEventPayload is homogeneous across event types today (EventType, FileId,
+    // DriveId, OccurredAt only — see FileEventOutputType). Move/Rename-specific OldPath/NewPath
+    // ride in the FileEvent envelope but do NOT cross to the wire. Realistic paths are supplied
+    // to the two event types that carry them anyway, so a future STRG-066-v0.2 wire expansion
+    // can extend the per-iteration assertions without changing the test's event construction.
+    [Theory]
+    [MemberData(nameof(AllFileEventTypes))]
+    public async Task FileEvents_RoundTripsEventType_ForEveryFileEventTypeEnumValue(
+        FileEventType eventType,
+        string expectedWireEventTypeName)
     {
         var tenantId = Guid.NewGuid();
         SharedTenantCtx.TenantId = tenantId;
@@ -49,16 +77,22 @@ public class FileSubscriptionsTests
         var sender = executor.Services.GetRequiredService<ITopicEventSender>();
 
         var subscriptionResult = await executor.ExecuteAsync(
-            $"subscription {{ fileEvents(driveId: \"{driveId}\") {{ eventType driveId }} }}");
+            $"subscription {{ fileEvents(driveId: \"{driveId}\") {{ eventType driveId occurredAt }} }}");
 
+        var (oldPath, newPath) = eventType switch
+        {
+            FileEventType.Moved => ("/a/old.txt", "/a/new.txt"),
+            FileEventType.Renamed => ("/a/old-name.txt", "/a/new-name.txt"),
+            _ => ((string?)null, (string?)null),
+        };
         var fileEvent = new FileEvent(
-            EventType: FileEventType.Uploaded,
+            EventType: eventType,
             FileId: Guid.NewGuid(),
             DriveId: driveId,
             UserId: Guid.NewGuid(),
             TenantId: tenantId,
-            OldPath: null,
-            NewPath: null,
+            OldPath: oldPath,
+            NewPath: newPath,
             OccurredAt: DateTimeOffset.UtcNow);
 
         await sender.SendAsync(Topics.FileEvents(tenantId, driveId), fileEvent, CancellationToken.None);
@@ -66,15 +100,23 @@ public class FileSubscriptionsTests
         await using var stream = (IResponseStream)subscriptionResult;
         await using var enumerator = stream.ReadResultsAsync().GetAsyncEnumerator(CancellationToken.None);
 
-        Assert.True(await enumerator.MoveNextAsync(), "Expected at least one subscription event");
+        Assert.True(await enumerator.MoveNextAsync(), $"Expected subscription frame for {eventType}");
         var first = enumerator.Current;
 
         var json = first.ToJson();
         using var doc = JsonDocument.Parse(json);
         Assert.True(doc.RootElement.TryGetProperty("data", out var data), $"no data: {json}");
 
-        var eventType = data.GetProperty("fileEvents").GetProperty("eventType").GetString();
-        Assert.Equal("UPLOADED", eventType);
+        var fileEvents = data.GetProperty("fileEvents");
+        var wireEventType = fileEvents.GetProperty("eventType").GetString();
+        var wireDriveId = fileEvents.GetProperty("driveId").GetString();
+
+        // Discriminator-level assertion: a regression that folds all 5 types onto a shared
+        // wire constant flips every iteration except the one matching the default.
+        Assert.Equal(expectedWireEventTypeName, wireEventType);
+        // Envelope-level assertion: cross-wired payload mapping (e.g., driveId accidentally
+        // sourced from the subscription argument instead of the event) would flip this.
+        Assert.Equal(driveId.ToString(), wireDriveId, ignoreCase: true);
     }
 
     // TC-002: events for a different drive must NOT reach a subscriber scoped to driveA. The

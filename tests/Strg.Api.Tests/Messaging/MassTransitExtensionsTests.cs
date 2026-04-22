@@ -71,6 +71,47 @@ public sealed class MassTransitExtensionsTests
     }
 
     [Fact]
+    public void Throws_when_username_is_whitespace_and_password_is_set()
+    {
+        // C6 symmetry pin: the (whitespace, whitespace) test above pins the aggregate pair,
+        // but a one-sided regression — e.g., a refactor narrowing the guard to
+        // `IsNullOrWhiteSpace(username) || IsNullOrEmpty(password)` (keeps whitespace on
+        // username, drops it on password) or vice versa — would pass aggregate-pair + the
+        // null-side tests while silently re-opening the whitespace hole on ONE half. This
+        // test pins the username-half independently: a real password must not be enough to
+        // let a whitespace username through, because RabbitMQ would then authenticate as a
+        // blank-named user which is both misleading in audit logs and a permissions-matrix
+        // surprise. Paired with its password-half mirror below — each half of the AND is
+        // tested individually, not just the conjunction.
+        var services = new ServiceCollection();
+        var configuration = BuildConfiguration(username: "   ", password: "real-rotated-secret");
+
+        var act = () => services.AddStrgMassTransit(configuration, isDevelopment: false);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RabbitMQ:Username and RabbitMQ:Password are required*");
+    }
+
+    [Fact]
+    public void Throws_when_password_is_whitespace_and_username_is_set()
+    {
+        // Mirror of the username-whitespace test above. Defends the password half of the
+        // whitespace guard against the same narrowing-refactor hazard: a well-formed username
+        // must not rescue a whitespace password. Whitespace passwords are the highest-value
+        // leak of the IsNullOrEmpty → IsNullOrWhiteSpace fix — a copy-paste from a secret
+        // manager that pasted "   \n" instead of the real secret is the failure mode the
+        // original INFO-1 was specifically addressing, and it lives on the password side
+        // more often than the username side in practice.
+        var services = new ServiceCollection();
+        var configuration = BuildConfiguration(username: "strg-prod", password: "   ");
+
+        var act = () => services.AddStrgMassTransit(configuration, isDevelopment: false);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*RabbitMQ:Username and RabbitMQ:Password are required*");
+    }
+
+    [Fact]
     public void Allows_missing_credentials_in_development_with_guest_fallback()
     {
         var services = new ServiceCollection();

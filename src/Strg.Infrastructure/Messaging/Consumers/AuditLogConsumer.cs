@@ -7,6 +7,7 @@ using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Events;
 using Strg.Infrastructure.Data;
+using Strg.Infrastructure.Data.Configurations;
 
 namespace Strg.Infrastructure.Messaging.Consumers;
 
@@ -217,12 +218,16 @@ public sealed class AuditLogConsumer :
 
     private static bool IsEventIdUniqueViolation(DbUpdateException ex)
     {
-        // Npgsql wraps the PG error; SqlState 23505 is unique_violation. ConstraintName check
-        // pins the match to our partial index — any other unique-violation (e.g. a future
-        // column) rethrows so the retry pipeline takes over instead of being quietly dropped.
+        // Npgsql wraps the PG error; SqlState 23505 is unique_violation. ConstraintName is
+        // matched by exact equality against the EF-pinned index name — a prior substring
+        // match on "EventId" would have silently accepted a future rename like
+        // IX_AuditEntries_MessageId or UQ_AuditEntries_Idempotency, and also any unrelated
+        // unique index whose name happens to contain "EventId", collapsing distinct errors
+        // into the "already-persisted" bucket. Three-point triangulation (EF HasDatabaseName,
+        // this equality, MigrationTests schema pin) makes the constraint impossible to
+        // silently drift.
         return ex.InnerException is PostgresException pg
             && pg.SqlState == UniqueViolationSqlState
-            && pg.ConstraintName is { } name
-            && name.Contains("EventId", StringComparison.Ordinal);
+            && pg.ConstraintName == AuditEntryConstraintNames.EventIdUniqueIndex;
     }
 }

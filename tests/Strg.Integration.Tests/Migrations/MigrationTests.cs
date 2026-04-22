@@ -336,6 +336,15 @@ public sealed class MigrationTests : IAsyncLifetime
         tagIndexes.Should().Contain("IX_Tags_FileId_UserId_Key");
         var tagColumns = await QueryIndexColumnOrderAsync(ctx, "IX_Tags_FileId_UserId_Key");
         tagColumns.Should().Equal("FileId", "UserId", "Key");
+
+        // IX_AuditEntries_EventId: partial unique index over the MassTransit MessageId.
+        // AuditLogConsumer.IsEventIdUniqueViolation now equality-matches this exact name
+        // (STRG-062 INFO-2 follow-up). A future "clarity rename" to UQ_AuditEntries_Idempotency
+        // or IX_AuditEntries_MessageId would let the consumer rethrow every duplicate event →
+        // retry pipeline → DLQ storm after a routine migration. Pin the name here so the
+        // triangulation (config pin + consumer equality + schema pin) fails loud instead.
+        var auditIndexes = await QueryUniqueIndexesAsync(ctx, "AuditEntries");
+        auditIndexes.Should().Contain("IX_AuditEntries_EventId");
     }
 
     [Fact]

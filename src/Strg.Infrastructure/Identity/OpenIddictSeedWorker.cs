@@ -57,20 +57,41 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
 {
     internal const string DefaultClientId = "strg-default";
 
+    /// <summary>
+    /// STRG-073 — dedicated OpenIddict client used exclusively by
+    /// <c>BasicAuthJwtBridgeMiddleware</c> to exchange cached Basic-Auth credentials for a JWT.
+    /// Kept separate from <see cref="DefaultClientId"/> so the bridge's password-grant surface
+    /// has the narrowest-possible permission set: only the three scopes WebDAV reads/writes need
+    /// (<c>files.read</c>, <c>files.write</c>, <c>tags.write</c>) and <em>no</em> <c>admin</c> or
+    /// <c>offline_access</c> — a stolen Basic-Auth credential cannot promote itself into an
+    /// admin-scoped access token, and cannot mint a refresh token that outlives the 14-minute
+    /// cache window.
+    /// </summary>
+    internal const string WebDavInternalClientId = "webdav-internal";
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
 
-        if (await manager.FindByClientIdAsync(DefaultClientId, cancellationToken) is not null)
-        {
-            return;
-        }
-
-        await manager.CreateAsync(BuildDefaultDescriptor(), cancellationToken);
+        await EnsureAsync(manager, DefaultClientId, BuildDefaultDescriptor, cancellationToken);
+        await EnsureAsync(manager, WebDavInternalClientId, BuildWebDavInternalDescriptor, cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    private static async Task EnsureAsync(
+        IOpenIddictApplicationManager manager,
+        string clientId,
+        Func<OpenIddictApplicationDescriptor> descriptorFactory,
+        CancellationToken cancellationToken)
+    {
+        if (await manager.FindByClientIdAsync(clientId, cancellationToken) is not null)
+        {
+            return;
+        }
+        await manager.CreateAsync(descriptorFactory(), cancellationToken);
+    }
 
     // Exposed as internal so integration tests can assert that the seeded row matches the
     // canonical descriptor without coupling the test to the CreateAsync path.
@@ -105,6 +126,52 @@ public sealed class OpenIddictSeedWorker(IServiceProvider services) : IHostedSer
         Requirements =
         {
             OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
+        },
+    };
+
+    /// <summary>
+    /// STRG-073 — descriptor for the <c>webdav-internal</c> client consumed exclusively by the
+    /// in-process Basic-Auth → JWT bridge. Intentionally narrower than
+    /// <see cref="BuildDefaultDescriptor"/>:
+    /// <list type="bullet">
+    ///   <item><description><b>No RefreshToken grant.</b> The bridge caches tokens for
+    ///     14 minutes (<c>access_token_lifetime - 60s</c>) and re-exchanges credentials on cache
+    ///     miss. A refresh-token path would create a long-lived credential surface whose value
+    ///     extends beyond the cache's invalidation window and would survive a password change
+    ///     until token expiry — the cache invalidation hook can only evict what the cache knows
+    ///     about, not tokens OpenIddict has issued to other holders.</description></item>
+    ///   <item><description><b>No <c>admin</c> scope.</b> WebDAV clients cannot reach admin
+    ///     endpoints regardless (the admin API is outside <c>/dav</c>), and binding the scope
+    ///     to this client would let a compromised Basic-Auth credential mint an admin access
+    ///     token usable against <c>/graphql</c> mutations that key off scope rather than
+    ///     request path.</description></item>
+    ///   <item><description><b>No <c>offline_access</c> / <c>openid</c> / <c>email</c> /
+    ///     <c>profile</c>.</b> Those scopes are the OIDC identity-delegation surface; WebDAV
+    ///     needs only the resource-access scopes.</description></item>
+    ///   <item><description><b>No PKCE pin.</b> This client lacks the authorization-code grant
+    ///     permission entirely, so the PKCE requirement would be unreachable — dead pin noise.
+    ///     The absence is load-bearing: adding <c>GrantTypes.AuthorizationCode</c> later must
+    ///     also add PKCE, but the code-path would also need revisiting end-to-end (bridge would
+    ///     need a redirect handler), so deferring the pin until the surface exists is fine.</description></item>
+    /// </list>
+    /// Public client (no secret): the bridge runs inside the same process as the token endpoint,
+    /// and a process-local secret would be security theatre — any attacker with the ability to
+    /// read the bridge's config can already read the database.
+    /// </summary>
+    internal static OpenIddictApplicationDescriptor BuildWebDavInternalDescriptor() => new()
+    {
+        ClientId = WebDavInternalClientId,
+        ClientType = OpenIddictConstants.ClientTypes.Public,
+        ClientSecret = null,
+        DisplayName = "strg WebDAV Internal Bridge",
+        ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+        Permissions =
+        {
+            OpenIddictConstants.Permissions.Endpoints.Token,
+            OpenIddictConstants.Permissions.GrantTypes.Password,
+            OpenIddictConstants.Permissions.Prefixes.Scope + "files.read",
+            OpenIddictConstants.Permissions.Prefixes.Scope + "files.write",
+            OpenIddictConstants.Permissions.Prefixes.Scope + "tags.write",
         },
     };
 }

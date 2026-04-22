@@ -113,7 +113,41 @@ public sealed class OpenIddictSeedWorkerTests : IAsyncLifetime
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var count = await manager.CountAsync(CancellationToken.None);
 
-        count.Should().Be(1L, "the FindByClientIdAsync short-circuit must prevent a second CreateAsync insert");
+        // Both strg-default (STRG-012) and webdav-internal (STRG-073) are seeded on first boot;
+        // the FindByClientIdAsync short-circuit on each must prevent duplicate rows on second boot.
+        count.Should().Be(2L, "the FindByClientIdAsync short-circuit must prevent duplicate inserts across both seeded clients");
+    }
+
+    [Fact]
+    public async Task StartAsync_creates_webdav_internal_client_with_narrow_permissions()
+    {
+        // STRG-073 — the bridge client exists exclusively to serve Basic-Auth → JWT exchanges from
+        // BasicAuthJwtBridgeMiddleware. Its permission set MUST stay narrower than strg-default
+        // (no RefreshToken grant, no admin scope, no offline_access, no identity scopes) so that
+        // a stolen WebDAV Basic-Auth credential cannot mint a refresh-token-backed or
+        // admin-scoped access token via this client. If future edits broaden the permissions,
+        // this pin fires and forces a deliberate review of the bridge's blast radius.
+        await using var services = await BuildServicesAsync();
+        await new OpenIddictSeedWorker(services).StartAsync(CancellationToken.None);
+
+        await using var scope = services.CreateAsyncScope();
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var client = await manager.FindByClientIdAsync(OpenIddictSeedWorker.WebDavInternalClientId);
+        client.Should().NotBeNull("the seed worker must create the webdav-internal client alongside strg-default");
+
+        var clientType = await manager.GetClientTypeAsync(client!);
+        clientType.Should().Be(OpenIddictConstants.ClientTypes.Public,
+            "the bridge has no secret-storage surface — public client matches reality");
+
+        var permissions = await manager.GetPermissionsAsync(client!);
+        var expected = ImmutableArray.Create(
+            OpenIddictConstants.Permissions.Endpoints.Token,
+            OpenIddictConstants.Permissions.GrantTypes.Password,
+            OpenIddictConstants.Permissions.Prefixes.Scope + "files.read",
+            OpenIddictConstants.Permissions.Prefixes.Scope + "files.write",
+            OpenIddictConstants.Permissions.Prefixes.Scope + "tags.write");
+        permissions.Should().BeEquivalentTo(expected,
+            "webdav-internal scopes deliberately exclude RefreshToken, admin, offline_access, and the OIDC identity scopes — widening requires a deliberate review, not a silent edit");
     }
 
     // Regression test for the documented "no mutation on subsequent boots" contract: an operator

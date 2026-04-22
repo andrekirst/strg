@@ -71,6 +71,7 @@ public sealed class StrgWebDavMiddleware
         IDriveResolver resolver,
         ITenantContext tenantContext,
         IStrgWebDavStore store,
+        IStrgWebDavLockManager lockManager,
         IOptions<WebDavOptions> options)
     {
         var method = context.Request.Method;
@@ -159,6 +160,19 @@ public sealed class StrgWebDavMiddleware
                 return;
             }
 
+            // STRG-072 lock gate. If someone else holds an exclusive lock on this resource, or
+            // we hold one but didn't present its token via If:, RFC 4918 §9.10.6 requires 423
+            // Locked. CanWriteAsync returns true when either (a) no active lock exists or (b) the
+            // caller owns the lock AND presented its token.
+            var putIfToken = WebDavIfHeader.ExtractFirstLockToken(
+                context.Request.Headers["If"].ToString());
+            var putResourceUri = BuildResourceUri(drive.Name, itemPath);
+            if (!await lockManager.CanWriteAsync(putResourceUri, userId, putIfToken, context.RequestAborted))
+            {
+                context.Response.StatusCode = StatusCodes.Status423Locked;
+                return;
+            }
+
             try
             {
                 var (document, created) = await store.PutDocumentAsync(
@@ -195,6 +209,24 @@ public sealed class StrgWebDavMiddleware
                     drive.Name, itemPath, ex.Message);
                 context.Response.StatusCode = StatusCodes.Status409Conflict;
             }
+            return;
+        }
+
+        // LOCK / UNLOCK must NOT require the target to exist. RFC 4918 §9.10.4 defines "lock-null
+        // resources": a client may LOCK a URL where the resource does not yet exist to reserve it
+        // before the PUT that populates it. Gating LOCK behind GetItemAsync would make the common
+        // "lock, then upload" flow unreachable — clients like Cadaver and Microsoft Office rely on
+        // this ordering. UNLOCK is handled the same way; we authenticate the lock by token, not
+        // by whether a file currently exists at the URL.
+        if (string.Equals(method, "LOCK", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleLockAsync(context, drive, itemPath, lockManager, options.Value);
+            return;
+        }
+
+        if (string.Equals(method, "UNLOCK", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleUnlockAsync(context, drive, itemPath, lockManager);
             return;
         }
 
@@ -235,10 +267,125 @@ public sealed class StrgWebDavMiddleware
             return;
         }
 
-        // Write-side verbs deferred to STRG-069/070/071/072. 501 is the truthful status —
-        // dispatch reached the verb but no handler is wired yet. This keeps the foundation
-        // honest instead of returning a silent 200 or a misleading 404.
+        // Remaining write-side verbs deferred to STRG-071 (MKCOL/DELETE/COPY/MOVE/PROPPATCH). 501
+        // is the truthful status — dispatch reached the verb but no handler is wired yet.
         context.Response.StatusCode = StatusCodes.Status501NotImplemented;
+    }
+
+    private static async Task HandleLockAsync(
+        HttpContext context,
+        Core.Domain.Drive drive,
+        string itemPath,
+        IStrgWebDavLockManager lockManager,
+        WebDavOptions options)
+    {
+        // Scope gate: LOCK is a write-surface even without a body — granting a lock affects who
+        // can write the file next. Enforcing files.write here mirrors the PUT gate and closes the
+        // "I can't PUT, but I can DoS the file by locking it" loophole.
+        if (!context.User.HasScope("files.write"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        Guid ownerId;
+        try
+        {
+            ownerId = context.User.GetUserId();
+        }
+        catch (InvalidOperationException)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
+        var resourceUri = BuildResourceUri(drive.Name, itemPath);
+        var timeout = WebDavTimeoutParser.Parse(
+            context.Request.Headers["Timeout"],
+            options.DefaultLockTimeoutSeconds,
+            options.MaxLockTimeoutSeconds);
+
+        // Refresh path: empty body + If header with the token. RFC 4918 §9.10.2 — no owner
+        // element on the wire, we only bump ExpiresAt.
+        var ifToken = WebDavIfHeader.ExtractFirstLockToken(context.Request.Headers["If"].ToString());
+        if (ifToken is not null && (context.Request.ContentLength ?? 0) == 0)
+        {
+            var refreshed = await lockManager.RefreshAsync(resourceUri, ifToken, ownerId, timeout, context.RequestAborted);
+            if (refreshed is null)
+            {
+                // Precondition failed — the token doesn't match an active lock the caller owns.
+                // 412 is the RFC-correct status for "your If: condition was false".
+                context.Response.StatusCode = StatusCodes.Status412PreconditionFailed;
+                return;
+            }
+            await WebDavResponseWriter.WriteLockAsync(
+                context, refreshed, StatusCodes.Status200OK, context.RequestAborted);
+            return;
+        }
+
+        var ownerInfo = await WebDavResponseWriter.ReadLockOwnerAsync(
+            context.Request.Body, context.RequestAborted);
+
+        var result = await lockManager.LockAsync(
+            resourceUri, ownerId, ownerInfo, timeout, cancellationToken: context.RequestAborted);
+
+        if (result.Status == LockStatus.Conflict)
+        {
+            context.Response.StatusCode = StatusCodes.Status423Locked;
+            return;
+        }
+
+        await WebDavResponseWriter.WriteLockAsync(
+            context, result.Lock!, StatusCodes.Status201Created, context.RequestAborted);
+    }
+
+    private static async Task HandleUnlockAsync(
+        HttpContext context,
+        Core.Domain.Drive drive,
+        string itemPath,
+        IStrgWebDavLockManager lockManager)
+    {
+        if (!context.User.HasScope("files.write"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
+        Guid ownerId;
+        try
+        {
+            ownerId = context.User.GetUserId();
+        }
+        catch (InvalidOperationException)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
+        var token = WebDavIfHeader.ExtractLockTokenHeader(context.Request.Headers["Lock-Token"].ToString());
+        if (string.IsNullOrEmpty(token))
+        {
+            // RFC 4918 §9.11 — missing Lock-Token is 400 Bad Request, not 401. The client sent a
+            // malformed request; no amount of re-authing fixes it.
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var resourceUri = BuildResourceUri(drive.Name, itemPath);
+        var unlocked = await lockManager.UnlockAsync(resourceUri, token, ownerId, context.RequestAborted);
+        // RFC 4918 §9.11 specifies 204 No Content on success, 409 Conflict when the token doesn't
+        // match an active lock. 409 rather than 404 because the resource exists — the lock
+        // assertion the client made is what's wrong.
+        context.Response.StatusCode = unlocked
+            ? StatusCodes.Status204NoContent
+            : StatusCodes.Status409Conflict;
+    }
+
+    private static string BuildResourceUri(string driveName, string itemPath)
+    {
+        // Drive-rooted URI: "{driveName}" or "{driveName}/{path}". Not the raw /dav/... request
+        // path — the /dav prefix is a routing concern and prefix changes shouldn't strand locks.
+        return string.IsNullOrEmpty(itemPath) ? driveName : $"{driveName}/{itemPath}";
     }
 
     // `app.Map("/dav", ...)` strips the prefix before the middleware runs, so Request.Path starts

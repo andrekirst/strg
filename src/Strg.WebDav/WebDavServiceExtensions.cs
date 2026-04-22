@@ -8,15 +8,16 @@ namespace Strg.WebDav;
 /// <see cref="IServiceCollection"/> so the services are visible inside the branched
 /// <c>/dav</c> pipeline alongside the rest of the app's registrations.
 ///
-/// <para>Per STRG-067/STRG-068: <see cref="IDriveResolver"/> plus the <see cref="IStrgWebDavStore"/>
-/// bridge are all that the foundation + store slices need. Downstream tickets layer on:
+/// <para>Registrations by ticket:
 /// <list type="bullet">
-///   <item><description>STRG-069 — PROPFIND + PROPPATCH parser for client-supplied property
-///     requests.</description></item>
-///   <item><description>STRG-070 — <c>ILockManager</c> backed by the <c>file_locks</c>
-///     table.</description></item>
-///   <item><description>STRG-071 / STRG-072 — PUT / MKCOL / DELETE / COPY / MOVE write-side
-///     handlers.</description></item>
+///   <item><description>STRG-067/068 — <see cref="IDriveResolver"/> + <see cref="IStrgWebDavStore"/>.</description></item>
+///   <item><description>STRG-069 — PROPFIND + PROPPATCH parser (inline in
+///     <see cref="WebDavResponseWriter"/>).</description></item>
+///   <item><description>STRG-070 — PUT handled through <see cref="IStrgWebDavStore.PutDocumentAsync"/>.</description></item>
+///   <item><description>STRG-072 — <see cref="IStrgWebDavLockManager"/> backed by the
+///     <c>file_locks</c> table. Own abstraction rather than NWebDav's <c>ILockManager</c> for the
+///     same reason <see cref="IStrgWebDavStore"/> exists — avoiding the vulnerable
+///     <c>NWebDav.Server.AspNetCore</c> adapter. ArchTest #118 guards the absence.</description></item>
 /// </list>
 /// </para>
 /// </summary>
@@ -38,6 +39,10 @@ public static class WebDavServiceExtensions
         // Scoped because StrgWebDavStore depends on StrgDbContext (scoped). A singleton
         // registration here would capture a disposed context after the first request.
         services.AddScoped<IStrgWebDavStore, StrgWebDavStore>();
+
+        // Scoped for the same reason — DbLockManager owns an EF query stream against FileLocks
+        // and depends on ITenantContext which is per-request.
+        services.AddScoped<IStrgWebDavLockManager, DbLockManager>();
         return services;
     }
 }

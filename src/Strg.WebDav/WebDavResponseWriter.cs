@@ -410,4 +410,141 @@ internal static class WebDavResponseWriter
         var slashIndex = span.IndexOf('/');
         return slashIndex < 0 ? span.ToString() : span[..slashIndex].ToString();
     }
+
+    /// <summary>
+    /// STRG-072 — emits the RFC 4918 §9.10.1 <c>prop</c>/<c>lockdiscovery</c>/<c>activelock</c>
+    /// XML body clients expect after a successful LOCK. Also sets the <c>Lock-Token</c> header
+    /// (RFC 4918 §10.5). We don't call this for refresh — refresh returns the same shape but
+    /// doesn't issue a new token, and the status code is 200 not 201.
+    /// </summary>
+    public static async Task WriteLockAsync(
+        HttpContext context,
+        Core.Domain.FileLock fileLock,
+        int statusCode,
+        CancellationToken cancellationToken)
+    {
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/xml; charset=utf-8";
+        // Lock-Token header only on new LOCK (201); refresh intentionally omits per RFC 4918 §8.10.2.
+        if (statusCode == StatusCodes.Status201Created)
+        {
+            context.Response.Headers["Lock-Token"] = $"<{fileLock.Token}>";
+        }
+
+        var buffer = new StringBuilder(512);
+        var settings = new XmlWriterSettings
+        {
+            Async = true,
+            OmitXmlDeclaration = false,
+            Encoding = Encoding.UTF8,
+        };
+        await using var writer = XmlWriter.Create(buffer, settings);
+        await writer.WriteStartDocumentAsync();
+        await writer.WriteStartElementAsync("D", "prop", DavNamespace);
+
+        WriteActiveLockElement(writer, fileLock);
+
+        await writer.WriteEndElementAsync();
+        await writer.WriteEndDocumentAsync();
+        await writer.FlushAsync();
+
+        var bytes = Encoding.UTF8.GetBytes(buffer.ToString());
+        context.Response.ContentLength = bytes.Length;
+        await context.Response.Body.WriteAsync(bytes, cancellationToken);
+    }
+
+    private static void WriteActiveLockElement(XmlWriter writer, Core.Domain.FileLock fileLock)
+    {
+        writer.WriteStartElement("D", "lockdiscovery", DavNamespace);
+        writer.WriteStartElement("D", "activelock", DavNamespace);
+
+        // RFC 4918 §14.7 — <locktype><write/></locktype>. v0.1 only supports write locks; shared
+        // locks are RFC 4918 §6.2 optional territory and clients that need them will fall back to
+        // exclusive.
+        writer.WriteStartElement("D", "locktype", DavNamespace);
+        writer.WriteElementString("D", "write", DavNamespace, string.Empty);
+        writer.WriteEndElement();
+
+        writer.WriteStartElement("D", "lockscope", DavNamespace);
+        writer.WriteElementString("D", "exclusive", DavNamespace, string.Empty);
+        writer.WriteEndElement();
+
+        // Depth: 0 — we only lock the resource itself, not any descendants. Depth-infinity locks
+        // on collections are allowed by RFC 4918 §9.10.4 but rarely used by modern clients and
+        // complicate conflict detection; STRG-072 defers them to a v0.2 follow-up.
+        writer.WriteElementString("D", "depth", DavNamespace, "0");
+
+        if (!string.IsNullOrEmpty(fileLock.OwnerInfo))
+        {
+            // Echo raw owner element. WriteString XML-escapes the content so any <, &, > from the
+            // client stays inert — the owner body is effectively a black-box string in RFC 4918.
+            writer.WriteStartElement("D", "owner", DavNamespace);
+            writer.WriteString(fileLock.OwnerInfo);
+            writer.WriteEndElement();
+        }
+
+        var secondsLeft = Math.Max(1L, (long)(fileLock.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);
+        writer.WriteElementString(
+            "D", "timeout", DavNamespace,
+            string.Create(CultureInfo.InvariantCulture, $"Second-{secondsLeft}"));
+
+        writer.WriteStartElement("D", "locktoken", DavNamespace);
+        writer.WriteElementString("D", "href", DavNamespace, fileLock.Token);
+        writer.WriteEndElement();
+
+        writer.WriteEndElement(); // activelock
+        writer.WriteEndElement(); // lockdiscovery
+    }
+
+    /// <summary>
+    /// STRG-072 — extracts the <c>&lt;D:owner&gt;</c> inner text from a LOCK request body. Returns
+    /// <c>null</c> if no owner element is present or the body is empty. The XML reader is hardened
+    /// against XXE (DTD processing disabled, external resolver null) because LOCK is the first
+    /// WebDAV verb that parses client-supplied XML in this codebase — a lax reader here would be
+    /// an SSRF vector.
+    /// </summary>
+    public static async Task<string?> ReadLockOwnerAsync(Stream body, CancellationToken cancellationToken)
+    {
+        if (body is null || body == Stream.Null)
+        {
+            return null;
+        }
+
+        var settings = new XmlReaderSettings
+        {
+            Async = true,
+            // XXE defence — RFC 4918 clients never legitimately send DTDs, and honoring them would
+            // let an attacker make outbound HTTP requests via external entity references.
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            IgnoreWhitespace = true,
+            IgnoreComments = true,
+        };
+
+        try
+        {
+            using var reader = XmlReader.Create(body, settings);
+            while (await reader.ReadAsync())
+            {
+                if (reader.NodeType == XmlNodeType.Element
+                    && string.Equals(reader.LocalName, "owner", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(reader.NamespaceURI, DavNamespace, StringComparison.Ordinal))
+                {
+                    // Inner XML preserves any structured content (e.g. <href>mailto:...</href>)
+                    // which some clients include. We store it verbatim; escaping happens on write
+                    // via WriteString.
+                    return await reader.ReadInnerXmlAsync();
+                }
+            }
+        }
+        catch (XmlException)
+        {
+            // Malformed body → treat as "no owner element". Per RFC 4918 §9.10 the element is
+            // optional anyway, and returning null lets the LOCK succeed with an anonymous owner
+            // rather than falsely failing the whole request.
+            return null;
+        }
+
+        return null;
+    }
 }

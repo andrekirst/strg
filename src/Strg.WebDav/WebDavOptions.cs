@@ -19,4 +19,20 @@ public sealed class WebDavOptions
     /// branch without seeding thousands of rows.
     /// </summary>
     public int PropfindInfinityMaxItems { get; set; } = 10_000;
+
+    /// <summary>
+    /// Default lock duration when the client doesn't send a <c>Timeout:</c> header, in seconds.
+    /// RFC 4918 §10.7 leaves this implementation-defined; 10 minutes matches what Office, Finder,
+    /// and Explorer send when editing documents and long enough that a user can save-pause-save
+    /// without the lock expiring mid-session.
+    /// </summary>
+    public int DefaultLockTimeoutSeconds { get; set; } = 600;
+
+    /// <summary>
+    /// Hard cap on requested lock timeout. Clients can ask for <c>Second-Infinite</c>; we refuse
+    /// to honor that because a misbehaving or abandoned client would otherwise hold a resource
+    /// indefinitely. 1 hour is the ceiling — anyone editing for longer is expected to refresh the
+    /// lock via the RFC 4918 §7.6 LOCK-with-If-header dance.
+    /// </summary>
+    public int MaxLockTimeoutSeconds { get; set; } = 3600;
 }

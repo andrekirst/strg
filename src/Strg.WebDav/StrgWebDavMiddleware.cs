@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Data;
@@ -63,7 +64,8 @@ public sealed class StrgWebDavMiddleware
         HttpContext context,
         IDriveResolver resolver,
         ITenantContext tenantContext,
-        IStrgWebDavStore store)
+        IStrgWebDavStore store,
+        IOptions<WebDavOptions> options)
     {
         var method = context.Request.Method;
 
@@ -154,7 +156,11 @@ public sealed class StrgWebDavMiddleware
 
         if (string.Equals(method, "PROPFIND", StringComparison.OrdinalIgnoreCase))
         {
-            await WebDavResponseWriter.WritePropFindAsync(context, item, context.RequestAborted);
+            await WebDavResponseWriter.WritePropFindAsync(
+                context,
+                item,
+                options.Value.PropfindInfinityMaxItems,
+                context.RequestAborted);
             return;
         }
 

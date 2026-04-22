@@ -61,8 +61,11 @@ builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<ITagService, TagService>();
 
-// ---- WebDAV (STRG-067) ----
-builder.Services.AddStrgWebDav();
+// ---- WebDAV (STRG-067/069) ----
+// Pass IConfiguration so WebDavOptions (PropfindInfinityMaxItems etc.) binds against the live
+// appsettings stack. Without configuration the options container has no source to read the
+// "WebDav" section from, and the Depth:infinity cap would silently fall back to the default.
+builder.Services.AddStrgWebDav(builder.Configuration);
 
 // ---- Validation (STRG-085/086) ----
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future

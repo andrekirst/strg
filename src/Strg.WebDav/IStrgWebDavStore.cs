@@ -61,6 +61,26 @@ public interface IStrgWebDavStoreCollection : IStrgWebDavStoreItem
     /// tens of thousands of entries and buffering would turn every such PROPFIND into an OOM risk.
     /// </summary>
     IAsyncEnumerable<IStrgWebDavStoreItem> GetChildrenAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// STRG-069 — counts descendants (all items nested at any depth under this collection) up to
+    /// <paramref name="limit"/> + 1 and returns that bounded count. Backed by a
+    /// <c>Take(limit + 1).CountAsync()</c> query so PostgreSQL stops scanning the moment the
+    /// ceiling is reached; no <c>SELECT COUNT(*)</c> against a million-row drive.
+    ///
+    /// <para>The <c>+1</c> is what lets the caller distinguish "at the cap" from "over the cap"
+    /// without a second query.</para>
+    /// </summary>
+    Task<int> CountDescendantsBoundedAsync(int limit, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// STRG-069 — streams all descendants (every item at any nesting level under this collection)
+    /// for a <c>Depth: infinity</c> PROPFIND. Same streaming discipline as
+    /// <see cref="GetChildrenAsync"/>: the implementation MUST NOT buffer — a drive with the cap's
+    /// 10 000 items would otherwise hold ~10 000 <c>FileItem</c> objects in memory per concurrent
+    /// request.
+    /// </summary>
+    IAsyncEnumerable<IStrgWebDavStoreItem> GetDescendantsAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -76,6 +96,22 @@ public interface IStrgWebDavStoreDocument : IStrgWebDavStoreItem
 
     /// <summary>Content-Type for the HTTP response.</summary>
     string ContentType { get; }
+
+    /// <summary>
+    /// Content hash of the blob (<c>sha256:...</c>). Surfaced as both the quoted <c>getetag</c>
+    /// response property (per HTTP spec) and the custom <c>strg:contenthash</c> dead property so
+    /// deduplicating clients can rely on it without parsing the quoted ETag shape. <c>null</c> for
+    /// files whose upload never completed the post-commit hash pass — those render without an ETag.
+    /// </summary>
+    string? ContentHash { get; }
+
+    /// <summary>
+    /// Current version number for the <c>strg:version</c> custom property. Mirrors
+    /// <see cref="Core.Domain.FileItem.VersionCount"/>, which is incremented by
+    /// <see cref="Core.Storage.IFileVersionStore"/> on each write. Exposed so clients that support
+    /// versioned conflict resolution can see the live version without a separate GraphQL query.
+    /// </summary>
+    int Version { get; }
 
     /// <summary>
     /// Opens a read stream for the underlying blob. Caller disposes. No buffering — the stream

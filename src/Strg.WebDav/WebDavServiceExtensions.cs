@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Strg.WebDav;
@@ -21,8 +22,17 @@ namespace Strg.WebDav;
 /// </summary>
 public static class WebDavServiceExtensions
 {
-    public static IServiceCollection AddStrgWebDav(this IServiceCollection services)
+    public static IServiceCollection AddStrgWebDav(this IServiceCollection services, IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        // Options binding for the WebDav section. The default values on WebDavOptions are
+        // load-bearing (PropfindInfinityMaxItems = 10 000), so a missing WebDav section in
+        // appsettings is a no-op rather than a startup failure. Tests override by calling
+        // IConfigurationBuilder.AddInMemoryCollection before CreateClient().
+        services.AddOptions<WebDavOptions>()
+            .Bind(configuration.GetSection(WebDavOptions.SectionName));
+
         services.AddScoped<IDriveResolver, DriveResolver>();
 
         // Scoped because StrgWebDavStore depends on StrgDbContext (scoped). A singleton

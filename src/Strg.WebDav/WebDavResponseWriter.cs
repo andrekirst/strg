@@ -7,37 +7,77 @@ using Microsoft.Net.Http.Headers;
 namespace Strg.WebDav;
 
 /// <summary>
-/// STRG-068 v0.1 PROPFIND / GET responder. Writes the minimum RFC 4918 §14.16 multistatus XML
-/// the spec's TC-001 pins on, plus the streaming GET body TC-003 pins on. The property set is
-/// deliberately minimal — <c>displayname</c>, <c>resourcetype</c>, <c>getcontentlength</c>,
-/// <c>getcontenttype</c>, <c>getlastmodified</c>, <c>creationdate</c>. That's exactly what
-/// macOS Finder and Windows Explorer ask for on the initial folder open; broader property
-/// support (locktoken, supportedlock, quota, win32-*) is STRG-069's territory.
+/// STRG-068 + STRG-069 PROPFIND / GET responder. Writes the RFC 4918 §14.16 multistatus XML
+/// Windows Explorer and macOS Finder need to browse a drive, plus the <c>strg:</c>-namespace
+/// dead properties (<c>contenthash</c>, <c>version</c>) STRG-069 pins. The emitted property set
+/// is <c>displayname</c>, <c>resourcetype</c>, <c>getcontentlength</c>, <c>getcontenttype</c>,
+/// <c>getetag</c> (quoted), <c>getlastmodified</c> (RFC 1123), <c>creationdate</c> (ISO 8601).
+/// Lock / supported-lock / quota-* properties are STRG-070+ territory.
 ///
 /// <para><b>Why our own writer instead of NWebDav's PropFindHandler.</b> NWebDav 0.1.x's
 /// dispatcher takes its own <c>IHttpContext</c> and <c>IPropertyManager</c> wiring and its
 /// ASP.NET Core adapter package ships a transitively vulnerable
-/// <c>Microsoft.AspNetCore.Http 2.0</c> (GHSA-hxrm-9w7p-39cc). A ~100-line XML writer gives us
-/// TC-001 + TC-003 without dragging either abandoned abstraction into the hot path. STRG-070+
-/// can revisit if real-world clients need properties this doesn't emit.</para>
+/// <c>Microsoft.AspNetCore.Http 2.0</c> (GHSA-hxrm-9w7p-39cc). A hand-rolled XML writer gives us
+/// all the TC-001..TC-006 pins without dragging either abandoned abstraction into the hot path.
+/// </para>
+///
+/// <para><b>XXE posture.</b> This writer emits XML; it never parses the request body. PROPFIND
+/// clients may send a <c>&lt;D:propfind&gt;&lt;D:prop&gt;...&lt;/D:prop&gt;&lt;/D:propfind&gt;</c>
+/// body to subset the properties they want, but v0.1 ignores that selector and always returns
+/// the full property set — clients receive a superset of what they asked for, which is still
+/// spec-valid per RFC 4918 §9.1. Because no request XML is parsed, there is no XXE attack surface
+/// on this side of the middleware. If a future ticket starts honouring the <c>prop</c> selector,
+/// the reader MUST set <c>XmlReaderSettings.DtdProcessing = Prohibit</c> and
+/// <c>XmlResolver = null</c>.</para>
 /// </summary>
 internal static class WebDavResponseWriter
 {
     private const string DavNamespace = "DAV:";
+    private const string StrgNamespace = "urn:strg:webdav";
+    private const string StrgPrefix = "s";
 
     /// <summary>
-    /// Emits the 207 Multi-Status response for a PROPFIND request. Depth is inferred from the
-    /// <c>Depth</c> header — RFC 4918 §9.1 defaults to <c>infinity</c>, but we clamp at 1 for
-    /// this v0.1 slice (Phase-9 memory notes infinity support with a cap is a STRG-070 feature).
+    /// Emits the 207 Multi-Status response for a PROPFIND request. The <c>Depth</c> header drives
+    /// which items appear:
+    /// <list type="bullet">
+    ///   <item><description><c>0</c> — target item only.</description></item>
+    ///   <item><description><c>1</c> — target + immediate children (for collections).</description></item>
+    ///   <item><description><c>infinity</c> — target + all descendants, capped at
+    ///     <paramref name="infinityCap"/>. Over the cap returns
+    ///     <c>507 Insufficient Storage</c> <i>before</i> any XML is written.</description></item>
+    /// </list>
+    /// RFC 4918 §9.1 makes <c>infinity</c> the default; we pin <c>1</c> as the default instead so
+    /// a Depth-less request from a buggy client can't trigger the heaviest path. Real WebDAV
+    /// clients always send an explicit <c>Depth</c> header.
     /// </summary>
     public static async Task WritePropFindAsync(
         HttpContext context,
         IStrgWebDavStoreItem item,
+        int infinityCap,
         CancellationToken cancellationToken)
     {
         var depth = context.Request.Headers.TryGetValue("Depth", out var depthHeader)
             ? depthHeader.ToString()
             : "1";
+
+        var isInfinity = string.Equals(depth, "infinity", StringComparison.OrdinalIgnoreCase);
+
+        // For Depth: infinity we short-circuit with 507 BEFORE sending any response bytes. Running
+        // the cap check after starting the XML stream would leak partial responses and still hand
+        // the client a response shape that looked like a success. The cap check happens against
+        // Take(cap + 1).CountAsync(), which stops scanning immediately past the ceiling.
+        if (isInfinity && item is IStrgWebDavStoreCollection capCollection)
+        {
+            var bounded = await capCollection.CountDescendantsBoundedAsync(infinityCap, cancellationToken);
+            // + 1 for the collection itself — the cap budget is total items emitted, not just
+            // descendants. A 10 000-item cap on a drive with exactly 10 000 descendants would
+            // otherwise emit 10 001 <response> elements (root + descendants).
+            if (bounded + 1 > infinityCap)
+            {
+                context.Response.StatusCode = StatusCodes.Status507InsufficientStorage;
+                return;
+            }
+        }
 
         context.Response.StatusCode = StatusCodes.Status207MultiStatus;
         context.Response.ContentType = "application/xml; charset=utf-8";
@@ -53,18 +93,28 @@ internal static class WebDavResponseWriter
         await using var writer = XmlWriter.Create(context.Response.Body, settings);
         await writer.WriteStartDocumentAsync();
         await writer.WriteStartElementAsync(prefix: "D", localName: "multistatus", ns: DavNamespace);
+        // Declare the strg: namespace on the root element so every <s:contenthash> / <s:version>
+        // descendant resolves without redeclaring it per-response — matters for response size on
+        // Depth: infinity, and keeps the XML human-readable.
+        await writer.WriteAttributeStringAsync(prefix: "xmlns", localName: StrgPrefix, ns: null, value: StrgNamespace);
 
         await WriteResponseAsync(writer, context, item);
 
-        // Depth 0 stops at the target; Depth 1 (or infinity, clamped) enumerates children of
-        // collections. We deliberately DO NOT recurse past one level — infinity expansion on a
-        // tenanted drive with millions of files would saturate the request pipeline.
-        if (!string.Equals(depth, "0", StringComparison.Ordinal)
-            && item is IStrgWebDavStoreCollection collection)
+        if (item is IStrgWebDavStoreCollection collection)
         {
-            await foreach (var child in collection.GetChildrenAsync(cancellationToken))
+            if (isInfinity)
             {
-                await WriteResponseAsync(writer, context, child);
+                await foreach (var descendant in collection.GetDescendantsAsync(cancellationToken))
+                {
+                    await WriteResponseAsync(writer, context, descendant);
+                }
+            }
+            else if (!string.Equals(depth, "0", StringComparison.Ordinal))
+            {
+                await foreach (var child in collection.GetChildrenAsync(cancellationToken))
+                {
+                    await WriteResponseAsync(writer, context, child);
+                }
             }
         }
 
@@ -131,6 +181,18 @@ internal static class WebDavResponseWriter
                 document.ContentLength.ToString(CultureInfo.InvariantCulture));
             await writer.WriteElementStringAsync(
                 "D", "getcontenttype", DavNamespace, document.ContentType);
+
+            // Spec table: getetag is ContentHash WRAPPED IN DOUBLE QUOTES per RFC 7232 §2.3.
+            // Clients that compare ETags literally (syntactic match) would treat an unquoted hash
+            // as a syntactically-invalid ETag and skip cache revalidation — the quotes are not
+            // cosmetic. Files that never completed their hash pass omit the property rather than
+            // emit an empty string so clients don't cache on a placeholder.
+            if (!string.IsNullOrEmpty(document.ContentHash))
+            {
+                await writer.WriteElementStringAsync(
+                    "D", "getetag", DavNamespace,
+                    $"\"{document.ContentHash}\"");
+            }
         }
 
         await writer.WriteElementStringAsync(
@@ -139,6 +201,22 @@ internal static class WebDavResponseWriter
         await writer.WriteElementStringAsync(
             "D", "creationdate", DavNamespace,
             item.CreatedAt.UtcDateTime.ToString("o", CultureInfo.InvariantCulture));
+
+        // Custom strg: dead properties. Only emitted for documents — folders have no meaningful
+        // hash and their "version" is just the subtree's own history count, which doesn't belong
+        // in a per-item PROPFIND property. STRG-070+ can revisit if real clients need folder
+        // versioning signalled here.
+        if (item is IStrgWebDavStoreDocument doc)
+        {
+            if (!string.IsNullOrEmpty(doc.ContentHash))
+            {
+                await writer.WriteElementStringAsync(
+                    StrgPrefix, "contenthash", StrgNamespace, doc.ContentHash);
+            }
+            await writer.WriteElementStringAsync(
+                StrgPrefix, "version", StrgNamespace,
+                doc.Version.ToString(CultureInfo.InvariantCulture));
+        }
 
         await writer.WriteEndElementAsync(); // prop
         await writer.WriteElementStringAsync("D", "status", DavNamespace, "HTTP/1.1 200 OK");

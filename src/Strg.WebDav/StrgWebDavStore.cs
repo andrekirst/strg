@@ -128,6 +128,54 @@ public sealed class StrgWebDavCollection(
                 : new StrgWebDavDocument(drive, child, registry);
         }
     }
+
+    public Task<int> CountDescendantsBoundedAsync(int limit, CancellationToken cancellationToken = default)
+    {
+        // Take(limit + 1) ensures Postgres stops after one-past-the-cap; without it every
+        // Depth: infinity request would scan the drive's entire file table. The +1 is how the
+        // caller discriminates "exactly at cap" (allowed) from "over the cap" (507) — spec's
+        // cap semantics are "more than" limit.
+        var query = BuildDescendantsQuery();
+        return query.Take(limit + 1).CountAsync(cancellationToken);
+    }
+
+    public async IAsyncEnumerable<IStrgWebDavStoreItem> GetDescendantsAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Same streaming discipline as GetChildrenAsync — no List<T> materialization. The cap
+        // check ran upstream in CountDescendantsBoundedAsync; this enumerator only runs after the
+        // caller has already verified the result set is under the ceiling.
+        var query = BuildDescendantsQuery()
+            .OrderBy(f => f.Path)
+            .AsAsyncEnumerable();
+
+        await foreach (var descendant in query.WithCancellation(cancellationToken))
+        {
+            yield return descendant.IsDirectory
+                ? new StrgWebDavCollection(drive, descendant, db, registry, store)
+                : new StrgWebDavDocument(drive, descendant, registry);
+        }
+    }
+
+    private IQueryable<FileItem> BuildDescendantsQuery()
+    {
+        // Drive-root descendants = all FileItems on the drive (tenant + soft-delete filters apply
+        // via the global query filter). For a subfolder, descendants match Path.StartsWith(prefix)
+        // where prefix is "<parent.Path>/". We exclude the parent itself via the final-segment
+        // check — a self-comparison would double-count the collection in the 207 response.
+        if (parent is null)
+        {
+            return db.Files.AsNoTracking().Where(f => f.DriveId == drive.Id);
+        }
+
+        var prefix = parent.Path + "/";
+        var parentId = parent.Id;
+        return db.Files
+            .AsNoTracking()
+            .Where(f => f.DriveId == drive.Id
+                        && f.Id != parentId
+                        && f.Path.StartsWith(prefix));
+    }
 }
 
 /// <summary>
@@ -147,6 +195,8 @@ public sealed class StrgWebDavDocument(
     public bool IsCollection => false;
     public long ContentLength => file.Size;
     public string ContentType => file.MimeType;
+    public string? ContentHash => file.ContentHash;
+    public int Version => file.VersionCount;
 
     public Task<Stream> OpenReadStreamAsync(CancellationToken cancellationToken = default)
     {

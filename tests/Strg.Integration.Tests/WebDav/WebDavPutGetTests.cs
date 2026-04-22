@@ -218,6 +218,55 @@ public sealed class WebDavPutGetTests(StrgWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task TC006_get_with_unsatisfiable_range_returns_416_with_complete_length_in_ContentRange()
+    {
+        // STRG-074 sibling pin to TC002 (satisfiable 206 path). The 416 code path lives in
+        // WebDavResponseWriter.WriteGetAsync lines 172-180; the assertions here pin both legs
+        // RFC 7233 §4.4 requires: (a) the status code itself, and (b) the Content-Range header
+        // carrying the complete resource length using the "*" unknown-range form —
+        // `bytes */{total}`. The second leg is what lets a client recompute a satisfiable window
+        // without issuing a second 0-byte probe request. A regression that returns 416 but drops
+        // the Content-Range header would be spec-violating in a way that degrades client UX but
+        // isn't otherwise observable, so the explicit header pin matters here.
+        var payload = Encoding.UTF8.GetBytes("thirty-two-byte payload for 416.");
+        payload.LongLength.Should().Be(32, because: "fixed-size payload pins the `bytes */{total}` match below");
+
+        var client = await CreateAuthenticatedClientAsync();
+
+        using var putResponse = await PutAsync(client, "short.bin", payload);
+        putResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/dav/{DriveName}/short.bin");
+        // Range starts past EOF — TryParseSingleRange flags this via `start >= total`.
+        request.Headers.Range = new RangeHeaderValue(100, 200);
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestedRangeNotSatisfiable,
+            because: "RFC 7233 §4.4 — a range whose start is past end-of-resource MUST yield 416, " +
+                     "not a 200 full-body or 206 clamped window; clients rely on the explicit error " +
+                     "to distinguish 'server doesn't support ranges' from 'your window is wrong'");
+
+        // The response MUST carry Content-Range: bytes */{total}. The asterisk is the RFC 7233
+        // §4.2 'unknown range' form — we're telling the client "we won't satisfy the range you
+        // asked for, but here's the resource's complete length so you can ask for a valid one."
+        // Dropping this header (silent drift if someone cleans up the 416 branch) would compile
+        // and still surface 416, but client retry logic that keys off Content-Range.Length would
+        // now NullReferenceException — the header pin catches that.
+        response.Content.Headers.ContentRange.Should().NotBeNull(
+            because: "RFC 7233 §4.4 mandates Content-Range on 416 so clients can compute a valid window without a second round-trip");
+        response.Content.Headers.ContentRange!.Unit.Should().Be("bytes");
+        response.Content.Headers.ContentRange.HasRange.Should().BeFalse(
+            because: "the `*` in `bytes */{total}` is the unknown-range indicator; a concrete from/to pair here would misrepresent what the server is willing to return");
+        response.Content.Headers.ContentRange.Length.Should().Be(payload.LongLength,
+            because: "the complete-length component of Content-Range is what lets the client re-pick a range that actually fits");
+
+        var bodyBytes = await response.Content.ReadAsByteArrayAsync();
+        bodyBytes.Should().BeEmpty(
+            because: "RFC 7233 §4.4 recommends 416 carry no body; streaming partial bytes would " +
+                     "contradict the status code's 'we refused to satisfy this' semantics");
+    }
+
+    [Fact]
     public async Task TC006_put_without_files_write_scope_returns_403()
     {
         // Mint a token WITHOUT files.write. Every other scope the admin user carries stays intact;

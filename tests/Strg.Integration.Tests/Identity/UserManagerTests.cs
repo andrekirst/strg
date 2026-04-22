@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FluentAssertions;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -18,6 +19,38 @@ namespace Strg.Integration.Tests.Identity;
 internal sealed class FixedTenantContext(Guid id) : ITenantContext
 {
     public Guid TenantId => id;
+}
+
+/// <summary>
+/// No-op <see cref="IPublishEndpoint"/> for UserManager tests that are not asserting on the
+/// event-publish behavior — the event-driven cache invalidation is covered by a dedicated
+/// integration test that spins the real MassTransit pipeline and flushes via
+/// <see cref="IOutboxFlusher"/>. These tests care about password business logic only.
+/// </summary>
+internal sealed class NoopPublishEndpoint : IPublishEndpoint
+{
+    public Task Publish<T>(T message, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public Task Publish<T>(T message, IPipe<PublishContext<T>> pipe, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public Task Publish<T>(T message, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public Task Publish(object message, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+    public Task Publish(object message, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+    public Task Publish(object message, Type messageType, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+    public Task Publish(object message, Type messageType, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+    public Task Publish<T>(object values, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public Task Publish<T>(object values, IPipe<PublishContext<T>> pipe, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public Task Publish<T>(object values, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default) where T : class
+        => Task.CompletedTask;
+    public ConnectHandle ConnectPublishObserver(IPublishObserver observer)
+        => throw new NotSupportedException();
 }
 
 public sealed class UserManagerTests : IAsyncLifetime
@@ -541,7 +574,7 @@ public sealed class UserManagerTests : IAsyncLifetime
         private UserManager Build(StrgDbContext db)
         {
             var repo = new UserRepository(db);
-            return new UserManager(repo, _hasher, db);
+            return new UserManager(repo, _hasher, db, new NoopPublishEndpoint());
         }
     }
 }

@@ -1,8 +1,10 @@
 using System.Net.Mail;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Strg.Core;
 using Strg.Core.Domain;
+using Strg.Core.Events;
 using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Infrastructure.Data;
@@ -12,7 +14,8 @@ namespace Strg.Infrastructure.Identity;
 public sealed class UserManager(
     IUserRepository userRepository,
     IPasswordHasher passwordHasher,
-    StrgDbContext db) : IUserManager
+    StrgDbContext db,
+    IPublishEndpoint publishEndpoint) : IUserManager
 {
     private const int ShortLockoutThreshold = 5;
     private const int LongLockoutThreshold = 10;
@@ -112,6 +115,15 @@ public sealed class UserManager(
         }
 
         user.PasswordHash = passwordHasher.Hash(newPassword);
+        // MassTransit EF outbox buffers Publish on the DbContext; SaveChangesAsync commits the
+        // password row and the outbox row in a single transaction, so a crash between them is
+        // impossible. Publishing BEFORE the save (vs after) is what preserves that atomicity —
+        // a post-commit Publish would leave a window where the hash is new on disk but no
+        // outbox row exists to trigger cache eviction, and stale cache entries would serve the
+        // old password for up to the 14-min JWT TTL.
+        await publishEndpoint.Publish(
+            new UserPasswordChangedEvent(user.TenantId, user.Id, user.Email),
+            cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }
@@ -143,6 +155,10 @@ public sealed class UserManager(
         }
 
         user.PasswordHash = passwordHasher.Hash(newPassword);
+        // See SetPasswordAsync for the pre-save publish discipline rationale.
+        await publishEndpoint.Publish(
+            new UserPasswordChangedEvent(user.TenantId, user.Id, user.Email),
+            cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return Result.Success();
     }

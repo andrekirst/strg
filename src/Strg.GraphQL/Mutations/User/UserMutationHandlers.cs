@@ -1,6 +1,8 @@
 using HotChocolate.Authorization;
 using HotChocolate.Types;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Strg.Core.Events;
 using Strg.Core.Services;
 using Strg.GraphQL.Inputs.User;
 using Strg.GraphQL.Payloads;
@@ -50,6 +52,7 @@ public sealed class UserMutationHandlers
         ChangePasswordInput input,
         [Service] IPasswordHasher passwordHasher,
         [Service] StrgDbContext db,
+        [Service] IPublishEndpoint publishEndpoint,
         [GlobalState("userId")] Guid userId,
         CancellationToken cancellationToken)
     {
@@ -66,6 +69,14 @@ public sealed class UserMutationHandlers
         }
 
         user.PasswordHash = passwordHasher.Hash(input.NewPassword);
+        // Publish BEFORE SaveChangesAsync — MassTransit's EF outbox buffers the Publish on the
+        // DbContext and the single SaveChangesAsync commits the password row and the outbox row
+        // in one transaction. Post-save publish would break that atomicity and allow stale
+        // WebDAV JWT cache entries to serve the old password for up to the 14-min TTL if the
+        // process crashed between commit and publish.
+        await publishEndpoint.Publish(
+            new UserPasswordChangedEvent(user.TenantId, user.Id, user.Email),
+            cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return new ChangePasswordPayload(user, null);
     }

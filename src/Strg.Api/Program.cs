@@ -107,10 +107,15 @@ builder.Services.AddStrgOpenIddict(builder.Configuration, builder.Environment.Is
 builder.Services.AddStrgMassTransit(
     builder.Configuration,
     builder.Environment.IsDevelopment(),
-    // GraphQLSubscriptionPublisher lives in Strg.GraphQL because it depends on ITopicEventSender;
-    // Strg.Infrastructure (where AddStrgMassTransit is defined) cannot reference Strg.GraphQL
-    // without inverting the layer dependency. Wiring it here keeps the layering clean.
-    bus => bus.AddConsumer<Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher>());
+    // Sibling-layer consumers register through this hook because Strg.Infrastructure (where
+    // AddStrgMassTransit is defined) cannot reference Strg.GraphQL or Strg.WebDav without
+    // inverting the layer dependency. GraphQLSubscriptionPublisher depends on ITopicEventSender;
+    // WebDavJwtCacheInvalidationConsumer (STRG-073 Commit 3) depends on IWebDavJwtCache.
+    bus =>
+    {
+        bus.AddConsumer<Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher>();
+        bus.AddConsumer<Strg.WebDav.Consumers.WebDavJwtCacheInvalidationConsumer>();
+    });
 
 // ---- Authorization policies (STRG-013) ----
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();

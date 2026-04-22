@@ -3,8 +3,11 @@ using HotChocolate.Authorization;
 using HotChocolate.Execution;
 using HotChocolate.Subscriptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Strg.Core.Domain;
 using Strg.Core.Events;
+using Strg.GraphQL.DataLoaders;
 using Strg.GraphQL.Subscriptions;
 using Strg.GraphQL.Tests.Helpers;
 using Strg.GraphQL.Types;
@@ -305,5 +308,129 @@ public class FileSubscriptionsTests
         {
             Assert.Equal(JsonValueKind.Null, fe.ValueKind);
         }
+    }
+
+    // TC-006: the `file` subfield on a FileEventPayload is resolved via FileItemByIdDataLoader
+    // (a BatchDataLoader<Guid, FileItem> over IDbContextFactory<StrgDbContext>), whereas the
+    // top-level query path (FileQueries.GetFile) resolves the same entity via a scoped
+    // StrgDbContext. This test seeds a folder, drives the subscription to emit file.isFolder
+    // through the DataLoader, and asserts the same value as a direct DB read — the "direct
+    // resolver" body is literally `db.Files.FirstOrDefaultAsync(f => f.Id == id)`, so the
+    // scoped-context read is a faithful stand-in for that code path.
+    //
+    // Regression shape defended: a DataLoader change that projects to a stubbed FileItem (drops
+    // IsDirectory, renames IsFolder on the wire, or batches against the wrong column) would
+    // flip the wire isFolder while the direct-DB read remains true. Today the DataLoader is
+    // the ONLY FileItem resolver in the subscription path, so parity against the direct path
+    // is the strongest signal we have that "subscribers see the real entity, not a payload
+    // stub." Team-lead flagged the signal as marginal precisely because both paths share the
+    // same EF model — the value is in pinning wire-emission of `isFolder` from the
+    // subscription surface at all, catching a future [GraphQLName] / [GraphQLIgnore] drift.
+    private Task<TestExecutor> CreateExecutorWithDataLoaderAsync(Guid tenantId, Guid userId, string dbName) =>
+        GraphQLTestFixture.CreateExecutorAsync(
+            configureServices: services =>
+            {
+                services.AddSingleton<ITenantContext>(SharedTenantCtx);
+                // Scoped context for seed/read; factory for the DataLoader batch. An explicit
+                // shared InMemoryDatabaseRoot forces both registrations onto the same store —
+                // relying on EF's default-root behavior is unreliable when the scoped-context and
+                // factory configurations are built through separate options pipelines. Without
+                // the shared root, the factory-created context the DataLoader opens sees an
+                // empty database even though the scoped context just seeded a row.
+                //
+                // ITenantContext is singleton so the factory can resolve it from the root
+                // provider without scope gymnastics.
+                var sharedRoot = new InMemoryDatabaseRoot();
+                services.AddDbContext<StrgDbContext>(o => o.UseInMemoryDatabase(dbName, sharedRoot));
+                services.AddDbContextFactory<StrgDbContext>(o => o.UseInMemoryDatabase(dbName, sharedRoot));
+            },
+            configureSchema: b =>
+            {
+                b.AddAuthorization()
+                 .AddSubscriptionType(s => s.Name("Subscription"))
+                 .AddType<FileSubscriptions>()
+                 .AddType<FileEventOutputType>()
+                 .AddType<FileItemType>()
+                 .AddDataLoader<FileItemByIdDataLoader>()
+                 .AddGlobalObjectIdentification();
+                b.Services.AddSingleton<IAuthorizationHandler, AllowAllAuthorizationHandler>();
+            },
+            globalState: new Dictionary<string, object?> { ["tenantId"] = tenantId, ["userId"] = userId });
+
+    [Fact]
+    public async Task FileEvents_FileSubfield_ResolvesIsFolder_ViaDataLoader_MatchingDirectDbRead()
+    {
+        var tenantId = Guid.NewGuid();
+        SharedTenantCtx.TenantId = tenantId;
+
+        var driveId = Guid.NewGuid();
+        var folderId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var dbName = Guid.NewGuid().ToString();
+
+        var executor = await CreateExecutorWithDataLoaderAsync(tenantId, userId, dbName);
+
+        // Seed a folder via the scoped context. Tenant-filter will accept it because the
+        // singleton ITenantContext is the shared one whose TenantId we just set.
+        using (var scope = executor.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            db.Files.Add(new FileItem
+            {
+                Id = folderId,
+                TenantId = tenantId,
+                DriveId = driveId,
+                Name = "folder-a",
+                Path = "/folder-a",
+                IsDirectory = true,
+                CreatedBy = userId,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var sender = executor.Services.GetRequiredService<ITopicEventSender>();
+
+        var subscriptionResult = await executor.ExecuteAsync(
+            $"subscription {{ fileEvents(driveId: \"{driveId}\") {{ file {{ id isFolder }} }} }}");
+
+        var fileEvent = new FileEvent(
+            EventType: FileEventType.Uploaded,
+            FileId: folderId,
+            DriveId: driveId,
+            UserId: userId,
+            TenantId: tenantId,
+            OldPath: null,
+            NewPath: null,
+            OccurredAt: DateTimeOffset.UtcNow);
+        await sender.SendAsync(Topics.FileEvents(tenantId, driveId), fileEvent, CancellationToken.None);
+
+        await using var stream = (IResponseStream)subscriptionResult;
+        await using var enumerator = stream.ReadResultsAsync().GetAsyncEnumerator(CancellationToken.None);
+
+        Assert.True(await enumerator.MoveNextAsync(), "Expected subscription frame for file subfield");
+        var first = enumerator.Current;
+
+        var json = first.ToJson();
+        using var doc = JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.TryGetProperty("data", out var data), $"no data: {json}");
+
+        var fileNode = data.GetProperty("fileEvents").GetProperty("file");
+        Assert.True(fileNode.ValueKind == JsonValueKind.Object,
+            $"file subfield must resolve to an object — DataLoader returned null or missing. Raw JSON: {json}");
+        var wireIsFolder = fileNode.GetProperty("isFolder").GetBoolean();
+
+        // Direct-DB parity read: mirror FileQueries.GetFile's resolver body exactly, bypassing
+        // the DataLoader entirely.
+        bool directIsFolder;
+        using (var scope = executor.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            var loaded = await db.Files.FirstOrDefaultAsync(f => f.Id == folderId);
+            Assert.NotNull(loaded);
+            directIsFolder = loaded!.IsFolder;
+        }
+
+        Assert.True(directIsFolder, "Seeded folder must report IsFolder=true via direct DB read");
+        Assert.Equal(directIsFolder, wireIsFolder);
     }
 }

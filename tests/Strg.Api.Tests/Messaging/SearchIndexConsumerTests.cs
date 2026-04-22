@@ -114,8 +114,91 @@ public sealed class SearchIndexConsumerTests
     }
 
     [Fact]
+    public async Task Consume_log_message_omits_UserId_TenantId_DriveId_Guids()
+    {
+        // Pins the STRG-063 log-contents contract from the consumer's xmldoc: only FileId
+        // appears in the rendered log line — never UserId, TenantId, or DriveId. The sibling
+        // path/MIME-type test covers non-ID leakage; this one defends the parallel invariant
+        // for the three identity Guids that the event payloads carry but the log templates
+        // deliberately omit. A regression that changes {FileId} to one of the others or adds
+        // them alongside would fail here — audit and search-index logs have different
+        // retention shapes, so subject-identifying Guids must not cross into the search-index
+        // sink even though they ride in the event envelope.
+        var logger = new CapturingLogger<SearchIndexConsumer>();
+        var consumer = new SearchIndexConsumer(logger);
+
+        // Test-owned Guids shared across all three events so a single NotContain assertion
+        // per Guid covers the full consumer surface.
+        var tenantId = Guid.NewGuid();
+        var driveId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        var uploaded = new FileUploadedEvent(
+            TenantId: tenantId,
+            FileId: Guid.NewGuid(),
+            DriveId: driveId,
+            UserId: userId,
+            Size: 1,
+            MimeType: "text/plain");
+        var uploadedCtx = Substitute.For<ConsumeContext<FileUploadedEvent>>();
+        uploadedCtx.Message.Returns(uploaded);
+        await consumer.Consume(uploadedCtx);
+
+        var deleted = new FileDeletedEvent(
+            TenantId: tenantId,
+            FileId: Guid.NewGuid(),
+            DriveId: driveId,
+            UserId: userId);
+        var deletedCtx = Substitute.For<ConsumeContext<FileDeletedEvent>>();
+        deletedCtx.Message.Returns(deleted);
+        await consumer.Consume(deletedCtx);
+
+        var moved = new FileMovedEvent(
+            TenantId: tenantId,
+            FileId: Guid.NewGuid(),
+            DriveId: driveId,
+            OldPath: "/a",
+            NewPath: "/b",
+            UserId: userId);
+        var movedCtx = Substitute.For<ConsumeContext<FileMovedEvent>>();
+        movedCtx.Message.Returns(moved);
+        await consumer.Consume(movedCtx);
+
+        logger.Entries.Should().HaveCount(3);
+        foreach (var entry in logger.Entries)
+        {
+            entry.Message.Should().NotContain(
+                tenantId.ToString(),
+                "TenantId is a tenant-subject Guid and must never render into search-index logs");
+            entry.Message.Should().NotContain(
+                driveId.ToString(),
+                "DriveId is a tenant-subject Guid and must never render into search-index logs");
+            entry.Message.Should().NotContain(
+                userId.ToString(),
+                "UserId is a user-subject Guid and must never render into search-index logs");
+        }
+    }
+
+    [Fact]
     public void TC003_SearchIndexConsumer_has_no_ISearchProvider_dependency_in_v01()
     {
+        // Force-load Strg.* assemblies that the SearchProvider-absence scan depends on.
+        // Without this, an isolated test run (single-test filter, future trimming, etc.)
+        // may miss assemblies that haven't been touched by any earlier test in the process,
+        // and the AppDomain enumeration silently reports an empty type set — the assertion
+        // would pass vacuously against an empty graph. This is Pattern B from
+        // tests/Strg.Architecture.Tests/AssemblyLoader.cs: reading typeof(X).Assembly and
+        // touching .FullName prevents JIT elision of the assembly resolve.
+        var seeds = new[]
+        {
+            typeof(Strg.Infrastructure.Storage.LocalFileSystemProvider).Assembly,
+            typeof(Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher).Assembly,
+        };
+        foreach (var seed in seeds)
+        {
+            _ = seed.FullName;
+        }
+
         // Structural guard: v0.1 wires SearchIndexConsumer with ILogger only. Any
         // constructor parameter whose type name contains "SearchProvider" would indicate
         // the v0.2 plugin seam has leaked into the v0.1 consumer ahead of the plugin

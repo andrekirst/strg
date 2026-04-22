@@ -356,7 +356,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
             var versionRepo = new FileVersionRepository(db);
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
-            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            var quota = new QuotaService(db, tenantContext, new Quota.CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
             var audit = new AuditService(db);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }

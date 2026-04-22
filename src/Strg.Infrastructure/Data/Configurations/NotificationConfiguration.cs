@@ -1,0 +1,32 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Strg.Core.Domain;
+
+namespace Strg.Infrastructure.Data.Configurations;
+
+public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>
+{
+    public void Configure(EntityTypeBuilder<Notification> builder)
+    {
+        builder.HasKey(e => e.Id);
+
+        builder.Property(e => e.Type).HasMaxLength(128).IsRequired();
+        builder.Property(e => e.PayloadJson).IsRequired();
+
+        // Read path: the notification centre queries per-user, newest-first. (UserId, CreatedAt)
+        // covers the hot listing query; TenantId comes along implicitly via the tenant filter.
+        builder.HasIndex(e => new { e.TenantId, e.UserId, e.CreatedAt });
+
+        // Unread-badge queries filter by (UserId, ReadAt IS NULL) — covered by the above
+        // composite prefix plus an EF-level filter. A dedicated partial index is deferred until
+        // we measure actual unread-query cost.
+
+        // Partial unique on EventId: outbox-delivered rows carry the MassTransit MessageId for
+        // at-least-once idempotency. Manual/admin writes leave EventId = null; the HasFilter
+        // clause excludes those from the unique scope so they don't collide with each other.
+        // Mirrors AuditEntryConfiguration exactly — same rationale.
+        builder.HasIndex(e => e.EventId)
+            .IsUnique()
+            .HasFilter("\"EventId\" IS NOT NULL");
+    }
+}

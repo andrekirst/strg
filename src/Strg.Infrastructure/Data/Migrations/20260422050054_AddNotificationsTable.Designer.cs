@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Strg.Infrastructure.Data;
@@ -11,9 +12,11 @@ using Strg.Infrastructure.Data;
 namespace Strg.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(StrgDbContext))]
-    partial class StrgDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260422050054_AddNotificationsTable")]
+    partial class AddNotificationsTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

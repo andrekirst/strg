@@ -1,7 +1,9 @@
 using HotChocolate.Subscriptions;
 using MassTransit;
 using Microsoft.Extensions.Logging;
+using Strg.Core.Domain;
 using Strg.Core.Events;
+using Strg.GraphQL.Subscriptions.Payloads;
 
 namespace Strg.GraphQL.Consumers;
 
@@ -10,7 +12,8 @@ public sealed class GraphQLSubscriptionPublisher :
     IConsumer<FileDeletedEvent>,
     IConsumer<FileMovedEvent>,
     IConsumer<FileCopiedEvent>,
-    IConsumer<FileRenamedEvent>
+    IConsumer<FileRenamedEvent>,
+    IConsumer<QuotaWarningEvent>
 {
     private readonly ITopicEventSender _sender;
     private readonly ILogger<GraphQLSubscriptionPublisher> _logger;
@@ -40,6 +43,22 @@ public sealed class GraphQLSubscriptionPublisher :
     public Task Consume(ConsumeContext<FileRenamedEvent> ctx)
         => SendAsync(FileEventType.Renamed, ctx.Message.FileId, ctx.Message.DriveId,
             ctx.Message.UserId, ctx.Message.TenantId, ctx.Message.OldName, ctx.Message.NewName, ctx.CancellationToken);
+
+    public async Task Consume(ConsumeContext<QuotaWarningEvent> ctx)
+    {
+        var msg = ctx.Message;
+        var ratio = msg.QuotaBytes <= 0 ? 0d : (double)msg.UsedBytes / msg.QuotaBytes;
+        // Mirrors QuotaNotificationConsumer's level derivation so the persistent Notification
+        // row and the live subscription payload agree on the discriminator for the same event.
+        var level = ratio >= QuotaThresholds.Critical
+            ? QuotaThresholds.CriticalLevel
+            : QuotaThresholds.WarningLevel;
+
+        var payload = new QuotaWarningPayload(level, msg.UsedBytes, msg.QuotaBytes, DateTimeOffset.UtcNow);
+        var topic = Topics.QuotaWarnings(msg.TenantId, msg.UserId);
+        await _sender.SendAsync(topic, payload, ctx.CancellationToken);
+        _logger.LogDebug("Published QuotaWarning ({Level}) to topic {Topic}", level, topic);
+    }
 
     private async Task SendAsync(
         FileEventType type, Guid fileId, Guid driveId, Guid userId, Guid tenantId,

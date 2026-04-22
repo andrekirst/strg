@@ -808,7 +808,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var versionRepo = new FileVersionRepository(db);
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
-            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            var quota = new QuotaService(db, tenantContext, new Quota.CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
             var audit = new AuditService(db);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, customRegistry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
@@ -821,7 +821,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var versionRepo = new FileVersionRepository(db);
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
-            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            var quota = new QuotaService(db, tenantContext, new Quota.CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
             var audit = new AuditService(db);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
@@ -837,7 +837,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             var versionRepo = new FileVersionRepository(db);
             var fileRepo = new FileRepository(db);
             var driveRepo = new DriveRepository(db);
-            var quota = new QuotaService(db, tenantContext, NullLogger<QuotaService>.Instance);
+            var quota = new QuotaService(db, tenantContext, new Quota.CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, _registry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
     }

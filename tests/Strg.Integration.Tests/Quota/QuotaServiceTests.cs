@@ -1,8 +1,10 @@
 using FluentAssertions;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Strg.Core.Domain;
+using Strg.Core.Events;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
 using Strg.Infrastructure.Data;
@@ -15,6 +17,81 @@ namespace Strg.Integration.Tests.Quota;
 internal sealed class FixedTenantContext(Guid id) : ITenantContext
 {
     public Guid TenantId => id;
+}
+
+/// <summary>
+/// Test double for <see cref="IPublishEndpoint"/> that captures the calls rather than bridging
+/// to a real broker. The production code wraps <see cref="IPublishEndpoint"/> via the outbox
+/// (<c>UseBusOutbox</c>); a no-op capture is sufficient for asserting whether
+/// <see cref="QuotaService"/> decided to publish — the broker/outbox path is covered by
+/// <c>QuotaNotificationConsumerTests</c>.
+/// </summary>
+internal sealed class CapturingPublishEndpoint : IPublishEndpoint
+{
+    public List<object> Published { get; } = [];
+
+    public Task Publish<T>(T message, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish<T>(T message, IPipe<PublishContext<T>> pipe, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish<T>(T message, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish(object message, CancellationToken cancellationToken = default)
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish(object message, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default)
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish(object message, Type messageType, CancellationToken cancellationToken = default)
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish(object message, Type messageType, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default)
+    {
+        Published.Add(message);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish<T>(object values, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(values);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish<T>(object values, IPipe<PublishContext<T>> pipe, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(values);
+        return Task.CompletedTask;
+    }
+
+    public Task Publish<T>(object values, IPipe<PublishContext> pipe, CancellationToken cancellationToken = default) where T : class
+    {
+        Published.Add(values);
+        return Task.CompletedTask;
+    }
+
+    public ConnectHandle ConnectPublishObserver(IPublishObserver observer) =>
+        throw new NotSupportedException("Test double does not support observers.");
 }
 
 /// <summary>
@@ -429,6 +506,119 @@ public sealed class QuotaServiceTests : IAsyncLifetime
         reloaded.UsedBytes.Should().Be(500_000, "cross-tenant release must not mutate the foreign-tenant user");
     }
 
+    // ── STRG-064 threshold publish tests ──────────────────────────────────────
+    //
+    // The production code publishes QuotaWarningEvent through an outbox-wrapped
+    // IPublishEndpoint — these tests use a capturing stub to keep the unit-ish scope
+    // (does QuotaService *decide* to publish?). End-to-end "publish flows to the broker and
+    // the consumer writes a row" is covered in QuotaNotificationConsumerTests.
+
+    // TC-001
+    [Fact]
+    public async Task STRG064_TC001_CommitAsync_publishes_QuotaWarningEvent_on_80pct_threshold_crossing()
+    {
+        var fx = await CreateFixtureAsync();
+        // Start at 70% (below warning), commit enough to land at 81% (crosses warning only).
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 700);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        await service.CommitAsync(user.Id, 110);
+
+        (await fx.ReloadUserAsync(user.Id)).UsedBytes.Should().Be(810);
+        var warnings = capture.Published.OfType<QuotaWarningEvent>().ToList();
+        warnings.Should().ContainSingle(
+            "commit crossing the 80% threshold must publish exactly one QuotaWarningEvent");
+        var evt = warnings.Single();
+        evt.TenantId.Should().Be(fx.TenantId);
+        evt.UserId.Should().Be(user.Id);
+        evt.UsedBytes.Should().Be(810);
+        evt.QuotaBytes.Should().Be(1_000);
+    }
+
+    [Fact]
+    public async Task STRG064_CommitAsync_publishes_on_95pct_critical_threshold_crossing()
+    {
+        // Jumping from 80% to 96% crosses the Critical threshold (but not Warning, which is
+        // already crossed). The publish semantics are "any threshold crossing fires one event"
+        // — the consumer derives level=critical from the post-state ratio.
+        var fx = await CreateFixtureAsync();
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 800);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        await service.CommitAsync(user.Id, 160);
+
+        capture.Published.OfType<QuotaWarningEvent>().Should().ContainSingle()
+            .Which.UsedBytes.Should().Be(960);
+    }
+
+    // TC-002
+    [Fact]
+    public async Task STRG064_TC002_CommitAsync_does_NOT_publish_when_commit_stays_below_threshold()
+    {
+        var fx = await CreateFixtureAsync();
+        // 50% → 70%: stays below warning (80%). No event.
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 500);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        await service.CommitAsync(user.Id, 200);
+
+        capture.Published.OfType<QuotaWarningEvent>().Should().BeEmpty(
+            "commits that stay under 80% usage must not publish QuotaWarningEvent");
+    }
+
+    [Fact]
+    public async Task STRG064_CommitAsync_does_NOT_republish_inside_warning_band()
+    {
+        // Devil's advocate: 82% → 85% stays in the warning band — no *new* threshold crossed.
+        // Republishing would flood the notification centre during a burst of small uploads
+        // inside the band. Pin the crossing-only semantics.
+        var fx = await CreateFixtureAsync();
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 820);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        await service.CommitAsync(user.Id, 30);
+
+        capture.Published.OfType<QuotaWarningEvent>().Should().BeEmpty(
+            "in-band commits must not republish — crossing-only semantics prevent notification spam");
+    }
+
+    [Fact]
+    public async Task STRG064_CommitAsync_does_NOT_publish_when_commit_rejected_by_quota()
+    {
+        // A rejected commit (QuotaExceededException) must roll back the transaction — and with it,
+        // any outbox row. The capture stub can't observe the rollback, but we can at least assert
+        // the service never *called* publish on the failed path.
+        var fx = await CreateFixtureAsync();
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 950);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        var act = () => service.CommitAsync(user.Id, 100);
+        await act.Should().ThrowAsync<QuotaExceededException>();
+
+        capture.Published.Should().BeEmpty(
+            "rejected commits must never publish a warning — no phantom warnings for non-events");
+    }
+
+    [Fact]
+    public async Task STRG064_TryCommitAsync_publishes_on_threshold_crossing()
+    {
+        // Admin surface shares the same threshold-publish path — pin that it also fires.
+        var fx = await CreateFixtureAsync();
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 700);
+        var capture = new CapturingPublishEndpoint();
+        var admin = fx.BuildConcreteService(capture);
+
+        var outcome = await admin.TryCommitAsync(user.Id, 110);
+
+        outcome.Should().Be(CommitOutcome.Success);
+        capture.Published.OfType<QuotaWarningEvent>().Should().ContainSingle();
+    }
+
     private static async Task<bool> CommitOutcomeAsync(Func<Task> commit)
     {
         try
@@ -488,14 +678,17 @@ public sealed class QuotaServiceTests : IAsyncLifetime
 
         public StrgDbContext NewDbContext() => new(options, tenantContext);
 
-        public IQuotaService BuildService() =>
-            new QuotaService(NewDbContext(), tenantContext, NullLogger<QuotaService>.Instance);
+        public IQuotaService BuildService(IPublishEndpoint? publishEndpoint = null) =>
+            new QuotaService(NewDbContext(), tenantContext, publishEndpoint ?? new CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
 
         // QuotaService implements both IQuotaService and IQuotaAdminService. Admin callers
         // bind through the admin interface so the enumeration-oracle-unsafe outcomes never leak
         // to untrusted callers via the main interface — same instance, narrower surface.
-        public IQuotaAdminService BuildAdminService() =>
-            new QuotaService(NewDbContext(), tenantContext, NullLogger<QuotaService>.Instance);
+        public IQuotaAdminService BuildAdminService(IPublishEndpoint? publishEndpoint = null) =>
+            new QuotaService(NewDbContext(), tenantContext, publishEndpoint ?? new CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
+
+        public QuotaService BuildConcreteService(IPublishEndpoint publishEndpoint) =>
+            new(NewDbContext(), tenantContext, publishEndpoint, NullLogger<QuotaService>.Instance);
 
         public async Task<User> CreateUserAsync(long quotaBytes, long usedBytes)
         {

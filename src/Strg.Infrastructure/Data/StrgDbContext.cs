@@ -26,6 +26,7 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     public DbSet<FileKey> FileKeys => Set<FileKey>();
     public DbSet<Tag> Tags => Set<Tag>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<InboxRule> InboxRules => Set<InboxRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

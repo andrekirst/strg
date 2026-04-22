@@ -13,8 +13,9 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
         builder.Property(e => e.Type).HasMaxLength(128).IsRequired();
         builder.Property(e => e.PayloadJson).IsRequired();
 
-        // Read path: the notification centre queries per-user, newest-first. (UserId, CreatedAt)
-        // covers the hot listing query; TenantId comes along implicitly via the tenant filter.
+        // (TenantId, UserId, CreatedAt) — TenantId leads because the global tenant filter
+        // generates WHERE TenantId = @p1 as the first predicate; leftmost-prefix matching
+        // then serves the per-user listing and the CreatedAt DESC sort in one index seek.
         builder.HasIndex(e => new { e.TenantId, e.UserId, e.CreatedAt });
 
         // Unread-badge queries filter by (UserId, ReadAt IS NULL) — covered by the above

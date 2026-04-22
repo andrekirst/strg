@@ -553,6 +553,46 @@ public sealed class QuotaServiceTests : IAsyncLifetime
             .Which.UsedBytes.Should().Be(960);
     }
 
+    [Fact]
+    public async Task STRG064_CommitAsync_crossing_both_thresholds_in_one_commit_publishes_exactly_one_event()
+    {
+        // STRG-064 audit INFO-3: discriminate against a future per-threshold publish loop.
+        //
+        // The existing TC-001 (70% → 81%, Warning only) and 80% → 96% (Critical only) tests
+        // each cross exactly ONE threshold — they'd both pass under a refactor that expanded
+        // PublishThresholdWarningIfCrossedAsync into a per-threshold loop, because that loop
+        // would fire once per crossed threshold and each of those tests only crosses one.
+        //
+        // This test drives a single commit from 70% → 96% — which crosses BOTH Warning (80%)
+        // AND Critical (95%) in one atomic UPDATE. Today's CrossedThreshold predicate uses `||`
+        // and the publish site fires exactly one Publish call with the post-state payload;
+        // tomorrow's hypothetical per-threshold loop would emit two events per commit. Pinning
+        // ContainSingle() here is the only test in the class that catches that regression shape.
+        //
+        // The post-state ratio is 96% ≥ QuotaThresholds.Critical — the consumer's level
+        // derivation (see QuotaNotificationConsumer.Consume) classifies this event as
+        // critical. Asserting the ratio here pins "the single event that gets consumed will
+        // be classified as critical" without coupling to the consumer's string constant.
+        var fx = await CreateFixtureAsync();
+        var user = await fx.CreateUserAsync(quotaBytes: 1_000, usedBytes: 700);
+        var capture = new CapturingPublishEndpoint();
+        var service = fx.BuildConcreteService(capture);
+
+        await service.CommitAsync(user.Id, 260);
+
+        var warnings = capture.Published.OfType<QuotaWarningEvent>().ToList();
+        warnings.Should().ContainSingle(
+            "a single commit crossing both thresholds must produce exactly one event — " +
+            "a per-threshold publish loop would emit two, and this is the only regression gate for that shape");
+
+        var evt = warnings.Single();
+        evt.UsedBytes.Should().Be(960);
+        evt.QuotaBytes.Should().Be(1_000);
+        ((double)evt.UsedBytes / evt.QuotaBytes).Should().BeGreaterThanOrEqualTo(
+            QuotaThresholds.Critical,
+            "post-state ratio lands in the critical band — the consumer derives level=critical from ratio >= 0.95");
+    }
+
     // TC-002
     [Fact]
     public async Task STRG064_TC002_CommitAsync_does_NOT_publish_when_commit_stays_below_threshold()

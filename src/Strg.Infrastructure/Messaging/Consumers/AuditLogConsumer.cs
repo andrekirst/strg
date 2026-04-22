@@ -152,16 +152,20 @@ public sealed class AuditLogConsumer :
     // Binding an ExceptionInfo[] directly to {Exceptions} renders as the sequence of concrete impl
     // type names (e.g. ["MassTransit.Events.FaultExceptionInfo"]) because ExceptionInfo is an
     // interface and Serilog's scalar converter falls back to Type.FullName via default ToString
-    // — empirically verified by EmpiricalProbe_Exceptions_template_renders_ExceptionInfo_array_for_real_Fault
+    // — empirically verified by DeadLetter_log_renders_ExceptionType_and_Message_via_explicit_projection
     // in AuditLogConsumerTests. The projection here pulls the exception's own class name and
     // top-level message into plain strings that Serilog's scalar pipeline can render usefully.
     //
     // Message is included because type-only logs ("System.InvalidOperationException") carry no
-    // triage signal on their own; operators need to know what the exception said. The narrow
-    // EF-parameter-leakage risk this projection reopens — PostgresException messages contain
-    // FK DETAIL like `Key ("TenantId", ...)=(uuid, ...)` — is bounded in this consumer's failure
-    // surface (EventId-unique-violation is caught and swallowed before it reaches the Fault
-    // pipeline, so the Fault<T> path here sees only non-EF or non-unique-violation exceptions).
+    // triage signal on their own; operators need to know what the exception said. Npgsql's
+    // PostgresException can carry FK DETAIL like `Key ("TenantId", ...)=(uuid, ...)` on its own
+    // Data dictionary and ToString() dump — the EventId-unique-violation path is already
+    // swallowed before it reaches Fault (see IsEventIdUniqueViolation catch filter), but non-
+    // EventId PostgresExceptions (FK violations, check violations) DO reach the Fault pipeline
+    // after retry exhaustion. The (ExceptionType, Message) projection deliberately excludes
+    // both .Data and .ToString() so the FK DETAIL — which lives on Detail/Data, not Message —
+    // cannot flow through this render surface. Pinned by
+    // DeadLetter_log_does_not_leak_FK_DETAIL_when_inner_PostgresException_reaches_Fault_pipeline.
     // Deliberately does NOT include ExceptionInfo.StackTrace or .Data: stack-frame parameter
     // values and Data dictionaries are the large leakage surfaces the STRG-062 INFO-1 fix was
     // originally protecting against, and the operator wins from including them are small.

@@ -507,6 +507,161 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
             "binding must remain scalar string projection — '@' destructure would leak StackTrace + Data fields");
     }
 
+    [Fact]
+    public async Task DeadLetter_log_does_not_leak_FK_DETAIL_when_inner_PostgresException_reaches_Fault_pipeline()
+    {
+        // STRG-062 C3 audit follow-up. Pins the *absence half* of the dead-letter render
+        // contract: the sibling test above proves `ExceptionType: Message` carries into the
+        // rendered log; this test proves `PostgresException.Detail` does NOT.
+        //
+        // Why this vector needs its own pin:
+        //   - `AuditLogConsumer.IsEventIdUniqueViolation` already swallows 23505 on the EventId
+        //     index, so those never reach Fault. But a *different* Postgres failure — FK violation
+        //     on AuditEntries.TenantId (event arrives before Tenant row, Tenant-delete race),
+        //     check-constraint violation on Details JSON shape, unique-index violation on a
+        //     future second constraint — propagates out of Consume, MassTransit retries 2×
+        //     (harness) / 5× (prod), then publishes Fault<T>.
+        //   - Npgsql's `PostgresException.Detail` on FK violations contains the neighbouring-row
+        //     primary key: `Key ("TenantId")=(<guid>) is not present in table "tenants".` That
+        //     is cross-tenant state bleeding across the forensic log surface.
+        //   - `ExceptionInfo.Message` (sourced from `Exception.Message`) EXCLUDES Detail — only
+        //     `PostgresException.ToString()` concatenates it under "Exception data:". As long as
+        //     `ProjectExceptions` uses `e.Message` and NOT `e.ToString()`, Detail stays out. A
+        //     future "let's include more context" refactor that swaps `e.Message` → `e.ToString()`
+        //     would silently open the leak — this test is the tripwire.
+        //
+        // Test shape mirrors the sibling render test. `FkViolationProbeConsumer` throws a
+        // fabricated DbUpdateException wrapping a PostgresException with the Detail field
+        // populated; after Immediate(2) retries the harness publishes Fault<FileUploadedEvent>;
+        // AuditLogConsumer's Fault handler logs through the Serilog pipeline; CapturingSink
+        // intercepts; the assertions hunt for the sentinel Detail strings and fail if any
+        // leaked through.
+        var tenantId = Guid.NewGuid();
+        var fileId = Guid.NewGuid();
+        var capturedEvents = new List<LogEvent>();
+
+        using var serilog = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Sink(new CapturingSink(capturedEvents))
+            .CreateLogger();
+
+        var connectionString = await CreateFreshDatabaseAsync();
+        var services = new ServiceCollection();
+        services.AddLogging(lb => lb.AddSerilog(serilog, dispose: false));
+        services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddDbContext<StrgDbContext>(options =>
+        {
+            options.UseNpgsql(connectionString);
+            options.UseOpenIddict();
+        });
+        services.AddMassTransitTestHarness(bus =>
+        {
+            bus.AddConsumer<AuditLogConsumer>();
+            bus.AddConsumer<FkViolationProbeConsumer>();
+
+            bus.AddEntityFrameworkOutbox<StrgDbContext>(outbox =>
+            {
+                outbox.UsePostgres();
+                outbox.UseBusOutbox();
+                outbox.QueryDelay = TimeSpan.FromSeconds(1);
+            });
+
+            bus.UsingRabbitMq((context, cfg) =>
+            {
+                cfg.Host(new Uri(_rabbitMq.GetConnectionString()));
+                cfg.UseMessageRetry(r => r.Immediate(2));
+                cfg.ConfigureEndpoints(context);
+            });
+        });
+        services.Configure<MassTransitHostOptions>(o => o.WaitUntilStarted = true);
+        services.AddOptions<TestHarnessOptions>().Configure(o =>
+        {
+            o.TestInactivityTimeout = TimeSpan.FromSeconds(30);
+            o.TestTimeout = TimeSpan.FromMinutes(2);
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var ctx = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            await ctx.Database.MigrateAsync();
+        }
+
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+            db.Tenants.Add(new Tenant { Id = tenantId, Name = "fk-leak-probe" });
+            await bus.Publish(new FileUploadedEvent(
+                tenantId, fileId, Guid.NewGuid(), Guid.NewGuid(), Size: 1, MimeType: "text/plain"));
+            await db.SaveChangesAsync();
+        }
+
+        (await harness.Consumed.Any<Fault<FileUploadedEvent>>()).Should().BeTrue(
+            "retry exhaustion on FkViolationProbeConsumer must drive MassTransit to publish Fault<T>");
+
+        var deadLetter = capturedEvents.FirstOrDefault(e =>
+            e.MessageTemplate.Text.StartsWith("Dead-letter: FileUploadedEvent", StringComparison.Ordinal));
+        deadLetter.Should().NotBeNull(
+            "AuditLogConsumer.Consume(Fault<FileUploadedEvent>) should have emitted a Dead-letter log line");
+
+        var renderedMessage = deadLetter!.RenderMessage();
+
+        // Empirical dump kept for audit — a future reader investigating the FK-leak vector
+        // inspects this captured output to verify the projection shape without re-running the
+        // probe. Same rationale as the sibling render test.
+        _output.WriteLine("=== EMPIRICAL RENDER of FK-violation Fault<FileUploadedEvent> ===");
+        _output.WriteLine(renderedMessage);
+        _output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
+        if (deadLetter.Properties.TryGetValue("Exceptions", out var exProp))
+        {
+            _output.WriteLine(exProp.ToString());
+        }
+        else
+        {
+            _output.WriteLine("  <Exceptions property NOT BOUND>");
+        }
+
+        // Positive signal: the projection still carries Type + Message forensic signal. The
+        // Message we assert on is the outer DbUpdateException message (what ExceptionInfo.Message
+        // captures — MassTransit's FaultExceptionInfo is constructed from the thrown exception's
+        // top-level .Message). Without this baseline a regression that zeroes the entire
+        // projection would pass the negative assertions below.
+        renderedMessage.Should().Contain("DbUpdateException",
+            "projection must still carry the outer exception type name — otherwise operators " +
+            "have no signal at all for diagnosing the dead-letter");
+        renderedMessage.Should().Contain("FK_VIOLATION_PROBE",
+            "projection must carry the outer exception's Message so operators can triage; this " +
+            "is the baseline without which the negative assertions would be vacuously true");
+
+        // Negative signal: the sentinel Detail content must NOT appear anywhere in the rendered
+        // line. Each assertion defends against a distinct regression shape:
+        //
+        //  (a) SensitiveTenantGuid — the cross-tenant GUID that Postgres writes into Detail on
+        //      an FK violation. Its presence means cross-tenant PII bled through the log.
+        //  (b) DetailPayload full string — the structured "Key (...)=(...) is not present..."
+        //      shape Npgsql emits. Defends against a partial-render refactor that would still
+        //      include the key name even if it stripped the guid.
+        //  (c) "Detail:" prefix — appears in `PostgresException.ToString()` output under the
+        //      "Exception data:" section. Its presence signals a ToString()-based projection,
+        //      which is the canonical regression shape the C3 audit flagged.
+        renderedMessage.Should().NotContain(FkViolationProbeConsumer.SensitiveTenantGuid,
+            "PostgresException.Detail must NOT flow into the rendered log — leaking the FK " +
+            "neighbouring-row tenant GUID is cross-tenant state bleeding across the forensic " +
+            "log surface. If this fails, a refactor swapped e.Message → e.ToString() in " +
+            "ProjectExceptions, re-opening the STRG-062 INFO-1 leak window.");
+        renderedMessage.Should().NotContain(FkViolationProbeConsumer.DetailPayload,
+            "the full Detail payload must not render even in partial form — defends against a " +
+            "'render the key name but strip the value' refactor that would still leak schema shape");
+        renderedMessage.Should().NotContain("Detail:",
+            "the 'Detail:' prefix is the tell for `PostgresException.ToString()` output (under " +
+            "its 'Exception data:' section). Its presence means the projection is calling " +
+            "ToString() instead of .Message — canonical C3-audit regression shape.");
+    }
+
     private static async Task PublishAsync<TEvent>(ServiceProvider provider, Guid tenantId, TEvent message)
         where TEvent : class
     {
@@ -668,12 +823,51 @@ internal sealed class ThrowOnceInterceptor : SaveChangesInterceptor
 /// throws the same distinctive <see cref="InvalidOperationException"/>; after
 /// <c>Immediate(2)</c> retries the harness publishes <c>Fault&lt;FileUploadedEvent&gt;</c> which
 /// the <see cref="AuditLogConsumer"/> picks up via its <c>IConsumer&lt;Fault&lt;FileUploadedEvent&gt;&gt;</c>
-/// implementation. Used only by <c>EmpiricalProbe_Exceptions_template_*</c>.
+/// implementation. Used only by
+/// <c>DeadLetter_log_renders_ExceptionType_and_Message_via_explicit_projection</c>.
 /// </summary>
 internal sealed class DeadLetterProbeConsumer : IConsumer<FileUploadedEvent>
 {
     public Task Consume(ConsumeContext<FileUploadedEvent> context) =>
         throw new InvalidOperationException("DEAD_LETTER_PROBE — forced failure to exercise Fault<T> log render");
+}
+
+/// <summary>
+/// Forces a <see cref="Fault{T}"/> publish for <see cref="FileUploadedEvent"/> carrying an inner
+/// <see cref="PostgresException"/> whose <c>Detail</c> field is populated with a foreign-key
+/// leak payload. Used only by
+/// <c>DeadLetter_log_does_not_leak_FK_DETAIL_when_inner_PostgresException_reaches_Fault_pipeline</c>
+/// to empirically confirm that the <c>{Exceptions}</c> template binding on the AuditLogConsumer
+/// Fault handler does NOT flow <c>Detail</c> content into the rendered log line.
+///
+/// <para>The fabricated <see cref="PostgresException"/> mimics the shape Npgsql/EF Core would
+/// emit when an <c>AuditEntry</c> INSERT fails the <c>TenantId</c> foreign key — the scenario
+/// the AuditLogConsumer commentary warns against (event arriving before the Tenant row, or a
+/// Tenant-delete race). The FK constraint name and the sentinel tenant GUID in <c>Detail</c>
+/// are synthetic — the probe never interacts with the real database — so the test is
+/// deterministic across Postgres versions and FK naming conventions.</para>
+/// </summary>
+internal sealed class FkViolationProbeConsumer : IConsumer<FileUploadedEvent>
+{
+    // Sentinel values: test asserts these strings are absent from the rendered dead-letter log.
+    // Exposed as consts so the test can reference them without duplicating the literals.
+    public const string SensitiveTenantGuid = "deadbeef-1111-2222-3333-444455556666";
+    public const string DetailPayload =
+        "Key (\"TenantId\")=(" + SensitiveTenantGuid + ") is not present in table \"tenants\".";
+    public const string ConstraintName = "FK_AuditEntries_Tenants_TenantId";
+
+    public Task Consume(ConsumeContext<FileUploadedEvent> context) =>
+        throw new DbUpdateException(
+            "FK_VIOLATION_PROBE — fabricated DbUpdateException to exercise non-EventId 23503 render path",
+            new PostgresException(
+                messageText:
+                    "insert or update on table \"AuditEntries\" violates foreign key " +
+                    "constraint \"" + ConstraintName + "\"",
+                severity: "ERROR",
+                invariantSeverity: "ERROR",
+                sqlState: "23503",
+                detail: DetailPayload,
+                constraintName: ConstraintName));
 }
 
 /// <summary>

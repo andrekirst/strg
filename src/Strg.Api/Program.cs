@@ -149,6 +149,8 @@ var graphql = builder.Services
     .AddType<FileVersionType>()
     .AddType<AuditEntryType>()
     .AddType<TagType>()
+    .AddType<Strg.GraphQL.Types.FileEventOutputType>()
+    .AddType<Strg.GraphQL.Subscriptions.FileSubscriptions>()
     .AddType<RootQueryExtension>()
     .AddType<RootMutationExtension>()
     .AddType<FileItemByIdDataLoader>()

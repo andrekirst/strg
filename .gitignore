@@ -50,6 +50,14 @@ bld/
 # (https://github.com/github/gitignore/pull/3736)
 #!**/[Bb]in/*.refresh
 
+# Windows-style bin paths leaked onto Linux: some MSBuild target produces directories
+# named literally `bin\Debug` (one filename containing a backslash) instead of the
+# normal `bin/Debug` two-dir form. The pattern above doesn't match because there's
+# no `/` separator. Underlying MSBuild misconfig should still be investigated; this
+# rule keeps the artefact out of git status.
+**/[Bb]in\\[Dd]ebug/
+**/[Bb]in\\[Rr]elease/
+
 # Visual Studio 2015/2017 cache/options directory
 .vs/
 # Uncomment if you have tasks that create the project's static files in wwwroot

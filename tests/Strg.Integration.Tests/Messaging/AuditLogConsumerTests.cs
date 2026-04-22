@@ -5,7 +5,11 @@ using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Events;
@@ -14,6 +18,7 @@ using Strg.Infrastructure.Messaging.Consumers;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Strg.Integration.Tests.Messaging;
 
@@ -33,6 +38,10 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
 
     private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management-alpine")
         .Build();
+
+    private readonly ITestOutputHelper _output;
+
+    public AuditLogConsumerTests(ITestOutputHelper output) => _output = output;
 
     public async Task InitializeAsync()
     {
@@ -354,6 +363,148 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         row.TenantId.Should().NotBe(Guid.Empty);
     }
 
+    [Fact]
+    public async Task DeadLetter_log_renders_ExceptionType_and_Message_via_explicit_projection()
+    {
+        // STRG-062 follow-up INFO-1. Pins the shape of the {Exceptions} binding after the
+        // explicit `ExceptionType: Message` projection in AuditLogConsumer.ProjectExceptions.
+        //
+        // Background: the raw ExceptionInfo[] binding (pre-fix) empirically rendered as
+        // ["MassTransit.Events.FaultExceptionInfo"] because ExceptionInfo is an interface with
+        // no ToString override — Serilog's scalar converter falls back to Type.FullName on the
+        // concrete impl type. That rendering carried no triage signal.
+        //
+        // Post-fix, the consumer projects each ExceptionInfo into "{ExceptionType}: {Message}"
+        // strings before binding so Serilog's scalar pipeline has useful content. This test
+        // forces a real Fault<FileUploadedEvent> through the Serilog render path and asserts:
+        //
+        //  (1) The rendered line contains the exception class name (forensic signal #1).
+        //  (2) The rendered line contains the exception message (forensic signal #2).
+        //  (3) The binding is NOT destructured — the log does NOT contain field names like
+        //      `StackTrace` or `Data` that would appear under `{@Exceptions}`. This defends
+        //      the narrow-projection choice against a future refactor that swaps `{Exceptions}`
+        //      for `{@Exceptions}` "to get more detail" and re-opens the EF-parameter-leakage
+        //      window the STRG-062 INFO-1 fix was originally protecting against.
+        //
+        // Test-output dump is kept for audit: a future reader investigating the Fault render
+        // shape reads the captured string directly here instead of having to re-run the probe.
+        var tenantId = Guid.NewGuid();
+        var fileId = Guid.NewGuid();
+        var capturedEvents = new List<LogEvent>();
+
+        // Serilog → in-memory capturing sink, then wrapped as MEL ILoggerFactory. Mirrors prod
+        // (Program.cs UseSerilog) rendering semantics, which is the pipeline the {Exceptions}
+        // template was specced against — MEL-only tests would measure a different render path.
+        using var serilog = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Sink(new CapturingSink(capturedEvents))
+            .CreateLogger();
+
+        var connectionString = await CreateFreshDatabaseAsync();
+        var services = new ServiceCollection();
+        services.AddLogging(lb => lb.AddSerilog(serilog, dispose: false));
+        services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddDbContext<StrgDbContext>(options =>
+        {
+            options.UseNpgsql(connectionString);
+            options.UseOpenIddict();
+        });
+        services.AddMassTransitTestHarness(bus =>
+        {
+            bus.AddConsumer<AuditLogConsumer>();
+            bus.AddConsumer<DeadLetterProbeConsumer>();
+
+            bus.AddEntityFrameworkOutbox<StrgDbContext>(outbox =>
+            {
+                outbox.UsePostgres();
+                outbox.UseBusOutbox();
+                outbox.QueryDelay = TimeSpan.FromSeconds(1);
+            });
+
+            bus.UsingRabbitMq((context, cfg) =>
+            {
+                cfg.Host(new Uri(_rabbitMq.GetConnectionString()));
+                cfg.UseMessageRetry(r => r.Immediate(2));
+                cfg.ConfigureEndpoints(context);
+            });
+        });
+        services.Configure<MassTransitHostOptions>(o => o.WaitUntilStarted = true);
+        services.AddOptions<TestHarnessOptions>().Configure(o =>
+        {
+            o.TestInactivityTimeout = TimeSpan.FromSeconds(30);
+            o.TestTimeout = TimeSpan.FromMinutes(2);
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        using (var scope = provider.CreateScope())
+        {
+            var ctx = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            await ctx.Database.MigrateAsync();
+        }
+
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StrgDbContext>();
+            var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+            db.Tenants.Add(new Tenant { Id = tenantId, Name = "dead-letter-probe" });
+            await bus.Publish(new FileUploadedEvent(
+                tenantId, fileId, Guid.NewGuid(), Guid.NewGuid(), Size: 1, MimeType: "text/plain"));
+            await db.SaveChangesAsync();
+        }
+
+        // Wait for AuditLogConsumer's Fault<FileUploadedEvent> handler to fire — that's the log
+        // call whose render shape we're measuring. DeadLetterProbeConsumer throws on every
+        // attempt; Immediate(2) → Fault<FileUploadedEvent> published → AuditLogConsumer's Fault
+        // endpoint picks it up.
+        (await harness.Consumed.Any<Fault<FileUploadedEvent>>()).Should().BeTrue(
+            "retry exhaustion on the probe consumer must drive MassTransit to publish Fault<T>");
+
+        // Find the emitted dead-letter line. The AuditLogConsumer endpoint ALSO processes the
+        // original FileUploadedEvent and writes its own log lines; we filter to the distinctive
+        // "Dead-letter:" prefix.
+        var deadLetter = capturedEvents.FirstOrDefault(e =>
+            e.MessageTemplate.Text.StartsWith("Dead-letter: FileUploadedEvent", StringComparison.Ordinal));
+        deadLetter.Should().NotBeNull(
+            "AuditLogConsumer.Consume(Fault<FileUploadedEvent>) should have emitted a Dead-letter log line");
+
+        var renderedMessage = deadLetter!.RenderMessage();
+
+        // Empirical dump — human inspects this to decide Option A vs Option B shape. Keep in
+        // test output permanently: a future reader diagnosing a production Fault log by searching
+        // "what does {Exceptions} actually look like?" finds this test + its captured output.
+        _output.WriteLine("=== EMPIRICAL RENDER of {Exceptions} template on a real Fault<FileUploadedEvent> ===");
+        _output.WriteLine(renderedMessage);
+        _output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
+        if (deadLetter.Properties.TryGetValue("Exceptions", out var exProp))
+        {
+            _output.WriteLine(exProp.ToString());
+            _output.WriteLine("  (property value type: " + exProp.GetType().Name + ")");
+        }
+        else
+        {
+            _output.WriteLine("  <Exceptions property NOT BOUND>");
+        }
+        _output.WriteLine("=== LogEvent.Exception (MEL-side .Exception, separate from template bindings) ===");
+        _output.WriteLine(deadLetter.Exception?.ToString() ?? "<null>");
+
+        const string ProbeMarker = "DEAD_LETTER_PROBE";
+        renderedMessage.Should().Contain("InvalidOperationException",
+            "the ExceptionType: Message projection must carry the exception class name into the scalar render");
+        renderedMessage.Should().Contain(ProbeMarker,
+            "the ExceptionType: Message projection must carry the exception Message into the scalar render");
+
+        // Defence against a future refactor that "improves" the Fault log by flipping
+        // {Exceptions} → {@Exceptions}. Serilog's destructure path would render ExceptionInfo
+        // as a structured object with StackTrace / Data properties, re-opening the EF
+        // parameter leakage window. The absence of "StackTrace" in the rendered text is the
+        // cheapest available tripwire.
+        renderedMessage.Should().NotContain("StackTrace",
+            "binding must remain scalar string projection — '@' destructure would leak StackTrace + Data fields");
+    }
+
     private static async Task PublishAsync<TEvent>(ServiceProvider provider, Guid tenantId, TEvent message)
         where TEvent : class
     {
@@ -507,5 +658,42 @@ internal sealed class ThrowOnceInterceptor : SaveChangesInterceptor
         }
 
         return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+}
+
+/// <summary>
+/// Forces a <see cref="Fault{T}"/> publish for <see cref="FileUploadedEvent"/>. Every attempt
+/// throws the same distinctive <see cref="InvalidOperationException"/>; after
+/// <c>Immediate(2)</c> retries the harness publishes <c>Fault&lt;FileUploadedEvent&gt;</c> which
+/// the <see cref="AuditLogConsumer"/> picks up via its <c>IConsumer&lt;Fault&lt;FileUploadedEvent&gt;&gt;</c>
+/// implementation. Used only by <c>EmpiricalProbe_Exceptions_template_*</c>.
+/// </summary>
+internal sealed class DeadLetterProbeConsumer : IConsumer<FileUploadedEvent>
+{
+    public Task Consume(ConsumeContext<FileUploadedEvent> context) =>
+        throw new InvalidOperationException("DEAD_LETTER_PROBE — forced failure to exercise Fault<T> log render");
+}
+
+/// <summary>
+/// Serilog sink that appends every incoming <see cref="LogEvent"/> to a caller-provided list.
+/// Used by the empirical dead-letter probe to capture and inspect the rendered shape of the
+/// <c>{Exceptions}</c> template binding against a real <c>ExceptionInfo[]</c> produced by
+/// MassTransit's fault publication pipeline.
+/// </summary>
+internal sealed class CapturingSink : ILogEventSink
+{
+    private readonly List<LogEvent> _events;
+    private readonly object _gate = new();
+
+    public CapturingSink(List<LogEvent> events) => _events = events;
+
+    public void Emit(LogEvent logEvent)
+    {
+        // MassTransit's log pipeline is multi-threaded; lock to keep the captured list
+        // consistent when the probe's published event triggers concurrent consumer logs.
+        lock (_gate)
+        {
+            _events.Add(logEvent);
+        }
     }
 }

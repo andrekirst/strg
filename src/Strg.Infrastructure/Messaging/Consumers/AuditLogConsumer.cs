@@ -44,7 +44,13 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// entity + admin-visible DLQ surface is STRG-064's territory. Dead-letter logs use the plain
 /// <c>{Exceptions}</c> template (not <c>{@Exceptions}</c>) to avoid flowing EF parameter values
 /// — path strings, neighbouring-row tenant IDs from FK violations — through Serilog's
-/// destructuring into the structured log payload.</para>
+/// destructuring into the structured log payload. Empirical verification (STRG-062 follow-up
+/// INFO-1) showed that binding the raw <see cref="ExceptionInfo"/>[] renders only the wrapper
+/// type name (<c>["MassTransit.Events.FaultExceptionInfo"]</c>) because <see cref="ExceptionInfo"/>
+/// is an interface with no <c>ToString</c> override; <see cref="ProjectExceptions"/> projects
+/// the array to <c>"{ExceptionType}: {Message}"</c> strings so the scalar render surface
+/// carries the class name + top-level message without re-entering the <c>@</c>-destructure
+/// leakage window.</para>
 /// </summary>
 public sealed class AuditLogConsumer :
     IConsumer<FileUploadedEvent>,
@@ -122,7 +128,7 @@ public sealed class AuditLogConsumer :
     {
         _logger.LogError(
             "Dead-letter: FileUploadedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
-            context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
+            context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
     }
 
@@ -130,7 +136,7 @@ public sealed class AuditLogConsumer :
     {
         _logger.LogError(
             "Dead-letter: FileDeletedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
-            context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
+            context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
     }
 
@@ -138,9 +144,28 @@ public sealed class AuditLogConsumer :
     {
         _logger.LogError(
             "Dead-letter: FileMovedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
-            context.Message.Message.TenantId, context.Message.Message.FileId, context.Message.Exceptions);
+            context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
     }
+
+    // Binding an ExceptionInfo[] directly to {Exceptions} renders as the sequence of concrete impl
+    // type names (e.g. ["MassTransit.Events.FaultExceptionInfo"]) because ExceptionInfo is an
+    // interface and Serilog's scalar converter falls back to Type.FullName via default ToString
+    // — empirically verified by EmpiricalProbe_Exceptions_template_renders_ExceptionInfo_array_for_real_Fault
+    // in AuditLogConsumerTests. The projection here pulls the exception's own class name and
+    // top-level message into plain strings that Serilog's scalar pipeline can render usefully.
+    //
+    // Message is included because type-only logs ("System.InvalidOperationException") carry no
+    // triage signal on their own; operators need to know what the exception said. The narrow
+    // EF-parameter-leakage risk this projection reopens — PostgresException messages contain
+    // FK DETAIL like `Key ("TenantId", ...)=(uuid, ...)` — is bounded in this consumer's failure
+    // surface (EventId-unique-violation is caught and swallowed before it reaches the Fault
+    // pipeline, so the Fault<T> path here sees only non-EF or non-unique-violation exceptions).
+    // Deliberately does NOT include ExceptionInfo.StackTrace or .Data: stack-frame parameter
+    // values and Data dictionaries are the large leakage surfaces the STRG-062 INFO-1 fix was
+    // originally protecting against, and the operator wins from including them are small.
+    private static string[] ProjectExceptions(ExceptionInfo[] exceptions) =>
+        exceptions.Select(e => $"{e.ExceptionType}: {e.Message}").ToArray();
 
     private async Task WriteAuditEntryAsync<TEvent>(
         ConsumeContext<TEvent> context,

@@ -90,13 +90,19 @@ public sealed class QuotaNotificationConsumer :
 
     public Task Consume(ConsumeContext<Fault<QuotaWarningEvent>> context)
     {
+        // Binding the raw ExceptionInfo[] to {Exceptions} renders as the sequence of concrete
+        // impl type names (e.g. ["MassTransit.Events.FaultExceptionInfo"]) because ExceptionInfo
+        // is an interface and Serilog's scalar converter falls back to Type.FullName via default
+        // ToString. Verified empirically in STRG-062 follow-up INFO-1. Projecting to
+        // "{Type}: {Message}" strings restores the forensic signal without the @-destructure
+        // path that would flow StackTrace + Data dictionary contents (EF parameter values,
+        // neighbouring-row tenant IDs from FK-violation DETAIL) into the structured payload.
+        var projected = context.Message.Exceptions
+            .Select(e => $"{e.ExceptionType}: {e.Message}")
+            .ToArray();
         _logger.LogError(
-            // {Exceptions} not {@Exceptions}: destructuring the Fault exception graph flows
-            // EF parameter values (path strings, neighbouring-row tenant IDs from FK-violation
-            // messages) into the structured payload. Plain ToString keeps type + top stack
-            // frame without cross-tenant leakage.
             "Dead-letter: QuotaWarningEvent dispatch failed. Tenant={TenantId} User={UserId} Exceptions={Exceptions}",
-            context.Message.Message.TenantId, context.Message.Message.UserId, context.Message.Exceptions);
+            context.Message.Message.TenantId, context.Message.Message.UserId, projected);
         return Task.CompletedTask;
     }
 

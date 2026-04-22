@@ -63,7 +63,7 @@ public abstract class WebDavTestBase : IClassFixture<StrgWebApplicationFactory>
 public class PropfindTests : WebDavTestBase
 {
     [Fact] public async Task Propfind_Root_ReturnsMultiStatus() { ... }
-    [Fact] public async Task Propfind_DepthInfinity_ReturnsForbidden() { ... }
+    [Fact] public async Task Propfind_DepthInfinity_OverCap_Returns507InsufficientStorage() { ... }
     [Fact] public async Task Propfind_Directory_ListsChildren() { ... }
 }
 
@@ -131,7 +131,7 @@ public static class WebDavAssert
 
 - [ ] All HTTP methods tested (OPTIONS, PROPFIND, GET, PUT, HEAD, MKCOL, DELETE, COPY, MOVE, LOCK, UNLOCK)
 - [ ] `Depth: 0` and `Depth: 1` PROPFIND tested separately
-- [ ] `Depth: infinity` → 403 tested
+- [ ] `Depth: infinity` → 507 Insufficient Storage over the configured `PropfindInfinityMaxItems` cap tested (RFC 4918 §9.7.3 is the DoS-cap status, NOT 403 — the original spec draft assumed a blanket refusal, but STRG-069's implementation bounds-checks descendants against a configurable cap and surfaces 507 only when the cap is exceeded; the pin lives in `WebDavPropFindTests.TC006_depth_infinity_over_cap_returns_507` today. 403 would be semantically wrong because it implies "you lack permission," whereas the server is fine with the verb in principle — it's the response-size budget that's the problem.)
 - [ ] Range requests tested (206 Partial Content)
 - [ ] Recursive soft-delete verified against DB state
 - [ ] Lock/unlock lifecycle tested

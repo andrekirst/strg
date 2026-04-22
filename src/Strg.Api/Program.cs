@@ -97,7 +97,13 @@ builder.Services.AddStrgOpenIddict(builder.Configuration, builder.Environment.Is
 // the OutboxMessage/OutboxState tables, then dispatched in the background via RabbitMQ. This
 // preserves at-least-once delivery semantics across process crashes between DB commit and broker
 // publish — the classic dual-write problem the outbox pattern exists to solve.
-builder.Services.AddStrgMassTransit(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.AddStrgMassTransit(
+    builder.Configuration,
+    builder.Environment.IsDevelopment(),
+    // GraphQLSubscriptionPublisher lives in Strg.GraphQL because it depends on ITopicEventSender;
+    // Strg.Infrastructure (where AddStrgMassTransit is defined) cannot reference Strg.GraphQL
+    // without inverting the layer dependency. Wiring it here keeps the layering clean.
+    bus => bus.AddConsumer<Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher>());
 
 // ---- Authorization policies (STRG-013) ----
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();

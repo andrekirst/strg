@@ -7,24 +7,27 @@ namespace Strg.WebDav;
 /// <see cref="IServiceCollection"/> so the services are visible inside the branched
 /// <c>/dav</c> pipeline alongside the rest of the app's registrations.
 ///
-/// <para>Per STRG-067: <see cref="IDriveResolver"/> is the only concrete dependency this
-/// foundation slice adds. Downstream tickets layer on:
+/// <para>Per STRG-067/STRG-068: <see cref="IDriveResolver"/> plus the <see cref="IStrgWebDavStore"/>
+/// bridge are all that the foundation + store slices need. Downstream tickets layer on:
 /// <list type="bullet">
-///   <item><description>STRG-068 — <c>IWebDavDispatcher</c> + <c>IStrgWebDavStore</c> for the
-///     actual per-verb handlers.</description></item>
+///   <item><description>STRG-069 — PROPFIND + PROPPATCH parser for client-supplied property
+///     requests.</description></item>
 ///   <item><description>STRG-070 — <c>ILockManager</c> backed by the <c>file_locks</c>
 ///     table.</description></item>
+///   <item><description>STRG-071 / STRG-072 — PUT / MKCOL / DELETE / COPY / MOVE write-side
+///     handlers.</description></item>
 /// </list>
-/// Deliberately not registering those here yet — a stub <c>AddScoped&lt;IWebDavDispatcher, StubWebDavDispatcher&gt;</c>
-/// would be dead code the moment STRG-068 lands, and the 501 response in
-/// <see cref="StrgWebDavMiddleware"/> already gives clients a truthful "not yet implemented"
-/// signal for non-OPTIONS verbs.</para>
+/// </para>
 /// </summary>
 public static class WebDavServiceExtensions
 {
     public static IServiceCollection AddStrgWebDav(this IServiceCollection services)
     {
         services.AddScoped<IDriveResolver, DriveResolver>();
+
+        // Scoped because StrgWebDavStore depends on StrgDbContext (scoped). A singleton
+        // registration here would capture a disposed context after the first request.
+        services.AddScoped<IStrgWebDavStore, StrgWebDavStore>();
         return services;
     }
 }

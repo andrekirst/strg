@@ -9,7 +9,7 @@ namespace Strg.WebDav;
 /// EF-backed <see cref="IDriveResolver"/>. Sits on the regular <see cref="StrgDbContext"/> so the
 /// multi-tenant global query filter transparently scopes the lookup — no
 /// <c>IgnoreQueryFilters</c> here, because the resolver runs AFTER the authentication middleware
-/// populated <see cref="Core.Identity.ITenantContext"/> from the JWT.
+/// populated <see cref="Infrastructure.Data.ITenantContext"/> from the JWT.
 ///
 /// <para><b>Path-traversal defence.</b> <c>driveName</c> arrives straight from the URL segment.
 /// The <see cref="ValidDriveName"/> pattern is the twin of

@@ -16,6 +16,7 @@
     <PackageVersion Include="HotChocolate.Data.EntityFramework" Version="15.1.14" />
     <PackageVersion Include="HotChocolate.Subscriptions.Redis" Version="15.1.14" />
     <!-- OpenIddict -->
+    <PackageVersion Include="NWebDav.Server" Version="0.1.36" />
     <PackageVersion Include="OpenIddict.AspNetCore" Version="7.4.0" />
     <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="7.4.0" />
     <!-- MassTransit -->

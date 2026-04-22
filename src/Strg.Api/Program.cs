@@ -97,7 +97,7 @@ builder.Services.AddStrgOpenIddict(builder.Configuration, builder.Environment.Is
 // the OutboxMessage/OutboxState tables, then dispatched in the background via RabbitMQ. This
 // preserves at-least-once delivery semantics across process crashes between DB commit and broker
 // publish — the classic dual-write problem the outbox pattern exists to solve.
-builder.Services.AddStrgMassTransit(builder.Configuration);
+builder.Services.AddStrgMassTransit(builder.Configuration, builder.Environment.IsDevelopment());
 
 // ---- Authorization policies (STRG-013) ----
 builder.Services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();

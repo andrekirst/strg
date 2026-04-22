@@ -16,6 +16,9 @@ public static class MassTransitExtensions
     /// <para>
     /// <b>Transport:</b> RabbitMQ from v0.1. Connection settings come from the <c>RabbitMQ</c>
     /// configuration section (<c>Host</c>, <c>VirtualHost</c>, <c>Username</c>, <c>Password</c>).
+    /// <c>Username</c> and <c>Password</c> are required in non-Development environments —
+    /// startup throws if either is missing. Development has a guest/guest fallback applied
+    /// in code (not in appsettings.json) so a prod overlay cannot silently inherit it.
     /// </para>
     /// <para>
     /// <b>Outbox polling:</b> default 5 seconds. Override via
@@ -30,9 +33,33 @@ public static class MassTransitExtensions
     /// </remarks>
     public static IServiceCollection AddStrgMassTransit(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        bool isDevelopment)
     {
         var pollingSeconds = configuration.GetValue("MassTransit:OutboxPollingIntervalSeconds", 5);
+
+        // Credentials must be resolved up-front: MassTransit captures the closure over cfg
+        // callback, and the throw needs to happen at startup (fail-fast) rather than at first
+        // broker connection. A missing-creds-in-prod config mistake should crash Kestrel, not
+        // silently publish with dev defaults.
+        var username = configuration["RabbitMQ:Username"];
+        var password = configuration["RabbitMQ:Password"];
+
+        if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+        {
+            if (!isDevelopment)
+            {
+                throw new InvalidOperationException(
+                    "RabbitMQ:Username and RabbitMQ:Password are required outside Development. " +
+                    "Configure both via appsettings, environment variables, or secret store — " +
+                    "no guest/guest fallback is applied in non-Development environments.");
+            }
+
+            // Development-only fallback. The literal lives here (not in appsettings.json) so
+            // a prod config overlay cannot silently inherit it.
+            username ??= "guest";
+            password ??= "guest";
+        }
 
         services.AddMassTransit(bus =>
         {
@@ -55,8 +82,6 @@ public static class MassTransitExtensions
             {
                 var host = configuration["RabbitMQ:Host"] ?? "localhost";
                 var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
-                var username = configuration["RabbitMQ:Username"] ?? "guest";
-                var password = configuration["RabbitMQ:Password"] ?? "guest";
 
                 cfg.Host(host, virtualHost, h =>
                 {

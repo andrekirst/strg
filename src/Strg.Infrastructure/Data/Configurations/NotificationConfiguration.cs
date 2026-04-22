@@ -24,9 +24,13 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
         // Partial unique on EventId: outbox-delivered rows carry the MassTransit MessageId for
         // at-least-once idempotency. Manual/admin writes leave EventId = null; the HasFilter
         // clause excludes those from the unique scope so they don't collide with each other.
-        // Mirrors AuditEntryConfiguration exactly — same rationale.
+        // Mirrors AuditEntryConfiguration exactly — same rationale, including the three-point
+        // triangulation (HasDatabaseName pin + QuotaNotificationConsumer equality-match +
+        // MigrationTests schema pin) that keeps substring-drift from silently re-opening
+        // the duplicate-event storm vector.
         builder.HasIndex(e => e.EventId)
             .IsUnique()
+            .HasDatabaseName(NotificationConstraintNames.EventIdUniqueIndex)
             .HasFilter("\"EventId\" IS NOT NULL");
     }
 }

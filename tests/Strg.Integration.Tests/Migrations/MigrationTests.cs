@@ -345,6 +345,13 @@ public sealed class MigrationTests : IAsyncLifetime
         // triangulation (config pin + consumer equality + schema pin) fails loud instead.
         var auditIndexes = await QueryUniqueIndexesAsync(ctx, "AuditEntries");
         auditIndexes.Should().Contain("IX_AuditEntries_EventId");
+
+        // IX_Notifications_EventId: the Notifications-side twin. Same failure mode, same
+        // triangulation — QuotaNotificationConsumer.IsDuplicateEventId equality-matches this
+        // exact name (STRG-064 INFO-4 follow-up, folded into the #85 scope). Renaming either
+        // index without updating the shared const would fail the migration pin below.
+        var notificationIndexes = await QueryUniqueIndexesAsync(ctx, "Notifications");
+        notificationIndexes.Should().Contain("IX_Notifications_EventId");
     }
 
     [Fact]

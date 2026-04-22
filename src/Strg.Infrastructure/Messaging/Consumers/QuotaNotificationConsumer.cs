@@ -6,6 +6,7 @@ using Npgsql;
 using Strg.Core.Domain;
 using Strg.Core.Events;
 using Strg.Infrastructure.Data;
+using Strg.Infrastructure.Data.Configurations;
 
 namespace Strg.Infrastructure.Messaging.Consumers;
 
@@ -106,9 +107,13 @@ public sealed class QuotaNotificationConsumer :
         return Task.CompletedTask;
     }
 
+    // Exact equality against the EF-pinned index name, not substring — mirrors the
+    // AuditLogConsumer triangulation (STRG-062 INFO-2). A future rename like
+    // UQ_Notifications_Idempotency or an unrelated unique index whose name contains
+    // "EventId" would previously have been mis-classified. The MigrationTests schema
+    // pin + EF HasDatabaseName + this equality check are the three anchors.
     private static bool IsDuplicateEventId(DbUpdateException ex) =>
         ex.InnerException is PostgresException pg
         && pg.SqlState == "23505"
-        && pg.ConstraintName is not null
-        && pg.ConstraintName.Contains("EventId", StringComparison.Ordinal);
+        && pg.ConstraintName == NotificationConstraintNames.EventIdUniqueIndex;
 }

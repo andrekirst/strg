@@ -195,24 +195,26 @@ if (!builder.Environment.IsDevelopment())
 var app = builder.Build();
 
 app.UseRouting();
-app.UseAuthentication();
 
-// STRG-067 — WebDAV branches off BEFORE the app-level UseAuthorization() so its middleware
-// terminal (no endpoint metadata) doesn't get caught by the FallbackPolicy
+// STRG-067 — WebDAV branches off BEFORE the app-level UseAuthentication()/UseAuthorization() so
+// its middleware terminal (no endpoint metadata) doesn't get caught by the FallbackPolicy
 // (RequireAuthenticatedUser) that would reject OPTIONS with 401 and break RFC 4918 §10.1's
-// pre-auth capability probe. HttpContext.User is already populated by the parent-pipeline
-// UseAuthentication above; StrgWebDavMiddleware enforces auth explicitly for non-OPTIONS verbs
+// pre-auth capability probe. The branch runs its OWN UseAuthentication() below so /dav traffic
+// gets the identity stack; StrgWebDavMiddleware enforces auth explicitly for non-OPTIONS verbs
 // via its own IsAuthenticated check (TC-004 pin).
 //
-// STRG-073 — the bridge runs FIRST inside the branch. It rewrites a valid Basic header to a
-// Bearer JWT (by exchanging credentials with /connect/token), then the branch-local
-// UseAuthentication() re-runs the OIDC validator against the rewritten header so the request
-// reaches StrgWebDavMiddleware with HttpContext.User populated. Why re-run auth inside the
-// branch: the outer UseAuthentication above already ran against the ORIGINAL Basic header, saw
-// "no valid scheme", and left the principal anonymous — if we didn't re-run, the freshly
-// minted Bearer token in the rewritten Authorization header would be ignored. The bridge is
-// restricted to the branch (not global) so password-grant exchanges never occur on GraphQL,
-// REST, or token endpoints — surfaces that have their own Bearer-only auth story.
+// STRG-073 / STRG-074 — the bridge runs FIRST inside the branch, THEN the branch's own
+// UseAuthentication() validates the rewritten Bearer header. Do NOT add an outer
+// UseAuthentication() BEFORE this Map: AuthenticationHandler<T>._authenticateTask caches the
+// result per-request on a handler instance that IAuthenticationHandlerProvider (scoped) shares
+// across all UseAuthentication() calls in the request. An outer pre-Map UseAuthentication()
+// would run against the original Basic header, cache a NoResult, and the cached result would
+// be returned by the branch's UseAuthentication() even after the bridge rewrote the header —
+// yielding a silent 401 on every valid Basic Auth request. The STRG-074 integration test
+// (WebDavBasicAuthBridgeTests.Correct_basic_credentials_reach_webdav_and_return_207_multistatus)
+// is the regression pin for this ordering. The bridge is restricted to the branch (not global)
+// so password-grant exchanges never occur on GraphQL, REST, or token endpoints — surfaces that
+// have their own Bearer-only auth story.
 app.Map("/dav", webdavApp =>
 {
     webdavApp.UseMiddleware<BasicAuthJwtBridgeMiddleware>();
@@ -220,6 +222,7 @@ app.Map("/dav", webdavApp =>
     webdavApp.UseMiddleware<StrgWebDavMiddleware>();
 });
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseWebSockets();

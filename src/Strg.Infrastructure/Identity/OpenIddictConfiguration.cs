@@ -3,6 +3,8 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
+using OpenIddict.Validation;
 using OpenIddict.Validation.AspNetCore;
 using Strg.Infrastructure.Data;
 
@@ -27,6 +29,41 @@ public static class OpenIddictConfiguration
         // — surfacing as a 500 instead of the intended 401/403. AddValidation().UseAspNetCore()
         // below registers the scheme but does NOT make it the default; we have to do that here.
         services.AddAuthentication(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
+
+        // Explicit issuer pin. Without this, both the server (when emitting `iss` on tokens) and the
+        // validation handler (when building ValidIssuers) fall back to the request's BaseUri =
+        // scheme://host/pathbase. Any sub-pipeline mounted via `app.Map("/dav", ...)` (or any
+        // reverse-proxy deployment that prepends a path prefix) shifts PathBase and the two sides
+        // disagree — token carries iss=http://host/, validation expects iss=http://host/dav — →
+        // SecurityTokenInvalidIssuerException → 401 on every /dav request despite a valid bearer.
+        //
+        // The pin is applied via the options pipeline (Configure<IConfiguration>) rather than a
+        // direct IConfiguration read here, because test factories and other late-bound sources
+        // (e.g., WebApplicationFactory in-memory overrides) only layer their sources into the
+        // IConfigurationManager AFTER Program.cs has wired DI. A synchronous read at DI setup
+        // time would miss those sources.
+        services.AddOptions<OpenIddictServerOptions>()
+            .Configure<IConfiguration>((opt, cfg) =>
+            {
+                var iss = cfg["OpenIddict:Issuer"];
+                if (!string.IsNullOrWhiteSpace(iss))
+                {
+                    opt.Issuer = new Uri(iss, UriKind.Absolute);
+                }
+            });
+        // UseLocalServer imports Issuer from server options via IOptionsMonitor<OpenIddictServerOptions>
+        // at validation-options materialization time, so pinning the server side is normally enough.
+        // We still pin validation explicitly as a belt-and-braces defense in case the validation
+        // stack is ever reconfigured off UseLocalServer (e.g., introspection).
+        services.AddOptions<OpenIddictValidationOptions>()
+            .Configure<IConfiguration>((opt, cfg) =>
+            {
+                var iss = cfg["OpenIddict:Issuer"];
+                if (!string.IsNullOrWhiteSpace(iss))
+                {
+                    opt.Issuer = new Uri(iss, UriKind.Absolute);
+                }
+            });
 
         services.AddOpenIddict()
             .AddCore(o => o

@@ -92,6 +92,11 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = ConnectionString,
+                // Pin issuer so OpenIddict emits and validates the same `iss`, regardless of
+                // PathBase. Without this, /dav sub-pipeline validates with PathBase=/dav and
+                // expects iss=http://localhost/dav, but tokens are issued at /connect/token
+                // with iss=http://localhost/ → 401 on every /dav bearer request.
+                ["OpenIddict:Issuer"] = "http://localhost/",
             });
         });
 

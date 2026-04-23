@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
@@ -37,18 +38,37 @@ public static class OpenIddictConfiguration
         // disagree — token carries iss=http://host/, validation expects iss=http://host/dav — →
         // SecurityTokenInvalidIssuerException → 401 on every /dav request despite a valid bearer.
         //
-        // The pin is applied via the options pipeline (Configure<IConfiguration>) rather than a
-        // direct IConfiguration read here, because test factories and other late-bound sources
-        // (e.g., WebApplicationFactory in-memory overrides) only layer their sources into the
-        // IConfigurationManager AFTER Program.cs has wired DI. A synchronous read at DI setup
-        // time would miss those sources.
+        // STRG-074 #152 — earlier iterations of this code read ONLY `OpenIddict:Issuer` from
+        // IConfiguration. That key is absent from the shipped `appsettings.json` (deliberately — we
+        // do not want to ship a hard-coded issuer that escapes from a container's localhost into
+        // whatever hostname the config-file template embeds), so the pin was a SILENT no-op in
+        // every default deployment: operators launched the host, the /dav sub-pipeline 401'd every
+        // bearer, and the error surface was a bearer-validation 401 rather than a configuration
+        // error. The only reason integration tests stayed green was that the test factory injected
+        // the key in-memory, masking the production silence.
+        //
+        // Self-detect from the Kestrel binding closes that gap: IServerAddressesFeature exposes
+        // the address(es) Kestrel actually bound to, which is the same value we'd want in the
+        // `iss` claim whether the host was launched with `ASPNETCORE_URLS=http://+:5000` or
+        // `ASPNETCORE_URLS=http://0.0.0.0:80` or the dev-default `http://localhost:5000`. Operators
+        // who need a specific canonical issuer (behind a reverse proxy, for example) still set
+        // `OpenIddict:Issuer` — the config-key override takes precedence over self-detect below.
+        //
+        // The `Configure<IConfiguration, IServer>` options-pipeline registration is LAZY — the
+        // delegate fires the first time `IOptionsMonitor<OpenIddictServerOptions>.CurrentValue` is
+        // materialized, which for the server options happens inside the per-request
+        // `OpenIddictServerDispatcher`. By that point Kestrel has finished binding and
+        // IServerAddressesFeature.Addresses is populated. Eager resolution via a synchronous
+        // `IConfiguration` read at Startup was the old shape; it would miss late-bound sources
+        // (WebApplicationFactory in-memory overrides) and it cannot read IServer (which exists in
+        // DI but has no addresses until StartAsync completes).
         services.AddOptions<OpenIddictServerOptions>()
-            .Configure<IConfiguration>((opt, cfg) =>
+            .Configure<IConfiguration, IServer>((opt, cfg, server) =>
             {
-                var iss = cfg["OpenIddict:Issuer"];
-                if (!string.IsNullOrWhiteSpace(iss))
+                var issuer = ResolveIssuer(cfg, server);
+                if (issuer is not null)
                 {
-                    opt.Issuer = new Uri(iss, UriKind.Absolute);
+                    opt.Issuer = issuer;
                 }
             });
         // UseLocalServer imports Issuer from server options via IOptionsMonitor<OpenIddictServerOptions>
@@ -56,12 +76,12 @@ public static class OpenIddictConfiguration
         // We still pin validation explicitly as a belt-and-braces defense in case the validation
         // stack is ever reconfigured off UseLocalServer (e.g., introspection).
         services.AddOptions<OpenIddictValidationOptions>()
-            .Configure<IConfiguration>((opt, cfg) =>
+            .Configure<IConfiguration, IServer>((opt, cfg, server) =>
             {
-                var iss = cfg["OpenIddict:Issuer"];
-                if (!string.IsNullOrWhiteSpace(iss))
+                var issuer = ResolveIssuer(cfg, server);
+                if (issuer is not null)
                 {
-                    opt.Issuer = new Uri(iss, UriKind.Absolute);
+                    opt.Issuer = issuer;
                 }
             });
 
@@ -132,6 +152,25 @@ public static class OpenIddictConfiguration
             });
 
         return services;
+    }
+
+    // Resolves the Issuer URI for both server and validation options. Order: explicit config-key
+    // override wins (operators behind a reverse proxy, or any scenario where the external-facing
+    // issuer differs from the Kestrel binding) — otherwise self-detect from IServerAddressesFeature
+    // via ServerAddressNormalizer. Returns null if neither source is available, in which case
+    // OpenIddict falls back to the per-request BaseUri (the pre-STRG-074 buggy behavior, which we
+    // leave in place for the narrow case where a host runs WITHOUT Kestrel — e.g., a TestServer
+    // harness where IServerAddressesFeature legitimately has no addresses).
+    private static Uri? ResolveIssuer(IConfiguration config, IServer server)
+    {
+        var configured = config["OpenIddict:Issuer"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return new Uri(configured, UriKind.Absolute);
+        }
+
+        var normalized = ServerAddressNormalizer.TryResolve(server);
+        return normalized is null ? null : new Uri(normalized, UriKind.Absolute);
     }
 
     // Loads a PKCS#12 (.pfx/.p12) bundle from disk. File path + optional password is the

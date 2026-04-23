@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Strg.Infrastructure.Identity;
 
 namespace Strg.WebDav;
 
@@ -75,26 +75,15 @@ public static class WebDavServiceExtensions
         services.AddHttpClient(BasicAuthJwtBridgeMiddleware.OidcHttpClientName, (sp, client) =>
         {
             var server = sp.GetRequiredService<IServer>();
-            var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-            if (addresses is null || addresses.Count == 0)
-            {
-                throw new InvalidOperationException(
+            // Wildcard + scheme selection delegated to ServerAddressNormalizer so this surface and
+            // the OpenIddict Issuer self-detect (STRG-074 #152) share one normalization table —
+            // otherwise #143's 0.0.0.0 fold-in would have to be applied twice and could drift.
+            var normalized = ServerAddressNormalizer.TryResolve(server)
+                ?? throw new InvalidOperationException(
                     "STRG-073: IServerAddressesFeature has no addresses — the WebDAV Basic-Auth " +
                     "bridge cannot resolve the in-process /connect/token endpoint. This indicates " +
                     "the Kestrel server has not started listening; the named 'oidc' HttpClient " +
                     "must not be resolved before application startup completes.");
-            }
-
-            // Prefer http:// over https:// for loopback to avoid TLS handshake + cert-validation
-            // against a self-signed dev cert. If only https:// is bound we still have to use it,
-            // but ServerCertificateCustomValidationCallback would be a bigger foot-gun than a TLS
-            // round-trip on the same host.
-            var raw = addresses.FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-                ?? addresses.First();
-            var normalized = raw
-                .Replace("://*", "://127.0.0.1", StringComparison.Ordinal)
-                .Replace("://+", "://127.0.0.1", StringComparison.Ordinal)
-                .Replace("://[::]", "://[::1]", StringComparison.Ordinal);
             client.BaseAddress = new Uri(normalized);
         });
         return services;

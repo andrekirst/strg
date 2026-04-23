@@ -2,10 +2,13 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using OpenIddict.Server.AspNetCore;
 using Npgsql;
 using Strg.Core.Domain;
@@ -92,11 +95,15 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = ConnectionString,
-                // Pin issuer so OpenIddict emits and validates the same `iss`, regardless of
-                // PathBase. Without this, /dav sub-pipeline validates with PathBase=/dav and
-                // expects iss=http://localhost/dav, but tokens are issued at /connect/token
-                // with iss=http://localhost/ → 401 on every /dav bearer request.
-                ["OpenIddict:Issuer"] = "http://localhost/",
+                // STRG-074 #152 — NO `OpenIddict:Issuer` override here, by design. Earlier
+                // iterations of this factory injected `http://localhost/` as a pin, which masked
+                // the production bug where the same key is absent from `appsettings.json` and the
+                // Configure<IConfiguration> block silently no-op'd, leaving /dav 401'd on every
+                // bearer. Self-detect from IServerAddressesFeature (ServerAddressNormalizer)
+                // produces the same value TestServer is bound to, and the integration test now
+                // exercises the EXACT path a real operator hits. If this hard-code is ever
+                // re-introduced, the factory would diverge from production and the silent-401
+                // regression would resurface undetected.
             });
         });
 
@@ -110,7 +117,42 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
             {
                 options.DisableTransportSecurityRequirement = true;
             });
+
+            // STRG-074 #152 — TestServer implements IServer but does NOT populate
+            // IServerAddressesFeature.Addresses (the WebDAV bridge tests call this out explicitly
+            // at WebDavBasicAuthBridgeTests.cs:96). Production Kestrel populates it during
+            // StartAsync after binding. Our Issuer self-detect in OpenIddictConfiguration reads
+            // from that feature, so without this populator the self-detect returns null and every
+            // /dav bearer request 401s on issuer mismatch — the EXACT silent-401 bug this ticket
+            // closes. Populating the feature here makes the integration test exercise the same
+            // IServerAddressesFeature → ServerAddressNormalizer → OpenIddictServerOptions.Issuer
+            // dataflow a production host runs, which means a regression in ResolveIssuer that
+            // reverts to request-BaseUri fallback would surface here as 401 on WebDAV tests.
+            services.AddHostedService<TestServerAddressesPopulator>();
         });
+    }
+
+    // Runs during IHost.StartAsync, BEFORE TestServer starts dispatching requests and therefore
+    // before OpenIddictServerOptions is materialized on the first /connect/token call. A
+    // Configure<IServer> delegate registered later in the options pipeline will see the populated
+    // Addresses collection when it fires.
+    private sealed class TestServerAddressesPopulator(IServer server) : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            var feature = server.Features.Get<IServerAddressesFeature>();
+            if (feature is not null && feature.Addresses.Count == 0)
+            {
+                // TestServer's conceptual base is http://localhost/ (its default BaseAddress) —
+                // using the same value keeps the `iss` claim identical to what TestServer's
+                // HttpClient would send as its Host header, so the validation handler sees
+                // token.iss == validation.ValidIssuers[0] regardless of PathBase.
+                feature.Addresses.Add("http://localhost");
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>

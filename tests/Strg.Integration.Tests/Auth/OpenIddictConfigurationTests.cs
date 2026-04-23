@@ -34,6 +34,37 @@ public sealed class OpenIddictConfigurationTests(StrgWebApplicationFactory facto
         json.GetProperty("revocation_endpoint").GetString().Should().EndWith("/connect/revoke");
     }
 
+    // STRG-074 #152 regression — pins that Issuer self-detects from IServerAddressesFeature when
+    // `OpenIddict:Issuer` config is unset. The earlier Configure<IConfiguration> pin was a silent
+    // no-op whenever the config key was absent (which is the DEFAULT in shipped appsettings), so
+    // every operator running a default deployment got 401 on /dav bearer requests because the
+    // validation handler and the token emitter disagreed on iss. The factory no longer injects
+    // `OpenIddict:Issuer`, so a passing discovery-issuer assertion here proves the self-detect
+    // path produced a non-null Uri — a regression back to the silent-no-op shape would surface
+    // as either a null issuer (400 on discovery) or a request-BaseUri derived issuer that
+    // contains a PathBase, neither of which the operator-facing wire asserts on today.
+    [Fact]
+    public async Task Discovery_issuer_matches_self_detected_server_address_when_config_key_absent()
+    {
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/.well-known/openid-configuration");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var issuer = json.GetProperty("issuer").GetString();
+
+        // The factory's TestServerAddressesPopulator seeds "http://localhost" into
+        // IServerAddressesFeature; ServerAddressNormalizer's wildcard handling is a no-op for
+        // loopback literals, so the Issuer MUST canonicalize to that value. `new Uri(...)` adds a
+        // trailing slash for authority-only URIs per RFC 3986, and OpenIddict emits the Uri as-is,
+        // which is why the asserted form ends in "/". A regression to request-BaseUri fallback
+        // across the /dav Map would surface as "http://localhost/dav" — same prefix but PathBase
+        // appended, which this assertion would reject.
+        issuer.Should().Be("http://localhost/",
+            "self-detect must derive the Issuer from IServerAddressesFeature so that tokens " +
+            "issued at /connect/token carry the same iss that the validation handler expects " +
+            "across PathBase-shifting sub-pipelines like app.Map(\"/dav\")");
+    }
+
     // Acceptance criterion from the spec: "Scopes files.read, files.write, files.share,
     // tags.write, admin are registered." The authoritative observable surface is
     // scopes_supported on the discovery document.

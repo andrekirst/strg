@@ -3,7 +3,7 @@ id: STRG-069
 title: Implement WebDAV PROPFIND handler
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [webdav]
 depends_on: [STRG-068]

@@ -3,7 +3,7 @@ id: STRG-083
 title: Implement account lockout brute-force protection
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [security, auth]
 depends_on: [STRG-014, STRG-015]

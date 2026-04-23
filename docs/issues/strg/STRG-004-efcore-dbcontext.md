@@ -3,7 +3,7 @@ id: STRG-004
 title: Create EF Core DbContext with PostgreSQL and global query filters
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [infrastructure, database, efcore]
 depends_on: [STRG-003]

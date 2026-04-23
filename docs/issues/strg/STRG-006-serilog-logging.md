@@ -3,7 +3,7 @@ id: STRG-006
 title: Configure Serilog structured logging
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: infrastructure
 labels: [observability, logging]
 depends_on: [STRG-001]

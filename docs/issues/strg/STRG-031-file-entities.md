@@ -3,7 +3,7 @@ id: STRG-031
 title: Create FileItem and FileVersion domain entities
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, domain, files]
 depends_on: [STRG-003, STRG-025]

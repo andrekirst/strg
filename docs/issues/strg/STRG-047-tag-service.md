@@ -3,7 +3,7 @@ id: STRG-047
 title: Implement TagService in Strg.Infrastructure
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [infrastructure, tags]
 depends_on: [STRG-046, STRG-004]

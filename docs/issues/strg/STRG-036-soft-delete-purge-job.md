@@ -3,7 +3,7 @@ id: STRG-036
 title: Implement soft-delete purge background job with configurable retention hierarchy
 milestone: v0.1
 priority: medium
-status: open
+status: done
 type: implementation
 labels: [infrastructure, files, background-jobs]
 depends_on: [STRG-031, STRG-004]

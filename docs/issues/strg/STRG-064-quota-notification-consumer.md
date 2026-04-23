@@ -3,7 +3,7 @@ id: STRG-064
 title: Implement QuotaNotificationConsumer
 milestone: v0.1
 priority: medium
-status: open
+status: done
 type: implementation
 labels: [events, quota, masstransit]
 depends_on: [STRG-061, STRG-032]

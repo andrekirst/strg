@@ -3,7 +3,7 @@ id: STRG-030
 title: Implement InMemoryStorageProvider for testing
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [testing, storage]
 depends_on: [STRG-021]

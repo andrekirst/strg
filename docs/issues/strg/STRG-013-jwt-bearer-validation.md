@@ -3,7 +3,7 @@ id: STRG-013
 title: Configure JWT Bearer token validation middleware
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [security, auth, middleware]
 depends_on: [STRG-012]

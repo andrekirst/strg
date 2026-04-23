@@ -3,7 +3,7 @@ id: STRG-024
 title: Implement LocalFileSystemProvider
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [infrastructure, storage]
 depends_on: [STRG-021, STRG-022, STRG-023]

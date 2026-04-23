@@ -3,7 +3,7 @@ id: STRG-063
 title: Implement SearchIndexConsumer placeholder
 milestone: v0.1
 priority: medium
-status: open
+status: done
 type: implementation
 labels: [events, search, masstransit]
 depends_on: [STRG-061]

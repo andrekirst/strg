@@ -3,7 +3,7 @@ id: STRG-086
 title: Implement user registration REST endpoint
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [api, auth, users]
 depends_on: [STRG-014, STRG-013]

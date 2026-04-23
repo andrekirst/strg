@@ -3,7 +3,7 @@ id: STRG-067
 title: Implement StrgWebDavMiddleware and WebDAV route registration
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [webdav, api]
 depends_on: [STRG-013, STRG-025]

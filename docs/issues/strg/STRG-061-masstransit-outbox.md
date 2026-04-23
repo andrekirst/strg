@@ -3,7 +3,7 @@ id: STRG-061
 title: Configure MassTransit Outbox with domain events
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [infrastructure, events, masstransit]
 depends_on: [STRG-004, STRG-031]

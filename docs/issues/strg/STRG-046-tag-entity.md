@@ -3,7 +3,7 @@ id: STRG-046
 title: Create Tag domain entity and ITagRepository
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, domain, tags]
 depends_on: [STRG-003, STRG-031]

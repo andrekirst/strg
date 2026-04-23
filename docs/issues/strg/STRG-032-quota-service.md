@@ -3,7 +3,7 @@ id: STRG-032
 title: Implement QuotaService — check, reserve, and commit storage quota
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, business-logic, quota]
 depends_on: [STRG-011, STRG-031]

@@ -3,7 +3,7 @@ id: STRG-033
 title: Implement FileRepository and FileVersionRepository
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [infrastructure, files, repository]
 depends_on: [STRG-004, STRG-031]

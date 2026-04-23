@@ -3,7 +3,7 @@ id: STRG-011
 title: Create User domain entity and role model
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, domain, identity]
 depends_on: [STRG-003]

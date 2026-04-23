@@ -3,7 +3,7 @@ id: STRG-015
 title: Implement login endpoint (POST /connect/token) with brute-force protection
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [identity, auth, api, security]
 depends_on: [STRG-012, STRG-013, STRG-014]

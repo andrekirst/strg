@@ -3,7 +3,7 @@ id: STRG-023
 title: Create StorageProviderRegistry — resolve providers by drive type
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [infrastructure, storage]
 depends_on: [STRG-021]

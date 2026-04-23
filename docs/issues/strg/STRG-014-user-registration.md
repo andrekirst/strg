@@ -3,7 +3,7 @@ id: STRG-014
 title: Implement local user registration and password management
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [identity, auth, api]
 depends_on: [STRG-011, STRG-012]

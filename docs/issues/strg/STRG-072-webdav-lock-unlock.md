@@ -3,7 +3,7 @@ id: STRG-072
 title: Implement WebDAV LOCK and UNLOCK handlers
 milestone: v0.1
 priority: medium
-status: open
+status: done
 type: implementation
 labels: [webdav]
 depends_on: [STRG-067, STRG-068]

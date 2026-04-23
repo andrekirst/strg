@@ -3,7 +3,7 @@ id: STRG-021
 title: Create IStorageProvider interface and storage primitives
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, storage, interfaces]
 depends_on: [STRG-003]

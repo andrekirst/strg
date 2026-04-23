@@ -3,7 +3,7 @@ id: STRG-074
 title: WebDAV integration tests (RFC 4918 compliance)
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: testing
 labels: [webdav, testing]
 depends_on: [STRG-067, STRG-068, STRG-069, STRG-070, STRG-071, STRG-072, STRG-073]

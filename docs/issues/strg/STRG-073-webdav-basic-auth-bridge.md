@@ -3,7 +3,7 @@ id: STRG-073
 title: Implement WebDAV Basic Auth → JWT bridge
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [webdav, auth, security]
 depends_on: [STRG-067, STRG-015]

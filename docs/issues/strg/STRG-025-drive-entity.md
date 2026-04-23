@@ -3,7 +3,7 @@ id: STRG-025
 title: Create Drive domain entity, IDriveRepository, and drive management endpoints
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [core, domain, api]
 depends_on: [STRG-003, STRG-021, STRG-023]

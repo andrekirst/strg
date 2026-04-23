@@ -3,7 +3,7 @@ id: STRG-012
 title: Configure embedded OpenIddict OIDC server
 milestone: v0.1
 priority: critical
-status: open
+status: done
 type: implementation
 labels: [identity, security, auth]
 depends_on: [STRG-004, STRG-011]

@@ -3,7 +3,7 @@ id: STRG-070
 title: Implement WebDAV GET and PUT handlers
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [webdav, upload, download]
 depends_on: [STRG-068]

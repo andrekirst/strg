@@ -3,7 +3,7 @@ id: STRG-062
 title: Implement AuditLogConsumer for domain events
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [events, audit, masstransit]
 depends_on: [STRG-061, STRG-003, STRG-004]

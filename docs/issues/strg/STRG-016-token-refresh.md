@@ -3,7 +3,7 @@ id: STRG-016
 title: Implement token refresh and revocation endpoints
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [identity, auth]
 depends_on: [STRG-015]

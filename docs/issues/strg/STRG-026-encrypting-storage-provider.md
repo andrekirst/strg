@@ -3,7 +3,7 @@ id: STRG-026
 title: Implement EncryptingStorageProvider (AES-256-GCM decorator)
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [infrastructure, storage, security]
 depends_on: [STRG-021, STRG-024]

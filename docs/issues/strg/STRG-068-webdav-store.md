@@ -3,7 +3,7 @@ id: STRG-068
 title: Implement StrgWebDavStore (IWebDavStore bridge)
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [webdav, storage]
 depends_on: [STRG-067, STRG-024, STRG-031]

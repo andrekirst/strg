@@ -3,7 +3,7 @@ id: STRG-043
 title: Implement FileVersionStore service
 milestone: v0.1
 priority: high
-status: open
+status: done
 type: implementation
 labels: [infrastructure, files, versioning]
 depends_on: [STRG-033, STRG-031, STRG-024]

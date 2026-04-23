@@ -282,6 +282,64 @@ Issues are in `docs/issues/`. To implement an issue:
 
 ---
 
+## Agent Teams & Slash Commands
+
+Pre-defined agent teams live in `.claude/agents/`. Each file describes a
+multi-agent workflow: purpose, which roles to spawn, which `subagent_type`
+each role maps to, expected inputs, expected outputs, and a prompt template
+per role.
+
+| Team file                            | When to use                                         |
+|--------------------------------------|-----------------------------------------------------|
+| `.claude/agents/feature-dev-team.md` | Implementing a new STRG-xxx or CC-xxx issue.        |
+| `.claude/agents/security-team.md`    | Reviewing sensitive code or threat-modelling a new feature. |
+| `.claude/agents/review-team.md`      | PR review before merge (conventions, tests, types). |
+
+Slash commands in `.claude/commands/` drive these teams:
+
+| Command                    | Arguments       | What it does                              |
+|----------------------------|-----------------|-------------------------------------------|
+| `/implement-issue <ID>`    | `STRG-xxx` or `CC-xxx` (validated with `^(STRG\|CC)-\d{3}$` — arguments that do not match are rejected before any filesystem access) | Runs the feature-dev team end-to-end on the issue. |
+| `/review-pr`               | *(none)*        | Runs the review team on the current diff. |
+| `/next-issue`              | *(none)*        | Finds the next unblocked issue in the dependency graph. |
+
+### Typical workflow
+
+1. `/next-issue` → pick the next unblocked issue.
+2. `/implement-issue STRG-xxx` → feature-dev team implements it.
+3. Optionally spawn the security team against the diff if the change is
+   sensitive (auth, storage, paths, sharing, plugins).
+4. `/review-pr` → review team checks conventions and test coverage.
+5. Commit; the issue frontmatter flips to `status: done` as part of step 2.
+
+### Subagent-type mapping
+
+The team files document roles like `code-explorer`, `code-architect`,
+`code-reviewer`, `pr-test-analyzer`, `threat-modeler`, etc. These are
+*conceptual roles*, not custom `subagent_type` values. Each role maps to one
+of the real Claude Code subagent types (`Explore`, `Plan`, or
+`general-purpose`) — the mapping is declared at the top of every team file.
+Do not pass role names as `subagent_type`; pass the mapped type and the
+role-specific prompt template.
+
+### Enforcement caveats (honest disclosure)
+
+- The `^(STRG|CC)-\d{3}$` argument guard on `/implement-issue` is a
+  **prompt-level convention**, not a harness-level sandbox. If the agent
+  follows the command body, traversal arguments are rejected before any
+  filesystem access; if the agent skips Step 0 it is not stopped. A
+  `PreToolUse` hook in `.claude/settings.json` would be the hard
+  enforcement upgrade if it is ever needed.
+- Review-only roles (`impl-self-reviewer`, `code-reviewer`,
+  `pr-test-analyzer`, `type-design-analyzer`, `comment-analyzer`,
+  `security-reviewer`, `silent-failure-hunter`, `threat-modeler`) are
+  spawned as `general-purpose`, which grants Write/Edit/Bash. Their
+  read-only intent is carried by the prompt, not the harness. Treat the
+  "Tool-scope intent: read-only (advisory)" label in the team files as a
+  design contract that spawned agents are expected to honour.
+
+---
+
 ## Forbidden Patterns
 
 ```csharp

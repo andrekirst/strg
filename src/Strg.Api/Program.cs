@@ -41,6 +41,9 @@ builder.Host.UseSerilog((context, services, loggerConfig) => loggerConfig
     .Destructure.With<SecretFieldsDestructuringPolicy>()
     .WriteTo.Console());
 
+// ---- Observability (STRG-007) ----
+builder.Services.AddStrgObservability(builder.Configuration);
+
 // ---- Infrastructure ----
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
@@ -226,6 +229,10 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseWebSockets();
+
+// AllowAnonymous is required because the fallback authorization policy (RequireAuthenticatedUser)
+// would otherwise reject unauthenticated Prometheus scrape requests with 401.
+app.MapPrometheusScrapingEndpoint("/metrics").AllowAnonymous();
 
 app.MapGraphQL("/graphql");
 app.MapControllers();

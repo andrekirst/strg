@@ -6,8 +6,13 @@
       here because Directory.Build.props enables EnforceExtendedAnalyzerRules repo-wide. This is
       not an analyzer assembly — LocalFileSystemProvider MUST call System.IO.File/Directory to
       do its job. Suppress narrowly rather than touching the shared property.
+
+      NU1901-1904/NU5104: OpenTelemetry.Exporter.Prometheus.AspNetCore and
+      OpenTelemetry.Instrumentation.EntityFrameworkCore ship only as prerelease (-beta.1) because
+      their semantic conventions are still unstable upstream. TreatWarningsAsErrors=true elevates
+      NU5104 ("package uses a prerelease version") to an error. Suppress narrowly here.
     -->
-    <NoWarn>$(NoWarn);RS1035</NoWarn>
+    <NoWarn>$(NoWarn);RS1035;NU5104</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +33,12 @@
     <PackageReference Include="MassTransit.EntityFrameworkCore" />
     <PackageReference Include="MassTransit.RabbitMQ" />
     <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.EntityFrameworkCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

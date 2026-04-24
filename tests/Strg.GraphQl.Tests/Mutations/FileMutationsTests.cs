@@ -24,6 +24,7 @@ public class FileMutationsTests
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);
                 services.AddDbContext<StrgDbContext>(o => o.UseInMemoryDatabase(dbName));
+                services.AddStrgApplicationForTests(userId);
             },
             configureSchema: b =>
             {
@@ -66,6 +67,34 @@ public class FileMutationsTests
         Assert.NotEmpty(errors);
         Assert.Equal("INVALID_PATH", errors[0].GetProperty("code").GetString());
         Assert.Equal("path", errors[0].GetProperty("field").GetString());
+    }
+
+    [Fact]
+    public async Task CreateFolder_DriveNotFound_ReturnsNotFoundError()
+    {
+        var tenantId = Guid.NewGuid();
+        SharedTenantCtx.TenantId = tenantId;
+        var executor = await CreateExecutorAsync(tenantId, Guid.NewGuid(), Guid.NewGuid().ToString());
+
+        var driveId = Guid.NewGuid();
+        var result = (IOperationResult)await executor.ExecuteAsync($$"""
+            mutation {
+              storage {
+                createFolder(input: { driveId: "{{driveId}}", path: "newfolder" }) {
+                  file { id }
+                  errors { code field }
+                }
+              }
+            }
+            """);
+
+        var json = result.ToJson();
+        using var doc = JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.TryGetProperty("data", out var data), $"no data: {json}");
+        var errorsEl = data.GetProperty("storage").GetProperty("createFolder").GetProperty("errors");
+        var errors = errorsEl.EnumerateArray().ToList();
+        Assert.NotEmpty(errors);
+        Assert.Equal("NOT_FOUND", errors[0].GetProperty("code").GetString());
     }
 
     [Fact]

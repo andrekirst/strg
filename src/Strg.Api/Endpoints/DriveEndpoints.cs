@@ -1,17 +1,18 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+using Mediator;
 using Strg.Api.Auth;
+using Strg.Application.Features.Drives.Create;
+using Strg.Application.Features.Drives.Delete;
+using Strg.Application.Features.Drives.Get;
+using Strg.Application.Features.Drives.List;
 using Strg.Core.Domain;
-using Strg.Core.Identity;
-using Strg.Core.Storage;
-using Strg.Infrastructure.Data;
-using System.Security.Claims;
 
 namespace Strg.Api.Endpoints;
 
 /// <summary>
 /// Drive management endpoints for the current tenant. A <c>Drive</c> is a named mount point
 /// that binds a storage provider configuration; create/delete require the <c>admin</c> scope.
+/// All four verbs dispatch through <see cref="IMediator"/> — business logic, tenant scoping,
+/// and audit emission live in <c>Strg.Application.Features.Drives</c>.
 /// </summary>
 public static class DriveEndpoints
 {
@@ -31,34 +32,20 @@ public static class DriveEndpoints
     /// Returns every non-deleted drive visible to the current tenant. Storage credentials
     /// (<c>ProviderConfig</c>) are stripped from the response.
     /// </summary>
-    private static async Task<IResult> ListDrives(
-        StrgDbContext db,
-        ClaimsPrincipal user,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> ListDrives(IMediator mediator, CancellationToken cancellationToken)
     {
-        var tenantId = user.GetTenantId();
-        var drives = await db.Drives.ToListAsync(cancellationToken);
-        // Return drives without ProviderConfig — never expose storage credentials to clients
-        var dtos = drives.Select(d => new DriveDto(d.Id, d.Name, d.ProviderType, d.EncryptionEnabled, d.CreatedAt));
+        var drives = await mediator.Send(new ListDrivesQuery(), cancellationToken);
+        var dtos = drives.Select(ToDto);
         return Results.Ok(dtos);
     }
 
     /// <summary>
     /// Returns a single drive by id, or 404 if the caller's tenant does not own it.
     /// </summary>
-    private static async Task<IResult> GetDrive(
-        Guid id,
-        StrgDbContext db,
-        ClaimsPrincipal user,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> GetDrive(Guid id, IMediator mediator, CancellationToken cancellationToken)
     {
-        var drive = await db.Drives.FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-        if (drive is null)
-        {
-            return Results.NotFound();
-        }
-
-        return Results.Ok(new DriveDto(drive.Id, drive.Name, drive.ProviderType, drive.EncryptionEnabled, drive.CreatedAt));
+        var drive = await mediator.Send(new GetDriveQuery(id), cancellationToken);
+        return drive is null ? Results.NotFound() : Results.Ok(ToDto(drive));
     }
 
     /// <summary>
@@ -67,80 +54,35 @@ public static class DriveEndpoints
     /// names count — names are reserved for the lifetime of the tenant).
     /// </summary>
     private static async Task<IResult> CreateDrive(
-        [FromBody] CreateDriveRequest request,
-        StrgDbContext db,
-        ClaimsPrincipal user,
-        IStorageProviderRegistry registry,
+        CreateDriveCommand command,
+        IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var tenantId = user.GetTenantId();
-
-        // Validate name: lowercase alphanumeric + hyphens only, max 64 chars
-        if (!System.Text.RegularExpressions.Regex.IsMatch(request.Name, @"^[a-z0-9\-]{1,64}$"))
+        var result = await mediator.Send(command, cancellationToken);
+        if (result.IsSuccess)
         {
-            return Results.UnprocessableEntity(new { error = "Drive name must be lowercase alphanumeric with hyphens, max 64 chars" });
+            var drive = result.Value!;
+            return Results.Created($"/api/v1/drives/{drive.Id}", ToDto(drive));
         }
-
-        // Validate provider type
-        if (!registry.IsRegistered(request.ProviderType))
+        return result.ErrorCode switch
         {
-            return Results.UnprocessableEntity(new { error = $"Unknown provider type: {request.ProviderType}" });
-        }
-
-        // Reject oversized ProviderConfig before it hits the DB — cheaper error, no tx rollback.
-        // DB column is capped at varchar(8192) as defense-in-depth backstop.
-        if ((request.ProviderConfigJson?.Length ?? 0) > 8192)
-        {
-            return Results.UnprocessableEntity(new { error = "ProviderConfig JSON cannot exceed 8192 characters" });
-        }
-
-        // Check name uniqueness — bypass global filter to also check soft-deleted names,
-        // preventing re-use of a deleted drive name within the same tenant.
-        var existing = await db.Drives.IgnoreQueryFilters()
-            .AnyAsync(d => d.TenantId == tenantId && d.Name == request.Name && !d.IsDeleted, cancellationToken);
-        if (existing)
-        {
-            return Results.Conflict(new { error = $"Drive '{request.Name}' already exists" });
-        }
-
-        var drive = new Drive
-        {
-            TenantId = tenantId,
-            Name = request.Name,
-            ProviderType = request.ProviderType,
-            ProviderConfig = request.ProviderConfigJson ?? "{}",
-            EncryptionEnabled = request.EncryptionEnabled
+            "DuplicateName" => Results.Conflict(new { error = result.ErrorMessage }),
+            _ => Results.UnprocessableEntity(new { error = result.ErrorMessage }),
         };
-        db.Drives.Add(drive);
-        await db.SaveChangesAsync(cancellationToken);
-        return Results.Created($"/api/v1/drives/{drive.Id}", new DriveDto(drive.Id, drive.Name, drive.ProviderType, drive.EncryptionEnabled, drive.CreatedAt));
     }
 
     /// <summary>
     /// Soft-deletes a drive. The record is retained so its name remains reserved in the tenant.
     /// Requires the <c>admin</c> scope.
     /// </summary>
-    private static async Task<IResult> DeleteDrive(
-        Guid id,
-        StrgDbContext db,
-        CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteDrive(Guid id, IMediator mediator, CancellationToken cancellationToken)
     {
-        var drive = await db.Drives.FindAsync([id], cancellationToken);
-        if (drive is null)
-        {
-            return Results.NotFound();
-        }
-
-        drive.DeletedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return Results.NoContent();
+        var result = await mediator.Send(new DeleteDriveCommand(id), cancellationToken);
+        return result.IsSuccess ? Results.NoContent() : Results.NotFound();
     }
+
+    private static DriveDto ToDto(Drive d) =>
+        new(d.Id, d.Name, d.ProviderType, d.EncryptionEnabled, d.CreatedAt);
 }
 
 public record DriveDto(Guid Id, string Name, string ProviderType, bool EncryptionEnabled, DateTimeOffset CreatedAt);
-
-public record CreateDriveRequest(
-    string Name,
-    string ProviderType,
-    string? ProviderConfigJson = null,
-    bool EncryptionEnabled = false);

@@ -3,7 +3,14 @@ using HotChocolate.Execution.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Strg.Application.Abstractions;
+using Strg.Application.DependencyInjection;
+using Strg.Core.Auditing;
+using Strg.Core.Domain;
+using Strg.Core.Storage;
 using Strg.GraphQl.Errors;
+using Strg.Infrastructure.Auditing;
+using Strg.Infrastructure.Data;
 
 namespace Strg.GraphQl.Tests.Helpers;
 
@@ -33,6 +40,47 @@ public static class GraphQlTestFixture
             .GetRequestExecutorAsync();
 
         return new TestExecutor(executor, sp, globalState);
+    }
+
+    /// <summary>
+    /// Wires the Phase 2 CQRS pipeline (IMediator + pipeline behaviors + validators) plus every
+    /// port Strg.Application handlers depend on. Call this from a mutation/query test's
+    /// <c>configureServices</c> hook AFTER the test has already registered its own
+    /// <c>ITenantContext</c> and <c>StrgDbContext</c>.
+    /// </summary>
+    public static IServiceCollection AddStrgApplicationForTests(this IServiceCollection services, Guid? currentUserId = null)
+    {
+        services.AddScoped<IStrgDbContext>(sp => sp.GetRequiredService<StrgDbContext>());
+        services.AddScoped<ITagRepository, TagRepository>();
+        services.AddScoped<IFileRepository, FileRepository>();
+        services.AddScoped<IAuditService, AuditService>();
+        services.AddSingleton<IStorageProviderRegistry>(new StubStorageProviderRegistry());
+        services.AddSingleton<ICurrentUser>(new StubCurrentUser(currentUserId ?? Guid.NewGuid()));
+        services.AddStrgApplication();
+        return services;
+    }
+
+    private sealed class StubCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId { get; } = userId;
+    }
+
+    // Minimal registry stub — claims "local" is registered so CreateDriveHandler accepts the
+    // canonical provider type used across the Phase 2 tests. Resolve/Register throw because
+    // these code paths are exercised by real storage-provider integration tests, not the
+    // wire-shape tests that depend on this stub.
+    private sealed class StubStorageProviderRegistry : IStorageProviderRegistry
+    {
+        public bool IsRegistered(string providerType) =>
+            string.Equals(providerType, "local", StringComparison.OrdinalIgnoreCase);
+
+        public void Register(string providerType, Func<IStorageProviderConfig, IStorageProvider> factory) =>
+            throw new NotSupportedException("StubStorageProviderRegistry is read-only.");
+
+        public IStorageProvider Resolve(string providerType, IStorageProviderConfig config) =>
+            throw new NotSupportedException("StubStorageProviderRegistry does not resolve providers.");
+
+        public IReadOnlyList<string> GetRegisteredTypes() => ["local"];
     }
 }
 

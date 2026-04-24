@@ -85,4 +85,32 @@ public static class AuditActions
     /// <c>FileMovedEvent</c>.
     /// </summary>
     public const string FileMoved = "file.moved";
+
+    /// <summary>
+    /// A drive was created. ResourceType is <c>"Drive"</c>, ResourceId is the drive id, Details
+    /// carries <c>name=...; provider=...; encrypted=true|false</c>. ProviderConfig is never
+    /// included — storage credentials must not leak into the audit log.
+    /// </summary>
+    public const string DriveCreated = "drive.created";
+
+    /// <summary>
+    /// A drive's mutable metadata (Name, IsDefault) changed. ResourceType is <c>"Drive"</c>,
+    /// ResourceId is the drive id, Details carries the changed fields as <c>field=newValue</c>
+    /// pairs. Encryption posture cannot be updated (init-only), so it never appears here.
+    /// </summary>
+    public const string DriveUpdated = "drive.updated";
+
+    /// <summary>
+    /// A drive was soft-deleted. ResourceType is <c>"Drive"</c>, ResourceId is the drive id,
+    /// Details carries <c>name=...</c> so a purged drive's name is recoverable from the audit
+    /// trail after the row itself is gone. The soft-delete preserves the name uniqueness
+    /// reservation — the next create with the same name is rejected.
+    /// </summary>
+    public const string DriveDeleted = "drive.deleted";
+
+    /// <summary>
+    /// A folder (FileItem with <c>IsDirectory=true</c>) was created. ResourceType is
+    /// <c>"FileItem"</c>, ResourceId is the folder id, Details carries <c>driveId=...; path=...</c>.
+    /// </summary>
+    public const string FolderCreated = "folder.created";
 }

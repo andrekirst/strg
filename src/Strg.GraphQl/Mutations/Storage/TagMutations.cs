@@ -1,10 +1,12 @@
 using HotChocolate.Authorization;
-using Microsoft.EntityFrameworkCore;
+using Mediator;
+using Strg.Application.Features.Tags.AddTag;
+using Strg.Application.Features.Tags.RemoveAllTags;
+using Strg.Application.Features.Tags.RemoveTag;
+using Strg.Application.Features.Tags.UpdateTag;
 using Strg.GraphQl.Inputs.Tag;
-using DomainTag = Strg.Core.Domain.Tag;
 using Strg.GraphQl.Payloads;
 using Strg.GraphQl.Payloads.Tag;
-using Strg.Infrastructure.Data;
 
 namespace Strg.GraphQl.Mutations.Storage;
 
@@ -14,96 +16,86 @@ public sealed class TagMutations
     [Authorize(Policy = "TagsWrite")]
     public async Task<AddTagPayload> AddTagAsync(
         AddTagInput input,
-        [Service] StrgDbContext db,
-        [GlobalState("tenantId")] Guid tenantId,
-        [GlobalState("userId")] Guid userId,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        if (input.Key.Length > 255)
-        {
-            return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "key must be ≤255 chars.", "key")]);
-        }
+        var result = await mediator.Send(
+            new AddTagCommand(input.FileId, input.Key, input.Value, input.ValueType),
+            cancellationToken);
 
-        if (input.Value.Length > 255)
-        {
-            return new AddTagPayload(null, [new UserError("VALIDATION_ERROR", "value must be ≤255 chars.", "value")]);
-        }
-
-        var fileExists = await db.Files.AnyAsync(f => f.Id == input.FileId, cancellationToken);
-        if (!fileExists)
-        {
-            return new AddTagPayload(null, [new UserError("NOT_FOUND", "File not found.", null)]);
-        }
-
-        var existing = await db.Tags.FirstOrDefaultAsync(
-            t => t.FileId == input.FileId && t.Key == input.Key, cancellationToken);
-
-        if (existing is not null)
-        {
-            existing.Value = input.Value;
-            existing.ValueType = input.ValueType;
-            await db.SaveChangesAsync(cancellationToken);
-            return new AddTagPayload(existing, null);
-        }
-
-        var tag = new DomainTag
-        {
-            TenantId = tenantId,
-            FileId = input.FileId,
-            UserId = userId,
-            Key = input.Key,
-            Value = input.Value,
-            ValueType = input.ValueType
-        };
-
-        db.Tags.Add(tag);
-        await db.SaveChangesAsync(cancellationToken);
-        return new AddTagPayload(tag, null);
+        return result.IsSuccess
+            ? new AddTagPayload(result.Value, null)
+            : new AddTagPayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
     }
 
     [Authorize(Policy = "TagsWrite")]
     public async Task<UpdateTagPayload> UpdateTagAsync(
         UpdateTagInput input,
-        [Service] StrgDbContext db,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, cancellationToken);
-        if (tag is null)
-        {
-            return new UpdateTagPayload(null, [new UserError("NOT_FOUND", "Tag not found.", null)]);
-        }
+        var result = await mediator.Send(
+            new UpdateTagCommand(input.Id, input.Value, input.ValueType),
+            cancellationToken);
 
-        tag.Value = input.Value;
-        tag.ValueType = input.ValueType;
-        await db.SaveChangesAsync(cancellationToken);
-        return new UpdateTagPayload(tag, null);
+        return result.IsSuccess
+            ? new UpdateTagPayload(result.Value, null)
+            : new UpdateTagPayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
     }
 
     [Authorize(Policy = "TagsWrite")]
     public async Task<RemoveTagPayload> RemoveTagAsync(
         RemoveTagInput input,
-        [Service] StrgDbContext db,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var tag = await db.Tags.FirstOrDefaultAsync(t => t.Id == input.Id, cancellationToken);
-        if (tag is not null)
-        {
-            tag.DeletedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        return new RemoveTagPayload(input.Id, null);
+        var result = await mediator.Send(new RemoveTagCommand(input.Id), cancellationToken);
+
+        return result.IsSuccess
+            ? new RemoveTagPayload(result.Value, null)
+            : new RemoveTagPayload(input.Id, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, null)]);
     }
 
     [Authorize(Policy = "TagsWrite")]
     public async Task<RemoveAllTagsPayload> RemoveAllTagsAsync(
         RemoveAllTagsInput input,
-        [Service] StrgDbContext db,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-        await db.Tags
-            .Where(t => t.FileId == input.FileId)
-            .ExecuteUpdateAsync(s => s.SetProperty(t => t.DeletedAt, now), cancellationToken);
-        return new RemoveAllTagsPayload(input.FileId, null);
+        var result = await mediator.Send(new RemoveAllTagsCommand(input.FileId), cancellationToken);
+
+        return result.IsSuccess
+            ? new RemoveAllTagsPayload(input.FileId, null)
+            : new RemoveAllTagsPayload(input.FileId, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, null)]);
+    }
+
+    // Translates handler-side Result error codes (PascalCase) into the legacy uppercase-snake
+    // wire codes the existing GraphQL consumers expect. Keeps the Phase 2 migration
+    // wire-compatible even though Strg.Application has its own codes internally.
+    private static string MapCode(string code) => code switch
+    {
+        "ValidationError" => "VALIDATION_ERROR",
+        "NotFound" => "NOT_FOUND",
+        _ => code,
+    };
+
+    // Validation failures carry the offending property in the error message (formatted as
+    // "PropertyName: message; ..." by ValidationBehavior). Probe for Key / Value tokens and
+    // report the camelCased GraphQL input field name so clients can highlight the right control.
+    private static string? FieldFor<T>(Strg.Core.Result<T> result)
+    {
+        if (result.ErrorCode != "ValidationError" || result.ErrorMessage is null)
+        {
+            return null;
+        }
+        if (result.ErrorMessage.Contains("Key", StringComparison.Ordinal))
+        {
+            return "key";
+        }
+        if (result.ErrorMessage.Contains("Value", StringComparison.Ordinal))
+        {
+            return "value";
+        }
+        return null;
     }
 }

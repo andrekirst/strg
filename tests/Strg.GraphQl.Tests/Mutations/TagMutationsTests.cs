@@ -24,6 +24,7 @@ public class TagMutationsTests
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);
                 services.AddDbContext<StrgDbContext>(o => o.UseInMemoryDatabase(dbName));
+                services.AddStrgApplicationForTests();
             },
             configureSchema: b =>
             {

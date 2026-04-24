@@ -1,5 +1,7 @@
 using HotChocolate.Authorization;
+using Mediator;
 using Microsoft.EntityFrameworkCore;
+using Strg.Application.Features.Folders.Create;
 using Strg.Core.Domain;
 using Strg.Core.Storage;
 using Strg.GraphQl.Inputs.File;
@@ -15,40 +17,31 @@ public sealed class FileMutations
     [Authorize(Policy = "FilesWrite")]
     public async Task<CreateFolderPayload> CreateFolderAsync(
         CreateFolderInput input,
-        [Service] StrgDbContext db,
-        [GlobalState("tenantId")] Guid tenantId,
-        [GlobalState("userId")] Guid userId,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        StoragePath path;
-        try
+        var result = await mediator.Send(
+            new CreateFolderCommand(input.DriveId, input.Path),
+            cancellationToken);
+
+        if (result.IsSuccess)
         {
-            path = StoragePath.Parse(input.Path);
-        }
-        catch (StoragePathException ex)
-        {
-            return new CreateFolderPayload(null, [new UserError("INVALID_PATH", ex.Message, "path")]);
+            return new CreateFolderPayload(result.Value, null);
         }
 
-        var driveExists = await db.Drives.AnyAsync(d => d.Id == input.DriveId && d.TenantId == tenantId, cancellationToken);
-        if (!driveExists)
+        var field = result.ErrorCode switch
         {
-            return new CreateFolderPayload(null, [new UserError("NOT_FOUND", "Drive not found.", "driveId")]);
-        }
-
-        var folder = new FileItem
-        {
-            TenantId = tenantId,
-            DriveId = input.DriveId,
-            Name = path.Value.Split('/').Last(s => s.Length > 0),
-            Path = path.Value,
-            IsDirectory = true,
-            CreatedBy = userId
+            "InvalidPath" => "path",
+            "NotFound" => "driveId",
+            _ => null,
         };
-
-        db.Files.Add(folder);
-        await db.SaveChangesAsync(cancellationToken);
-        return new CreateFolderPayload(folder, null);
+        var code = result.ErrorCode switch
+        {
+            "InvalidPath" => "INVALID_PATH",
+            "NotFound" => "NOT_FOUND",
+            _ => result.ErrorCode!,
+        };
+        return new CreateFolderPayload(null, [new UserError(code, result.ErrorMessage!, field)]);
     }
 
     [Authorize(Policy = "FilesWrite")]

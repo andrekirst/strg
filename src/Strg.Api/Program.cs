@@ -68,6 +68,7 @@ builder.Services.AddHealthChecks()
 // ---- Infrastructure ----
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, HttpTenantContext>();
+builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped<IDriveRepository, DriveRepository>();
 builder.Services.AddScoped<IFileRepository, FileRepository>();
@@ -83,7 +84,6 @@ builder.Services.AddScoped<IQuotaService>(sp => sp.GetRequiredService<QuotaServi
 builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<QuotaService>());
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
-builder.Services.AddScoped<ITagService, TagService>();
 
 // ---- WebDAV (STRG-067/069) ----
 // Pass IConfiguration so WebDavOptions (PropfindInfinityMaxItems etc.) binds against the live

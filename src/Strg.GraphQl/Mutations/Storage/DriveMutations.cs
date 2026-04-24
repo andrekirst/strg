@@ -1,114 +1,103 @@
-using System.Text.RegularExpressions;
 using HotChocolate.Authorization;
-using Microsoft.EntityFrameworkCore;
-using Strg.Core.Domain;
+using Mediator;
+using Strg.Application.Features.Drives.Create;
+using Strg.Application.Features.Drives.Delete;
+using Strg.Application.Features.Drives.Update;
 using Strg.GraphQl.Inputs.Drive;
 using Strg.GraphQl.Payloads;
 using Strg.GraphQl.Payloads.Drive;
-using Strg.Infrastructure.Data;
 
 namespace Strg.GraphQl.Mutations.Storage;
 
 [ExtendObjectType<StorageMutations>]
 public sealed class DriveMutations
 {
-    private static readonly Regex ValidDriveName = new(@"^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.Compiled);
-
     [Authorize(Policy = "Admin")]
     public async Task<CreateDrivePayload> CreateDriveAsync(
         CreateDriveInput input,
-        [Service] StrgDbContext db,
-        [GlobalState("tenantId")] Guid tenantId,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        if (!ValidDriveName.IsMatch(input.Name))
-        {
-            return new CreateDrivePayload(null,
-                [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-], max 64 chars.", "name")]);
-        }
+        var result = await mediator.Send(
+            new CreateDriveCommand(
+                input.Name,
+                input.ProviderType,
+                input.ProviderConfig,
+                input.IsEncrypted ?? false,
+                input.IsDefault),
+            cancellationToken);
 
-        // Reject oversized ProviderConfig before it hits the DB — cheaper error, no tx rollback.
-        // DB column is capped at varchar(8192) as defense-in-depth backstop.
-        if (input.ProviderConfig.Length > 8192)
-        {
-            return new CreateDrivePayload(null,
-                [new UserError("VALIDATION_ERROR", "ProviderConfig JSON cannot exceed 8192 characters.", "providerConfig")]);
-        }
-
-        if (await db.Drives.AnyAsync(d => d.TenantId == tenantId && d.Name == input.Name, cancellationToken))
-        {
-            return new CreateDrivePayload(null,
-                [new UserError("DUPLICATE_DRIVE_NAME", $"Drive '{input.Name}' already exists.", "name")]);
-        }
-
-        var drive = new Drive
-        {
-            TenantId = tenantId,
-            Name = input.Name,
-            ProviderType = input.ProviderType,
-            ProviderConfig = input.ProviderConfig,
-            EncryptionEnabled = input.IsEncrypted ?? false,
-            IsDefault = input.IsDefault ?? false
-        };
-
-        db.Drives.Add(drive);
-        await db.SaveChangesAsync(cancellationToken);
-        return new CreateDrivePayload(drive, null);
+        return result.IsSuccess
+            ? new CreateDrivePayload(result.Value, null)
+            : new CreateDrivePayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
     }
 
     [Authorize(Policy = "Admin")]
     public async Task<UpdateDrivePayload> UpdateDriveAsync(
         UpdateDriveInput input,
-        [Service] StrgDbContext db,
-        [GlobalState("tenantId")] Guid tenantId,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var drive = await db.Drives.FirstOrDefaultAsync(
-            d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
+        var result = await mediator.Send(
+            new UpdateDriveCommand(input.Id, input.Name, input.IsDefault),
+            cancellationToken);
 
-        if (drive is null)
-        {
-            return new UpdateDrivePayload(null,
-                [new UserError("NOT_FOUND", "Drive not found.", null)]);
-        }
-
-        if (input.Name is not null)
-        {
-            if (!ValidDriveName.IsMatch(input.Name))
-            {
-                return new UpdateDrivePayload(null,
-                    [new UserError("VALIDATION_ERROR", "Drive name must match [a-z0-9-].", "name")]);
-            }
-
-            drive.Name = input.Name;
-        }
-        if (input.IsDefault.HasValue)
-        {
-            drive.IsDefault = input.IsDefault.Value;
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return new UpdateDrivePayload(drive, null);
+        return result.IsSuccess
+            ? new UpdateDrivePayload(result.Value, null)
+            : new UpdateDrivePayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
     }
 
     [Authorize(Policy = "Admin")]
     public async Task<DeleteDrivePayload> DeleteDriveAsync(
         DeleteDriveInput input,
-        [Service] StrgDbContext db,
-        [GlobalState("tenantId")] Guid tenantId,
+        [Service] IMediator mediator,
         CancellationToken cancellationToken)
     {
-        var drive = await db.Drives.FirstOrDefaultAsync(
-            d => d.Id == input.Id && d.TenantId == tenantId, cancellationToken);
+        var result = await mediator.Send(new DeleteDriveCommand(input.Id), cancellationToken);
 
-        if (drive is null)
+        return result.IsSuccess
+            ? new DeleteDrivePayload(result.Value, null)
+            : new DeleteDrivePayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, null)]);
+    }
+
+    // Translates handler-side Result error codes (PascalCase) into the legacy uppercase-snake
+    // wire codes the existing GraphQL consumers expect. DuplicateName maps to the pre-migration
+    // DUPLICATE_DRIVE_NAME identifier so existing clients pattern-matching on it keep working.
+    private static string MapCode(string code) => code switch
+    {
+        "ValidationError" => "VALIDATION_ERROR",
+        "NotFound" => "NOT_FOUND",
+        "DuplicateName" => "DUPLICATE_DRIVE_NAME",
+        "InvalidProviderType" => "INVALID_PROVIDER_TYPE",
+        _ => code,
+    };
+
+    // Validation failures carry the offending property in the message. Match substrings rather
+    // than the exact command field name because FluentValidation emits properties in PascalCase
+    // while the GraphQL wire uses camelCase — and the input-vs-command fields don't always match
+    // (e.g. command.ProviderConfigJson vs input.providerConfig).
+    private static string? FieldFor<T>(Strg.Core.Result<T> result)
+    {
+        if (result.ErrorCode == "DuplicateName" || result.ErrorCode == "InvalidProviderType")
         {
-            return new DeleteDrivePayload(null,
-                [new UserError("NOT_FOUND", "Drive not found.", null)]);
+            return "name";
         }
-
-        drive.DeletedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-        return new DeleteDrivePayload(drive.Id, null);
+        if (result.ErrorCode != "ValidationError" || result.ErrorMessage is null)
+        {
+            return null;
+        }
+        if (result.ErrorMessage.Contains("ProviderConfigJson", StringComparison.Ordinal))
+        {
+            return "providerConfig";
+        }
+        if (result.ErrorMessage.Contains("ProviderType", StringComparison.Ordinal))
+        {
+            return "providerType";
+        }
+        if (result.ErrorMessage.Contains("Name", StringComparison.Ordinal))
+        {
+            return "name";
+        }
+        return null;
     }
 }

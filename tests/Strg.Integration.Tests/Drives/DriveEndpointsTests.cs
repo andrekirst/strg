@@ -51,9 +51,78 @@ public sealed class DriveEndpointsTests(StrgWebApplicationFactory factory)
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-        // Match against the literal string DriveEndpoints emits — if the message is reworded,
-        // this assertion fails with a clear diff rather than hiding behind a loose Contains check.
+        // After the Phase-2 migration to CQRS, the 8192-char check lives in CreateDriveValidator
+        // (FluentValidation) which emits "<PropertyName>: <message>". A Contains check keeps the
+        // test focused on the user-visible assertion (the 8192-char guard still fires with a 422)
+        // without coupling to ValidationBehavior's internal formatting.
         body.GetProperty("error").GetString()
-            .Should().Be("ProviderConfig JSON cannot exceed 8192 characters");
+            .Should().Contain("8192 characters");
+    }
+
+    [Fact]
+    public async Task CreateDrive_LeadingDashName_returns_422()
+    {
+        // Phase-2 regex tightening: the unified name rule is ^[a-z0-9][a-z0-9-]{0,63}$ (must
+        // start with an alphanumeric). The pre-migration REST endpoint accepted "-foo" via the
+        // looser ^[a-z0-9\-]{1,64}$ pattern — this test pins the stricter behavior so a relapse
+        // to the old regex fails the build. Leading-dash names surface as `-rm -rf /` lookalikes
+        // in shell-driven admin tooling and as URL-escaping surprises; rejecting them removes
+        // an entire class of minor operational papercuts.
+        var tokenResponse = await factory.PostTokenAsync(
+            StrgWebApplicationFactory.AdminEmail,
+            StrgWebApplicationFactory.AdminPassword);
+        var (accessToken, _) = await StrgWebApplicationFactory.ReadTokensAsync(tokenResponse);
+        using var client = factory.CreateAuthenticatedClient(accessToken);
+
+        using var response = await client.PostAsJsonAsync("/api/v1/drives/", new
+        {
+            name = "-leading-dash",
+            providerType = "local",
+            encryptionEnabled = false,
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("error").GetString().Should().Contain("alphanumeric");
+    }
+
+    [Fact]
+    public async Task CreateDrive_name_of_soft_deleted_drive_is_rejected_with_409()
+    {
+        // Phase-2 uniqueness contract: a drive's name stays reserved across soft-delete so an
+        // operator recreating the name can't silently clobber audit trails that reference drives
+        // by name. CreateDriveHandler's uniqueness check uses IgnoreQueryFilters to span deleted
+        // rows (the one legitimate call site in Strg.Application, allow-listed by
+        // ApplicationDoesNotBypassTenantFiltersTests).
+        var tokenResponse = await factory.PostTokenAsync(
+            StrgWebApplicationFactory.AdminEmail,
+            StrgWebApplicationFactory.AdminPassword);
+        var (accessToken, _) = await StrgWebApplicationFactory.ReadTokensAsync(tokenResponse);
+        using var client = factory.CreateAuthenticatedClient(accessToken);
+
+        var name = $"reuse-test-{Guid.NewGuid():N}"[..32];
+        var create = await client.PostAsJsonAsync("/api/v1/drives/", new
+        {
+            name,
+            providerType = "local",
+            encryptionEnabled = false,
+        });
+        create.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var body = await create.Content.ReadFromJsonAsync<JsonElement>();
+        var driveId = body.GetProperty("id").GetGuid();
+
+        var delete = await client.DeleteAsync($"/api/v1/drives/{driveId}");
+        delete.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        // Recreate with the same name: must return 409 Conflict, NOT 201 Created.
+        var recreate = await client.PostAsJsonAsync("/api/v1/drives/", new
+        {
+            name,
+            providerType = "local",
+            encryptionEnabled = false,
+        });
+        recreate.StatusCode.Should().Be(HttpStatusCode.Conflict,
+            "soft-deleted names remain reserved — CreateDriveHandler.IgnoreQueryFilters pins this");
     }
 }

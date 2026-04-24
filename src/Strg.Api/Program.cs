@@ -298,6 +298,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapGraphQL("/graphql");
 app.MapControllers();
+app.MapTokenEndpoints();
 app.MapDriveEndpoints();
 app.MapUserRegistrationEndpoints();
 

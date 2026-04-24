@@ -173,9 +173,6 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddHostedService<FirstRunInitializationService>();
 builder.Services.AddHostedService<OpenIddictSeedWorker>();
 
-// ---- MVC / Controllers (token + userinfo endpoints) ----
-builder.Services.AddControllers();
-
 // ---- GraphQL (STRG-049) ----
 var graphql = builder.Services
     .AddGraphQLServer()
@@ -297,7 +294,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 }).AllowAnonymous();
 
 app.MapGraphQL("/graphql");
-app.MapControllers();
 app.MapTokenEndpoints();
 app.MapUserInfoEndpoints();
 app.MapDriveEndpoints();

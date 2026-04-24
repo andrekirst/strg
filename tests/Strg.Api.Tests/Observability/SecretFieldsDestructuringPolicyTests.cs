@@ -344,7 +344,7 @@ public sealed class SecretFieldsDestructuringPolicyTests
 
     public sealed record CreateUserPayload(string Email, string Password);
 
-    public sealed record LowercasePasswordPayload(string Password);
+    public sealed record LowercasePasswordPayload(string password);
 
     public sealed record OuterWithInner(CreateUserPayload Inner);
 

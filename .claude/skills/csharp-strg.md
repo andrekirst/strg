@@ -196,7 +196,7 @@ After any type rename, rename the containing file too. `git status` must show a 
 
 ### Acronyms: PascalCase for 3+ letters, everywhere
 
-Per Microsoft Framework Design Guidelines, acronyms of 3 or more letters are PascalCase — first letter uppercase, rest lowercase: `GraphQl`, `Html`, `Json`, `Xml`, `Http`. Two-letter acronyms stay fully uppercase: `IO`, `ID`, `DB`. Applies uniformly to types, members, namespaces, folder names, and filenames — no half-application (a type named `GraphQlFoo` inside namespace `Strg.GraphQL` is wrong; both must match).
+Per Microsoft Framework Design Guidelines, acronyms of 3 or more letters are PascalCase — first letter uppercase, rest lowercase: `GraphQl`, `Html`, `Json`, `Xml`, `Http`. Two-letter acronyms stay fully uppercase: `IO`, `ID`, `DB`. Applies uniformly to types, members, namespaces, folder names, and filenames — no half-application (a type named `GraphQlFoo` inside namespace `Strg.GraphQl` is wrong; both must match).
 
 ```csharp
 // CORRECT
@@ -204,7 +204,7 @@ namespace Strg.GraphQl.Consumers;
 public sealed class GraphQlSubscriptionPublisher { }
 
 // WRONG
-namespace Strg.GraphQL.Consumers;
+namespace Strg.GraphQl.Consumers;
 public sealed class GraphQLSubscriptionPublisher { }
 ```
 

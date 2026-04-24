@@ -17,7 +17,7 @@ strg/
 │   ├── Strg.Api/            ASP.NET Core host (REST + TUS upload + WebDAV)
 │   ├── Strg.Core/           Domain entities, interfaces, events (NO external deps)
 │   ├── Strg.Infrastructure/ EF Core, storage providers, OpenIddict, consumers
-│   ├── Strg.GraphQL/        Hot Chocolate schema, types, resolvers
+│   ├── Strg.GraphQl/        Hot Chocolate schema, types, resolvers
 │   └── Strg.WebDav/         WebDAV server (NWebDav)
 ├── tests/
 │   ├── Strg.Core.Tests/
@@ -34,7 +34,7 @@ strg/
 ```
 Strg.Core          → NO external NuGet packages (only BCL + Microsoft abstractions)
 Strg.Infrastructure → depends on Strg.Core
-Strg.GraphQL       → depends on Strg.Core + Strg.Infrastructure
+Strg.GraphQl       → depends on Strg.Core + Strg.Infrastructure
 Strg.WebDav        → depends on Strg.Core + Strg.Infrastructure
 Strg.Api           → depends on all above
 ```

@@ -27,11 +27,11 @@ Confirm these compile before starting: `dotnet build src/`
 
 ## File Map
 
-### New project: `src/Strg.GraphQL/`
+### New project: `src/Strg.GraphQl/`
 
 ```
-src/Strg.GraphQL/
-├── Strg.GraphQL.csproj
+src/Strg.GraphQl/
+├── Strg.GraphQl.csproj
 ├── IGraphQLMarker.cs
 ├── Topics.cs
 ├── Errors/
@@ -89,10 +89,10 @@ src/Strg.GraphQL/
 ### Modified: `src/Strg.Api/Program.cs`
 Add HC server registration.
 
-### New: `tests/Strg.GraphQL.Tests/`
+### New: `tests/Strg.GraphQl.Tests/`
 ```
-tests/Strg.GraphQL.Tests/
-├── Strg.GraphQL.Tests.csproj
+tests/Strg.GraphQl.Tests/
+├── Strg.GraphQl.Tests.csproj
 ├── Helpers/
 │   └── GraphQLTestFixture.cs
 ├── Queries/
@@ -110,49 +110,49 @@ tests/Strg.GraphQL.Tests/
 
 ---
 
-## Task 1: Create Strg.GraphQL project + install packages (STRG-049)
+## Task 1: Create Strg.GraphQl project + install packages (STRG-049)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Strg.GraphQL.csproj`
-- Create: `src/Strg.GraphQL/IGraphQLMarker.cs`
-- Create: `src/Strg.GraphQL/Topics.cs`
+- Create: `src/Strg.GraphQl/Strg.GraphQl.csproj`
+- Create: `src/Strg.GraphQl/IGraphQLMarker.cs`
+- Create: `src/Strg.GraphQl/Topics.cs`
 - Modify: `strg.sln` (add project reference)
 
 - [ ] **Step 1: Create the class library project**
 
 ```bash
-dotnet new classlib -n Strg.GraphQL -o src/Strg.GraphQL --framework net9.0
-dotnet sln add src/Strg.GraphQL/Strg.GraphQL.csproj
+dotnet new classlib -n Strg.GraphQl -o src/Strg.GraphQl --framework net9.0
+dotnet sln add src/Strg.GraphQl/Strg.GraphQl.csproj
 ```
 
 - [ ] **Step 2: Add project references**
 
 ```bash
-dotnet add src/Strg.GraphQL reference src/Strg.Core
-dotnet add src/Strg.GraphQL reference src/Strg.Infrastructure
-dotnet add src/Strg.Api reference src/Strg.GraphQL
+dotnet add src/Strg.GraphQl reference src/Strg.Core
+dotnet add src/Strg.GraphQl reference src/Strg.Infrastructure
+dotnet add src/Strg.Api reference src/Strg.GraphQl
 ```
 
 - [ ] **Step 3: Add NuGet packages**
 
 ```bash
-dotnet add src/Strg.GraphQL package HotChocolate.AspNetCore --version 15.*
-dotnet add src/Strg.GraphQL package HotChocolate.Data.EntityFramework --version 15.*
-dotnet add src/Strg.GraphQL package HotChocolate.AspNetCore.Authorization --version 15.*
-dotnet add src/Strg.GraphQL package StackExchange.Redis
+dotnet add src/Strg.GraphQl package HotChocolate.AspNetCore --version 15.*
+dotnet add src/Strg.GraphQl package HotChocolate.Data.EntityFramework --version 15.*
+dotnet add src/Strg.GraphQl package HotChocolate.AspNetCore.Authorization --version 15.*
+dotnet add src/Strg.GraphQl package StackExchange.Redis
 ```
 
 - [ ] **Step 4: Create directory structure**
 
 ```bash
-mkdir -p src/Strg.GraphQL/{Errors,Payloads/{Drive,File,Tag,User},Inputs/{File,Drive,Tag,User,Admin,Enums},Types,DataLoaders,Queries/{Storage,Admin},Mutations/{Storage,User,Admin},Subscriptions/Payloads}
+mkdir -p src/Strg.GraphQl/{Errors,Payloads/{Drive,File,Tag,User},Inputs/{File,Drive,Tag,User,Admin,Enums},Types,DataLoaders,Queries/{Storage,Admin},Mutations/{Storage,User,Admin},Subscriptions/Payloads}
 ```
 
 - [ ] **Step 5: Create `IGraphQLMarker.cs`**
 
 ```csharp
-// src/Strg.GraphQL/IGraphQLMarker.cs
-namespace Strg.GraphQL;
+// src/Strg.GraphQl/IGraphQLMarker.cs
+namespace Strg.GraphQl;
 
 // Empty interface — assembly anchor for AddTypes() discovery only
 internal interface IGraphQLMarker { }
@@ -161,8 +161,8 @@ internal interface IGraphQLMarker { }
 - [ ] **Step 6: Create `Topics.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Topics.cs
-namespace Strg.GraphQL;
+// src/Strg.GraphQl/Topics.cs
+namespace Strg.GraphQl;
 
 public static class Topics
 {
@@ -174,15 +174,15 @@ public static class Topics
 - [ ] **Step 7: Verify build**
 
 ```bash
-dotnet build src/Strg.GraphQL
+dotnet build src/Strg.GraphQl
 ```
 Expected: Build succeeded, 0 errors.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/Strg.GraphQL/ strg.sln
-git commit -m "feat(graphql): create Strg.GraphQL project with HC 15.x packages"
+git add src/Strg.GraphQl/ strg.sln
+git commit -m "feat(graphql): create Strg.GraphQl project with HC 15.x packages"
 ```
 
 ---
@@ -190,31 +190,31 @@ git commit -m "feat(graphql): create Strg.GraphQL project with HC 15.x packages"
 ## Task 2: UserError type + StrgErrorFilter (STRG-056)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Payloads/UserError.cs`
-- Create: `src/Strg.GraphQL/Errors/StrgErrorFilter.cs`
-- Create: `tests/Strg.GraphQL.Tests/Strg.GraphQL.Tests.csproj`
-- Create: `tests/Strg.GraphQL.Tests/Helpers/GraphQLTestFixture.cs`
+- Create: `src/Strg.GraphQl/Payloads/UserError.cs`
+- Create: `src/Strg.GraphQl/Errors/StrgErrorFilter.cs`
+- Create: `tests/Strg.GraphQl.Tests/Strg.GraphQl.Tests.csproj`
+- Create: `tests/Strg.GraphQl.Tests/Helpers/GraphQLTestFixture.cs`
 
 - [ ] **Step 1: Create test project**
 
 ```bash
-dotnet new xunit -n Strg.GraphQL.Tests -o tests/Strg.GraphQL.Tests --framework net9.0
-dotnet sln add tests/Strg.GraphQL.Tests/Strg.GraphQL.Tests.csproj
-dotnet add tests/Strg.GraphQL.Tests reference src/Strg.GraphQL
-dotnet add tests/Strg.GraphQL.Tests package HotChocolate.AspNetCore --version 15.*
-dotnet add tests/Strg.GraphQL.Tests package Microsoft.AspNetCore.Mvc.Testing
+dotnet new xunit -n Strg.GraphQl.Tests -o tests/Strg.GraphQl.Tests --framework net9.0
+dotnet sln add tests/Strg.GraphQl.Tests/Strg.GraphQl.Tests.csproj
+dotnet add tests/Strg.GraphQl.Tests reference src/Strg.GraphQl
+dotnet add tests/Strg.GraphQl.Tests package HotChocolate.AspNetCore --version 15.*
+dotnet add tests/Strg.GraphQl.Tests package Microsoft.AspNetCore.Mvc.Testing
 ```
 
 - [ ] **Step 2: Create `GraphQLTestFixture.cs`**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Helpers/GraphQLTestFixture.cs
+// tests/Strg.GraphQl.Tests/Helpers/GraphQLTestFixture.cs
 using HotChocolate.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Exceptions;
-using Strg.GraphQL.Errors;
+using Strg.GraphQl.Errors;
 
-namespace Strg.GraphQL.Tests.Helpers;
+namespace Strg.GraphQl.Tests.Helpers;
 
 public static class GraphQLTestFixture
 {
@@ -246,12 +246,12 @@ public static class GraphQLTestFixture
 - [ ] **Step 3: Write failing test for StrgErrorFilter**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/ErrorFilterTests.cs
+// tests/Strg.GraphQl.Tests/ErrorFilterTests.cs
 using HotChocolate.Execution;
 using Strg.Core.Exceptions;
-using Strg.GraphQL.Tests.Helpers;
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests;
+namespace Strg.GraphQl.Tests;
 
 public class ErrorFilterTests
 {
@@ -295,15 +295,15 @@ public class ErrorFilterTests
 - [ ] **Step 4: Run — expect FAIL (StrgErrorFilter not created yet)**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter ErrorFilterTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter ErrorFilterTests -v
 ```
 Expected: FAIL — `StrgErrorFilter` not found.
 
 - [ ] **Step 5: Create `UserError.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Payloads/UserError.cs
-namespace Strg.GraphQL.Payloads;
+// src/Strg.GraphQl/Payloads/UserError.cs
+namespace Strg.GraphQl.Payloads;
 
 public sealed record UserError(string Code, string Message, string? Field);
 ```
@@ -311,13 +311,13 @@ public sealed record UserError(string Code, string Message, string? Field);
 - [ ] **Step 6: Create `StrgErrorFilter.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Errors/StrgErrorFilter.cs
+// src/Strg.GraphQl/Errors/StrgErrorFilter.cs
 using HotChocolate;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Exceptions;
 
-namespace Strg.GraphQL.Errors;
+namespace Strg.GraphQl.Errors;
 
 public sealed class StrgErrorFilter : IErrorFilter
 {
@@ -388,14 +388,14 @@ public sealed class StrgErrorFilter : IErrorFilter
 - [ ] **Step 7: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter ErrorFilterTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter ErrorFilterTests -v
 ```
 Expected: PASS — 2 tests.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Payloads/UserError.cs src/Strg.GraphQL/Errors/StrgErrorFilter.cs tests/Strg.GraphQL.Tests/
+git add src/Strg.GraphQl/Payloads/UserError.cs src/Strg.GraphQl/Errors/StrgErrorFilter.cs tests/Strg.GraphQl.Tests/
 git commit -m "feat(graphql): add UserError record and StrgErrorFilter with domain exception mapping"
 ```
 
@@ -404,49 +404,49 @@ git commit -m "feat(graphql): add UserError record and StrgErrorFilter with doma
 ## Task 3: Enum types and input records
 
 **Files:**
-- Create: `src/Strg.GraphQL/Inputs/Enums/ConflictResolution.cs`
-- Create: `src/Strg.GraphQL/Inputs/Enums/FileSortField.cs`
-- Create: `src/Strg.GraphQL/Inputs/Enums/SortDirection.cs`
-- Create: `src/Strg.GraphQL/Inputs/Enums/FileEventType.cs`
-- Create: `src/Strg.GraphQL/Inputs/File/FileFilterInput.cs`
-- Create: `src/Strg.GraphQL/Inputs/File/FileSortInput.cs`
-- Create: `src/Strg.GraphQL/Inputs/File/*.cs` (all file inputs)
-- Create: `src/Strg.GraphQL/Inputs/Drive/*.cs`
-- Create: `src/Strg.GraphQL/Inputs/Tag/*.cs`
-- Create: `src/Strg.GraphQL/Inputs/User/*.cs`
-- Create: `src/Strg.GraphQL/Inputs/Admin/*.cs`
+- Create: `src/Strg.GraphQl/Inputs/Enums/ConflictResolution.cs`
+- Create: `src/Strg.GraphQl/Inputs/Enums/FileSortField.cs`
+- Create: `src/Strg.GraphQl/Inputs/Enums/SortDirection.cs`
+- Create: `src/Strg.GraphQl/Inputs/Enums/FileEventType.cs`
+- Create: `src/Strg.GraphQl/Inputs/File/FileFilterInput.cs`
+- Create: `src/Strg.GraphQl/Inputs/File/FileSortInput.cs`
+- Create: `src/Strg.GraphQl/Inputs/File/*.cs` (all file inputs)
+- Create: `src/Strg.GraphQl/Inputs/Drive/*.cs`
+- Create: `src/Strg.GraphQl/Inputs/Tag/*.cs`
+- Create: `src/Strg.GraphQl/Inputs/User/*.cs`
+- Create: `src/Strg.GraphQl/Inputs/Admin/*.cs`
 
 - [ ] **Step 1: Create enum types**
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Enums/ConflictResolution.cs
-namespace Strg.GraphQL.Inputs.Enums;
+// src/Strg.GraphQl/Inputs/Enums/ConflictResolution.cs
+namespace Strg.GraphQl.Inputs.Enums;
 public enum ConflictResolution { AutoRename, Overwrite, Fail }
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Enums/FileSortField.cs
-namespace Strg.GraphQL.Inputs.Enums;
+// src/Strg.GraphQl/Inputs/Enums/FileSortField.cs
+namespace Strg.GraphQl.Inputs.Enums;
 public enum FileSortField { Name, Size, CreatedAt, UpdatedAt, MimeType }
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Enums/SortDirection.cs
-namespace Strg.GraphQL.Inputs.Enums;
+// src/Strg.GraphQl/Inputs/Enums/SortDirection.cs
+namespace Strg.GraphQl.Inputs.Enums;
 public enum SortDirection { Asc, Desc }
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Enums/FileEventType.cs
-namespace Strg.GraphQL.Inputs.Enums;
+// src/Strg.GraphQl/Inputs/Enums/FileEventType.cs
+namespace Strg.GraphQl.Inputs.Enums;
 public enum FileEventType { Uploaded, Deleted, Moved, Copied, Renamed }
 ```
 
 - [ ] **Step 2: Create file inputs**
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/FileFilterInput.cs
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/FileFilterInput.cs
+namespace Strg.GraphQl.Inputs.File;
 
 public sealed record FileFilterInput(
     string? NameContains,
@@ -462,141 +462,141 @@ public sealed record FileFilterInput(
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/FileSortInput.cs
-using Strg.GraphQL.Inputs.Enums;
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/FileSortInput.cs
+using Strg.GraphQl.Inputs.Enums;
+namespace Strg.GraphQl.Inputs.File;
 public sealed record FileSortInput(FileSortField Field, SortDirection Direction);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/CreateFolderInput.cs
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/CreateFolderInput.cs
+namespace Strg.GraphQl.Inputs.File;
 public sealed record CreateFolderInput(Guid DriveId, string Path);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/DeleteFileInput.cs
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/DeleteFileInput.cs
+namespace Strg.GraphQl.Inputs.File;
 public sealed record DeleteFileInput(Guid Id);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/MoveFileInput.cs
-using Strg.GraphQL.Inputs.Enums;
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/MoveFileInput.cs
+using Strg.GraphQl.Inputs.Enums;
+namespace Strg.GraphQl.Inputs.File;
 public sealed record MoveFileInput(Guid Id, string TargetPath, Guid? TargetDriveId, ConflictResolution? ConflictResolution);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/CopyFileInput.cs
-using Strg.GraphQL.Inputs.Enums;
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/CopyFileInput.cs
+using Strg.GraphQl.Inputs.Enums;
+namespace Strg.GraphQl.Inputs.File;
 public sealed record CopyFileInput(Guid Id, string TargetPath, Guid? TargetDriveId, ConflictResolution? ConflictResolution);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/File/RenameFileInput.cs
-namespace Strg.GraphQL.Inputs.File;
+// src/Strg.GraphQl/Inputs/File/RenameFileInput.cs
+namespace Strg.GraphQl.Inputs.File;
 public sealed record RenameFileInput(Guid Id, string NewName);
 ```
 
 - [ ] **Step 3: Create drive inputs**
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Drive/CreateDriveInput.cs
-namespace Strg.GraphQL.Inputs.Drive;
+// src/Strg.GraphQl/Inputs/Drive/CreateDriveInput.cs
+namespace Strg.GraphQl.Inputs.Drive;
 public sealed record CreateDriveInput(string Name, string ProviderType, string ProviderConfig, bool? IsDefault, bool? IsEncrypted);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Drive/UpdateDriveInput.cs
-namespace Strg.GraphQL.Inputs.Drive;
+// src/Strg.GraphQl/Inputs/Drive/UpdateDriveInput.cs
+namespace Strg.GraphQl.Inputs.Drive;
 public sealed record UpdateDriveInput(Guid Id, string? Name, bool? IsDefault);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Drive/DeleteDriveInput.cs
-namespace Strg.GraphQL.Inputs.Drive;
+// src/Strg.GraphQl/Inputs/Drive/DeleteDriveInput.cs
+namespace Strg.GraphQl.Inputs.Drive;
 public sealed record DeleteDriveInput(Guid Id);
 ```
 
 - [ ] **Step 4: Create tag inputs**
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Tag/AddTagInput.cs
+// src/Strg.GraphQl/Inputs/Tag/AddTagInput.cs
 using Strg.Core.Domain; // TagValueType enum from domain
-namespace Strg.GraphQL.Inputs.Tag;
+namespace Strg.GraphQl.Inputs.Tag;
 public sealed record AddTagInput(Guid FileId, string Key, string Value, TagValueType ValueType);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Tag/UpdateTagInput.cs
+// src/Strg.GraphQl/Inputs/Tag/UpdateTagInput.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Inputs.Tag;
+namespace Strg.GraphQl.Inputs.Tag;
 public sealed record UpdateTagInput(Guid Id, string Value, TagValueType ValueType);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Tag/RemoveTagInput.cs
-namespace Strg.GraphQL.Inputs.Tag;
+// src/Strg.GraphQl/Inputs/Tag/RemoveTagInput.cs
+namespace Strg.GraphQl.Inputs.Tag;
 public sealed record RemoveTagInput(Guid Id);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Tag/RemoveAllTagsInput.cs
-namespace Strg.GraphQL.Inputs.Tag;
+// src/Strg.GraphQl/Inputs/Tag/RemoveAllTagsInput.cs
+namespace Strg.GraphQl.Inputs.Tag;
 public sealed record RemoveAllTagsInput(Guid FileId);
 ```
 
 - [ ] **Step 5: Create user and admin inputs**
 
 ```csharp
-// src/Strg.GraphQL/Inputs/User/UpdateProfileInput.cs
-namespace Strg.GraphQL.Inputs.User;
+// src/Strg.GraphQl/Inputs/User/UpdateProfileInput.cs
+namespace Strg.GraphQl.Inputs.User;
 public sealed record UpdateProfileInput(string? DisplayName, string? Email);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/User/ChangePasswordInput.cs
-namespace Strg.GraphQL.Inputs.User;
+// src/Strg.GraphQl/Inputs/User/ChangePasswordInput.cs
+namespace Strg.GraphQl.Inputs.User;
 public sealed record ChangePasswordInput(string CurrentPassword, string NewPassword);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Admin/UpdateUserQuotaInput.cs
-namespace Strg.GraphQL.Inputs.Admin;
+// src/Strg.GraphQl/Inputs/Admin/UpdateUserQuotaInput.cs
+namespace Strg.GraphQl.Inputs.Admin;
 public sealed record UpdateUserQuotaInput(Guid UserId, long QuotaBytes);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Admin/LockUserInput.cs
-namespace Strg.GraphQL.Inputs.Admin;
+// src/Strg.GraphQl/Inputs/Admin/LockUserInput.cs
+namespace Strg.GraphQl.Inputs.Admin;
 public sealed record LockUserInput(Guid UserId, string? Reason);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Admin/UnlockUserInput.cs
-namespace Strg.GraphQL.Inputs.Admin;
+// src/Strg.GraphQl/Inputs/Admin/UnlockUserInput.cs
+namespace Strg.GraphQl.Inputs.Admin;
 public sealed record UnlockUserInput(Guid UserId);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Inputs/Admin/AuditFilterInput.cs
-namespace Strg.GraphQL.Inputs.Admin;
+// src/Strg.GraphQl/Inputs/Admin/AuditFilterInput.cs
+namespace Strg.GraphQl.Inputs.Admin;
 public sealed record AuditFilterInput(Guid? UserId, string? Action, string? ResourceType, DateTimeOffset? From, DateTimeOffset? To);
 ```
 
 - [ ] **Step 6: Build to verify all records compile**
 
 ```bash
-dotnet build src/Strg.GraphQL
+dotnet build src/Strg.GraphQl
 ```
 Expected: Build succeeded, 0 errors.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Inputs/
+git add src/Strg.GraphQl/Inputs/
 git commit -m "feat(graphql): add all input records and enum types"
 ```
 
@@ -605,144 +605,144 @@ git commit -m "feat(graphql): add all input records and enum types"
 ## Task 4: Payload records
 
 **Files:**
-- Create: `src/Strg.GraphQL/Payloads/Drive/*.cs`
-- Create: `src/Strg.GraphQL/Payloads/File/*.cs`
-- Create: `src/Strg.GraphQL/Payloads/Tag/*.cs`
-- Create: `src/Strg.GraphQL/Payloads/User/*.cs`
+- Create: `src/Strg.GraphQl/Payloads/Drive/*.cs`
+- Create: `src/Strg.GraphQl/Payloads/File/*.cs`
+- Create: `src/Strg.GraphQl/Payloads/Tag/*.cs`
+- Create: `src/Strg.GraphQl/Payloads/User/*.cs`
 
 - [ ] **Step 1: Create drive payloads**
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Drive/CreateDrivePayload.cs
+// src/Strg.GraphQl/Payloads/Drive/CreateDrivePayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.Drive;
+namespace Strg.GraphQl.Payloads.Drive;
 public sealed record CreateDrivePayload(Core.Domain.Drive? Drive, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Drive/UpdateDrivePayload.cs
-namespace Strg.GraphQL.Payloads.Drive;
+// src/Strg.GraphQl/Payloads/Drive/UpdateDrivePayload.cs
+namespace Strg.GraphQl.Payloads.Drive;
 public sealed record UpdateDrivePayload(Core.Domain.Drive? Drive, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Drive/DeleteDrivePayload.cs
-namespace Strg.GraphQL.Payloads.Drive;
+// src/Strg.GraphQl/Payloads/Drive/DeleteDrivePayload.cs
+namespace Strg.GraphQl.Payloads.Drive;
 public sealed record DeleteDrivePayload(Guid? DriveId, IReadOnlyList<UserError>? Errors);
 ```
 
 - [ ] **Step 2: Create file payloads**
 
 ```csharp
-// src/Strg.GraphQL/Payloads/File/CreateFolderPayload.cs
+// src/Strg.GraphQl/Payloads/File/CreateFolderPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.File;
+namespace Strg.GraphQl.Payloads.File;
 public sealed record CreateFolderPayload(FileItem? File, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/File/DeleteFilePayload.cs
-namespace Strg.GraphQL.Payloads.File;
+// src/Strg.GraphQl/Payloads/File/DeleteFilePayload.cs
+namespace Strg.GraphQl.Payloads.File;
 public sealed record DeleteFilePayload(Guid? FileId, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/File/MoveFilePayload.cs
+// src/Strg.GraphQl/Payloads/File/MoveFilePayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.File;
+namespace Strg.GraphQl.Payloads.File;
 public sealed record MoveFilePayload(FileItem? File, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/File/CopyFilePayload.cs
+// src/Strg.GraphQl/Payloads/File/CopyFilePayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.File;
+namespace Strg.GraphQl.Payloads.File;
 public sealed record CopyFilePayload(FileItem? File, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/File/RenameFilePayload.cs
+// src/Strg.GraphQl/Payloads/File/RenameFilePayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.File;
+namespace Strg.GraphQl.Payloads.File;
 public sealed record RenameFilePayload(FileItem? File, IReadOnlyList<UserError>? Errors);
 ```
 
 - [ ] **Step 3: Create tag payloads**
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Tag/AddTagPayload.cs
+// src/Strg.GraphQl/Payloads/Tag/AddTagPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.Tag;
+namespace Strg.GraphQl.Payloads.Tag;
 public sealed record AddTagPayload(Core.Domain.Tag? Tag, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Tag/UpdateTagPayload.cs
+// src/Strg.GraphQl/Payloads/Tag/UpdateTagPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.Tag;
+namespace Strg.GraphQl.Payloads.Tag;
 public sealed record UpdateTagPayload(Core.Domain.Tag? Tag, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Tag/RemoveTagPayload.cs
-namespace Strg.GraphQL.Payloads.Tag;
+// src/Strg.GraphQl/Payloads/Tag/RemoveTagPayload.cs
+namespace Strg.GraphQl.Payloads.Tag;
 public sealed record RemoveTagPayload(Guid? TagId, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/Tag/RemoveAllTagsPayload.cs
-namespace Strg.GraphQL.Payloads.Tag;
+// src/Strg.GraphQl/Payloads/Tag/RemoveAllTagsPayload.cs
+namespace Strg.GraphQl.Payloads.Tag;
 public sealed record RemoveAllTagsPayload(Guid? FileId, IReadOnlyList<UserError>? Errors);
 ```
 
 - [ ] **Step 4: Create user payloads**
 
 ```csharp
-// src/Strg.GraphQL/Payloads/User/UpdateProfilePayload.cs
+// src/Strg.GraphQl/Payloads/User/UpdateProfilePayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.User;
+namespace Strg.GraphQl.Payloads.User;
 public sealed record UpdateProfilePayload(Core.Domain.User? User, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/User/ChangePasswordPayload.cs
+// src/Strg.GraphQl/Payloads/User/ChangePasswordPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.User;
+namespace Strg.GraphQl.Payloads.User;
 public sealed record ChangePasswordPayload(Core.Domain.User? User, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/User/UpdateUserQuotaPayload.cs
+// src/Strg.GraphQl/Payloads/User/UpdateUserQuotaPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.User;
+namespace Strg.GraphQl.Payloads.User;
 public sealed record UpdateUserQuotaPayload(Core.Domain.User? User, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/User/LockUserPayload.cs
+// src/Strg.GraphQl/Payloads/User/LockUserPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.User;
+namespace Strg.GraphQl.Payloads.User;
 public sealed record LockUserPayload(Core.Domain.User? User, IReadOnlyList<UserError>? Errors);
 ```
 
 ```csharp
-// src/Strg.GraphQL/Payloads/User/UnlockUserPayload.cs
+// src/Strg.GraphQl/Payloads/User/UnlockUserPayload.cs
 using Strg.Core.Domain;
-namespace Strg.GraphQL.Payloads.User;
+namespace Strg.GraphQl.Payloads.User;
 public sealed record UnlockUserPayload(Core.Domain.User? User, IReadOnlyList<UserError>? Errors);
 ```
 
 - [ ] **Step 5: Build**
 
 ```bash
-dotnet build src/Strg.GraphQL
+dotnet build src/Strg.GraphQl
 ```
 Expected: Build succeeded, 0 errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Payloads/
+git add src/Strg.GraphQl/Payloads/
 git commit -m "feat(graphql): add all mutation payload records"
 ```
 
@@ -751,20 +751,20 @@ git commit -m "feat(graphql): add all mutation payload records"
 ## Task 5: ObjectType descriptors (STRG-050)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Types/UserType.cs`
-- Create: `src/Strg.GraphQL/Types/DriveType.cs`
-- Create: `src/Strg.GraphQL/Types/FileItemType.cs`
-- Create: `src/Strg.GraphQL/Types/TagType.cs`
-- Create: `src/Strg.GraphQL/Types/FileVersionType.cs`
-- Create: `src/Strg.GraphQL/Types/AuditEntryType.cs`
+- Create: `src/Strg.GraphQl/Types/UserType.cs`
+- Create: `src/Strg.GraphQl/Types/DriveType.cs`
+- Create: `src/Strg.GraphQl/Types/FileItemType.cs`
+- Create: `src/Strg.GraphQl/Types/TagType.cs`
+- Create: `src/Strg.GraphQl/Types/FileVersionType.cs`
+- Create: `src/Strg.GraphQl/Types/AuditEntryType.cs`
 
 - [ ] **Step 1: Write failing schema test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/SchemaTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/SchemaTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests;
+namespace Strg.GraphQl.Tests;
 
 public class SchemaTests
 {
@@ -818,18 +818,18 @@ public class SchemaTests
 - [ ] **Step 2: Run — expect FAIL (types not created yet)**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter SchemaTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter SchemaTests -v
 ```
 Expected: FAIL.
 
 - [ ] **Step 3: Create `UserType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/UserType.cs
+// src/Strg.GraphQl/Types/UserType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class UserType : ObjectType<User>
 {
@@ -846,11 +846,11 @@ public sealed class UserType : ObjectType<User>
 - [ ] **Step 4: Create `DriveType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/DriveType.cs
+// src/Strg.GraphQl/Types/DriveType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class DriveType : ObjectType<Drive>
 {
@@ -866,11 +866,11 @@ public sealed class DriveType : ObjectType<Drive>
 - [ ] **Step 5: Create `FileItemType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/FileItemType.cs
+// src/Strg.GraphQl/Types/FileItemType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class FileItemType : ObjectType<FileItem>
 {
@@ -912,11 +912,11 @@ public sealed class FileItemType : ObjectType<FileItem>
 - [ ] **Step 6: Create `TagType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/TagType.cs
+// src/Strg.GraphQl/Types/TagType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class TagType : ObjectType<Tag>
 {
@@ -933,11 +933,11 @@ public sealed class TagType : ObjectType<Tag>
 - [ ] **Step 7: Create `FileVersionType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/FileVersionType.cs
+// src/Strg.GraphQl/Types/FileVersionType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class FileVersionType : ObjectType<FileVersion>
 {
@@ -954,12 +954,12 @@ public sealed class FileVersionType : ObjectType<FileVersion>
 - [ ] **Step 8: Create `AuditEntryType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/AuditEntryType.cs
+// src/Strg.GraphQl/Types/AuditEntryType.cs
 using HotChocolate.Types;
 using Strg.Core.Domain;
-using Strg.GraphQL.DataLoaders;
+using Strg.GraphQl.DataLoaders;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class AuditEntryType : ObjectType<AuditEntry>
 {
@@ -983,14 +983,14 @@ public sealed class AuditEntryType : ObjectType<AuditEntry>
 - [ ] **Step 9: Run schema tests — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter SchemaTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter SchemaTests -v
 ```
 Expected: PASS — 2 tests.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Types/
+git add src/Strg.GraphQl/Types/
 git commit -m "feat(graphql): add ObjectType descriptors for User, Drive, FileItem, Tag, FileVersion, AuditEntry"
 ```
 
@@ -999,21 +999,21 @@ git commit -m "feat(graphql): add ObjectType descriptors for User, Drive, FileIt
 ## Task 6: DataLoaders
 
 **Files:**
-- Create: `src/Strg.GraphQL/DataLoaders/FileItemByIdDataLoader.cs`
-- Create: `src/Strg.GraphQL/DataLoaders/DriveByIdDataLoader.cs`
-- Create: `src/Strg.GraphQL/DataLoaders/UserByIdDataLoader.cs`
-- Create: `src/Strg.GraphQL/DataLoaders/InboxRuleByIdDataLoader.cs`
+- Create: `src/Strg.GraphQl/DataLoaders/FileItemByIdDataLoader.cs`
+- Create: `src/Strg.GraphQl/DataLoaders/DriveByIdDataLoader.cs`
+- Create: `src/Strg.GraphQl/DataLoaders/UserByIdDataLoader.cs`
+- Create: `src/Strg.GraphQl/DataLoaders/InboxRuleByIdDataLoader.cs`
 
 - [ ] **Step 1: Create `FileItemByIdDataLoader.cs`**
 
 ```csharp
-// src/Strg.GraphQL/DataLoaders/FileItemByIdDataLoader.cs
+// src/Strg.GraphQl/DataLoaders/FileItemByIdDataLoader.cs
 using GreenDonut;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.DataLoaders;
+namespace Strg.GraphQl.DataLoaders;
 
 public sealed class FileItemByIdDataLoader : BatchDataLoader<Guid, FileItem>
 {
@@ -1042,13 +1042,13 @@ public sealed class FileItemByIdDataLoader : BatchDataLoader<Guid, FileItem>
 - [ ] **Step 2: Create `DriveByIdDataLoader.cs`**
 
 ```csharp
-// src/Strg.GraphQL/DataLoaders/DriveByIdDataLoader.cs
+// src/Strg.GraphQl/DataLoaders/DriveByIdDataLoader.cs
 using GreenDonut;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.DataLoaders;
+namespace Strg.GraphQl.DataLoaders;
 
 public sealed class DriveByIdDataLoader : BatchDataLoader<Guid, Drive>
 {
@@ -1077,13 +1077,13 @@ public sealed class DriveByIdDataLoader : BatchDataLoader<Guid, Drive>
 - [ ] **Step 3: Create `UserByIdDataLoader.cs`**
 
 ```csharp
-// src/Strg.GraphQL/DataLoaders/UserByIdDataLoader.cs
+// src/Strg.GraphQl/DataLoaders/UserByIdDataLoader.cs
 using GreenDonut;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.DataLoaders;
+namespace Strg.GraphQl.DataLoaders;
 
 public sealed class UserByIdDataLoader : BatchDataLoader<Guid, User>
 {
@@ -1112,13 +1112,13 @@ public sealed class UserByIdDataLoader : BatchDataLoader<Guid, User>
 - [ ] **Step 4: Create `InboxRuleByIdDataLoader.cs`**
 
 ```csharp
-// src/Strg.GraphQL/DataLoaders/InboxRuleByIdDataLoader.cs
+// src/Strg.GraphQl/DataLoaders/InboxRuleByIdDataLoader.cs
 using GreenDonut;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.DataLoaders;
+namespace Strg.GraphQl.DataLoaders;
 
 public sealed class InboxRuleByIdDataLoader : BatchDataLoader<Guid, InboxRule>
 {
@@ -1147,14 +1147,14 @@ public sealed class InboxRuleByIdDataLoader : BatchDataLoader<Guid, InboxRule>
 - [ ] **Step 5: Build**
 
 ```bash
-dotnet build src/Strg.GraphQL
+dotnet build src/Strg.GraphQl
 ```
 Expected: Build succeeded.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/Strg.GraphQL/DataLoaders/
+git add src/Strg.GraphQl/DataLoaders/
 git commit -m "feat(graphql): add FileItem, Drive, User, InboxRule BatchDataLoaders"
 ```
 
@@ -1163,60 +1163,60 @@ git commit -m "feat(graphql): add FileItem, Drive, User, InboxRule BatchDataLoad
 ## Task 7: Namespace wiring + HC server registration (STRG-049)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Queries/RootQueryExtension.cs`
-- Create: `src/Strg.GraphQL/Queries/Storage/StorageQueries.cs`
-- Create: `src/Strg.GraphQL/Queries/Admin/AdminQueries.cs`
-- Create: `src/Strg.GraphQL/Mutations/RootMutationExtension.cs`
-- Create: `src/Strg.GraphQL/Mutations/Storage/StorageMutations.cs`
-- Create: `src/Strg.GraphQL/Mutations/User/UserMutations.cs`
-- Create: `src/Strg.GraphQL/Mutations/Admin/AdminMutations.cs`
+- Create: `src/Strg.GraphQl/Queries/RootQueryExtension.cs`
+- Create: `src/Strg.GraphQl/Queries/Storage/StorageQueries.cs`
+- Create: `src/Strg.GraphQl/Queries/Admin/AdminQueries.cs`
+- Create: `src/Strg.GraphQl/Mutations/RootMutationExtension.cs`
+- Create: `src/Strg.GraphQl/Mutations/Storage/StorageMutations.cs`
+- Create: `src/Strg.GraphQl/Mutations/User/UserMutations.cs`
+- Create: `src/Strg.GraphQl/Mutations/Admin/AdminMutations.cs`
 - Modify: `src/Strg.Api/Program.cs`
 
 - [ ] **Step 1: Create namespace marker records**
 
 ```csharp
-// src/Strg.GraphQL/Queries/Storage/StorageQueries.cs
-namespace Strg.GraphQL.Queries.Storage;
+// src/Strg.GraphQl/Queries/Storage/StorageQueries.cs
+namespace Strg.GraphQl.Queries.Storage;
 public sealed record StorageQueries;
 ```
 
 ```csharp
-// src/Strg.GraphQL/Queries/Admin/AdminQueries.cs
-namespace Strg.GraphQL.Queries.Admin;
+// src/Strg.GraphQl/Queries/Admin/AdminQueries.cs
+namespace Strg.GraphQl.Queries.Admin;
 public sealed record AdminQueries;
 ```
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Storage/StorageMutations.cs
-namespace Strg.GraphQL.Mutations.Storage;
+// src/Strg.GraphQl/Mutations/Storage/StorageMutations.cs
+namespace Strg.GraphQl.Mutations.Storage;
 public sealed record StorageMutations;
 ```
 
 ```csharp
-// src/Strg.GraphQL/Mutations/User/UserMutations.cs
-namespace Strg.GraphQL.Mutations.User;
+// src/Strg.GraphQl/Mutations/User/UserMutations.cs
+namespace Strg.GraphQl.Mutations.User;
 public sealed record UserMutations;
 ```
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Admin/AdminMutations.cs
-namespace Strg.GraphQL.Mutations.Admin;
+// src/Strg.GraphQl/Mutations/Admin/AdminMutations.cs
+namespace Strg.GraphQl.Mutations.Admin;
 public sealed record AdminMutations;
 ```
 
 - [ ] **Step 2: Create `RootQueryExtension.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Queries/RootQueryExtension.cs
+// src/Strg.GraphQl/Queries/RootQueryExtension.cs
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
-using Strg.GraphQL.Queries.Admin;
-using Strg.GraphQL.Queries.Storage;
+using Strg.GraphQl.Queries.Admin;
+using Strg.GraphQl.Queries.Storage;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Queries;
+namespace Strg.GraphQl.Queries;
 
 [ExtendObjectType("Query")]
 public sealed class RootQueryExtension
@@ -1244,13 +1244,13 @@ public sealed record InboxQueries;
 - [ ] **Step 3: Create `RootMutationExtension.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/RootMutationExtension.cs
+// src/Strg.GraphQl/Mutations/RootMutationExtension.cs
 using HotChocolate.Types;
-using Strg.GraphQL.Mutations.Admin;
-using Strg.GraphQL.Mutations.Storage;
-using Strg.GraphQL.Mutations.User;
+using Strg.GraphQl.Mutations.Admin;
+using Strg.GraphQl.Mutations.Storage;
+using Strg.GraphQl.Mutations.User;
 
-namespace Strg.GraphQL.Mutations;
+namespace Strg.GraphQl.Mutations;
 
 [ExtendObjectType("Mutation")]
 public sealed class RootMutationExtension
@@ -1267,10 +1267,10 @@ public sealed record InboxMutations;
 - [ ] **Step 4: Write failing root query test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Queries/RootQueryTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Queries/RootQueryTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Queries;
+namespace Strg.GraphQl.Tests.Queries;
 
 public class RootQueryTests
 {
@@ -1319,7 +1319,7 @@ public class RootQueryTests
 - [ ] **Step 5: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter RootQueryTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter RootQueryTests -v
 ```
 Expected: FAIL.
 
@@ -1334,7 +1334,7 @@ builder.Services
     .AddQueryType(q => q.Name("Query"))
     .AddMutationType(m => m.Name("Mutation"))
     .AddSubscriptionType(s => s.Name("Subscription"))
-    .AddTypes(typeof(Strg.GraphQL.IGraphQLMarker).Assembly)
+    .AddTypes(typeof(Strg.GraphQl.IGraphQLMarker).Assembly)
     .AddGlobalObjectIdentification()
     .AddFiltering()
     .AddSorting()
@@ -1364,14 +1364,14 @@ app.MapGraphQL("/graphql");
 - [ ] **Step 7: Run tests — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter RootQueryTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter RootQueryTests -v
 ```
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Queries/ src/Strg.GraphQL/Mutations/ src/Strg.Api/Program.cs
+git add src/Strg.GraphQl/Queries/ src/Strg.GraphQl/Mutations/ src/Strg.Api/Program.cs
 git commit -m "feat(graphql): wire HC server with namespace roots, assembly scanning, and OCP registration"
 ```
 
@@ -1380,17 +1380,17 @@ git commit -m "feat(graphql): wire HC server with namespace roots, assembly scan
 ## Task 8: Drive queries (STRG-057)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Queries/Storage/DriveQueries.cs`
+- Create: `src/Strg.GraphQl/Queries/Storage/DriveQueries.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Queries/DriveQueriesTests.cs
+// tests/Strg.GraphQl.Tests/Queries/DriveQueriesTests.cs
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
-using Strg.GraphQL.Tests.Helpers;
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Queries;
+namespace Strg.GraphQl.Tests.Queries;
 
 public class DriveQueriesTests
 {
@@ -1443,13 +1443,13 @@ public class DriveQueriesTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter DriveQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter DriveQueriesTests -v
 ```
 
 - [ ] **Step 3: Create `DriveQueries.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Queries/Storage/DriveQueries.cs
+// src/Strg.GraphQl/Queries/Storage/DriveQueries.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Data;
@@ -1459,7 +1459,7 @@ using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Queries.Storage;
+namespace Strg.GraphQl.Queries.Storage;
 
 [ExtendObjectType<StorageQueries>]
 public sealed class DriveQueries
@@ -1488,13 +1488,13 @@ public sealed class DriveQueries
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter DriveQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter DriveQueriesTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Queries/Storage/DriveQueries.cs tests/Strg.GraphQL.Tests/Queries/DriveQueriesTests.cs
+git add src/Strg.GraphQl/Queries/Storage/DriveQueries.cs tests/Strg.GraphQl.Tests/Queries/DriveQueriesTests.cs
 git commit -m "feat(graphql): add DriveQueries with cursor pagination and tenant isolation"
 ```
 
@@ -1503,15 +1503,15 @@ git commit -m "feat(graphql): add DriveQueries with cursor pagination and tenant
 ## Task 9: File queries (STRG-050)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Queries/Storage/FileQueries.cs`
+- Create: `src/Strg.GraphQl/Queries/Storage/FileQueries.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Queries/FileQueriesTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Queries/FileQueriesTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Queries;
+namespace Strg.GraphQl.Tests.Queries;
 
 public class FileQueriesTests
 {
@@ -1549,22 +1549,22 @@ public class FileQueriesTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileQueriesTests -v
 ```
 
 - [ ] **Step 3: Create `FileQueries.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Queries/Storage/FileQueries.cs
+// src/Strg.GraphQl/Queries/Storage/FileQueries.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
-using Strg.GraphQL.Inputs.File;
+using Strg.GraphQl.Inputs.File;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Queries.Storage;
+namespace Strg.GraphQl.Queries.Storage;
 
 [ExtendObjectType<StorageQueries>]
 public sealed class FileQueries
@@ -1616,13 +1616,13 @@ public sealed class FileQueries
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileQueriesTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Queries/Storage/FileQueries.cs tests/Strg.GraphQL.Tests/Queries/FileQueriesTests.cs
+git add src/Strg.GraphQl/Queries/Storage/FileQueries.cs tests/Strg.GraphQl.Tests/Queries/FileQueriesTests.cs
 git commit -m "feat(graphql): add FileQueries with handcrafted filter, cursor pagination"
 ```
 
@@ -1631,15 +1631,15 @@ git commit -m "feat(graphql): add FileQueries with handcrafted filter, cursor pa
 ## Task 10: Audit log query (STRG-055)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Queries/Admin/AuditLogQueries.cs`
+- Create: `src/Strg.GraphQl/Queries/Admin/AuditLogQueries.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Queries/AuditQueriesTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Queries/AuditQueriesTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Queries;
+namespace Strg.GraphQl.Tests.Queries;
 
 public class AuditQueriesTests
 {
@@ -1662,20 +1662,20 @@ public class AuditQueriesTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter AuditQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter AuditQueriesTests -v
 ```
 
 - [ ] **Step 3: Create `AuditLogQueries.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Queries/Admin/AuditLogQueries.cs
+// src/Strg.GraphQl/Queries/Admin/AuditLogQueries.cs
 using HotChocolate;
 using HotChocolate.Types;
 using Strg.Core.Domain;
-using Strg.GraphQL.Inputs.Admin;
+using Strg.GraphQl.Inputs.Admin;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Queries.Admin;
+namespace Strg.GraphQl.Queries.Admin;
 
 [ExtendObjectType<AdminQueries>]
 public sealed class AuditLogQueries
@@ -1721,13 +1721,13 @@ public sealed class AuditLogQueries
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter AuditQueriesTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter AuditQueriesTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Queries/Admin/ tests/Strg.GraphQL.Tests/Queries/AuditQueriesTests.cs
+git add src/Strg.GraphQl/Queries/Admin/ tests/Strg.GraphQl.Tests/Queries/AuditQueriesTests.cs
 git commit -m "feat(graphql): add AuditLogQueries and AdminQueries extensions"
 ```
 
@@ -1736,15 +1736,15 @@ git commit -m "feat(graphql): add AuditLogQueries and AdminQueries extensions"
 ## Task 11: Drive mutations (STRG-053)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Mutations/Storage/DriveMutations.cs`
+- Create: `src/Strg.GraphQl/Mutations/Storage/DriveMutations.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Mutations/DriveMutationsTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Mutations/DriveMutationsTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Mutations;
+namespace Strg.GraphQl.Tests.Mutations;
 
 public class DriveMutationsTests
 {
@@ -1804,25 +1804,25 @@ public class DriveMutationsTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter DriveMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter DriveMutationsTests -v
 ```
 
 - [ ] **Step 3: Create `DriveMutations.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Storage/DriveMutations.cs
+// src/Strg.GraphQl/Mutations/Storage/DriveMutations.cs
 using System.Text.RegularExpressions;
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
-using Strg.GraphQL.Inputs.Drive;
-using Strg.GraphQL.Payloads;
-using Strg.GraphQL.Payloads.Drive;
+using Strg.GraphQl.Inputs.Drive;
+using Strg.GraphQl.Payloads;
+using Strg.GraphQl.Payloads.Drive;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Mutations.Storage;
+namespace Strg.GraphQl.Mutations.Storage;
 
 [ExtendObjectType<StorageMutations>]
 public sealed class DriveMutations
@@ -1911,13 +1911,13 @@ public sealed class DriveMutations
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter DriveMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter DriveMutationsTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Mutations/Storage/DriveMutations.cs tests/Strg.GraphQL.Tests/Mutations/DriveMutationsTests.cs
+git add src/Strg.GraphQl/Mutations/Storage/DriveMutations.cs tests/Strg.GraphQl.Tests/Mutations/DriveMutationsTests.cs
 git commit -m "feat(graphql): add DriveMutations (create, update, delete) with payload pattern"
 ```
 
@@ -1926,15 +1926,15 @@ git commit -m "feat(graphql): add DriveMutations (create, update, delete) with p
 ## Task 12: File mutations (STRG-052)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Mutations/Storage/FileMutations.cs`
+- Create: `src/Strg.GraphQl/Mutations/Storage/FileMutations.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Mutations/FileMutationsTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Mutations/FileMutationsTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Mutations;
+namespace Strg.GraphQl.Tests.Mutations;
 
 public class FileMutationsTests
 {
@@ -1991,13 +1991,13 @@ public class FileMutationsTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileMutationsTests -v
 ```
 
 - [ ] **Step 3: Create `FileMutations.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Storage/FileMutations.cs
+// src/Strg.GraphQl/Mutations/Storage/FileMutations.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
@@ -2005,12 +2005,12 @@ using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
-using Strg.GraphQL.Inputs.File;
-using Strg.GraphQL.Payloads;
-using Strg.GraphQL.Payloads.File;
+using Strg.GraphQl.Inputs.File;
+using Strg.GraphQl.Payloads;
+using Strg.GraphQl.Payloads.File;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Mutations.Storage;
+namespace Strg.GraphQl.Mutations.Storage;
 
 [ExtendObjectType<StorageMutations>]
 public sealed class FileMutations
@@ -2131,13 +2131,13 @@ public sealed class FileMutations
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileMutationsTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Mutations/Storage/FileMutations.cs tests/Strg.GraphQL.Tests/Mutations/FileMutationsTests.cs
+git add src/Strg.GraphQl/Mutations/Storage/FileMutations.cs tests/Strg.GraphQl.Tests/Mutations/FileMutationsTests.cs
 git commit -m "feat(graphql): add FileMutations (createFolder, deleteFile, moveFile, copyFile, renameFile)"
 ```
 
@@ -2146,15 +2146,15 @@ git commit -m "feat(graphql): add FileMutations (createFolder, deleteFile, moveF
 ## Task 13: Tag mutations (STRG-051)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Mutations/Storage/TagMutations.cs`
+- Create: `src/Strg.GraphQl/Mutations/Storage/TagMutations.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Mutations/TagMutationsTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Mutations/TagMutationsTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Mutations;
+namespace Strg.GraphQl.Tests.Mutations;
 
 public class TagMutationsTests
 {
@@ -2188,23 +2188,23 @@ public class TagMutationsTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter TagMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter TagMutationsTests -v
 ```
 
 - [ ] **Step 3: Create `TagMutations.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Storage/TagMutations.cs
+// src/Strg.GraphQl/Mutations/Storage/TagMutations.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
-using Strg.GraphQL.Inputs.Tag;
-using Strg.GraphQL.Payloads;
-using Strg.GraphQL.Payloads.Tag;
+using Strg.GraphQl.Inputs.Tag;
+using Strg.GraphQl.Payloads;
+using Strg.GraphQl.Payloads.Tag;
 
-namespace Strg.GraphQL.Mutations.Storage;
+namespace Strg.GraphQl.Mutations.Storage;
 
 [ExtendObjectType<StorageMutations>]
 public sealed class TagMutations
@@ -2277,13 +2277,13 @@ public sealed class TagMutations
 - [ ] **Step 4: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter TagMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter TagMutationsTests -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Mutations/Storage/TagMutations.cs tests/Strg.GraphQL.Tests/Mutations/TagMutationsTests.cs
+git add src/Strg.GraphQl/Mutations/Storage/TagMutations.cs tests/Strg.GraphQl.Tests/Mutations/TagMutationsTests.cs
 git commit -m "feat(graphql): add TagMutations (add, update, remove, removeAll) with payload pattern"
 ```
 
@@ -2292,16 +2292,16 @@ git commit -m "feat(graphql): add TagMutations (add, update, remove, removeAll) 
 ## Task 14: User and admin mutations (STRG-054)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Mutations/User/UserMutationHandlers.cs`
-- Create: `src/Strg.GraphQL/Mutations/Admin/AdminMutationHandlers.cs`
+- Create: `src/Strg.GraphQl/Mutations/User/UserMutationHandlers.cs`
+- Create: `src/Strg.GraphQl/Mutations/Admin/AdminMutationHandlers.cs`
 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Mutations/UserMutationsTests.cs
-using Strg.GraphQL.Tests.Helpers;
+// tests/Strg.GraphQl.Tests/Mutations/UserMutationsTests.cs
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Mutations;
+namespace Strg.GraphQl.Tests.Mutations;
 
 public class UserMutationsTests
 {
@@ -2334,24 +2334,24 @@ public class UserMutationsTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter UserMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter UserMutationsTests -v
 ```
 
 - [ ] **Step 3: Create `UserMutationHandlers.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/User/UserMutationHandlers.cs
+// src/Strg.GraphQl/Mutations/User/UserMutationHandlers.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Services;
-using Strg.GraphQL.Inputs.User;
-using Strg.GraphQL.Payloads;
-using Strg.GraphQL.Payloads.User;
+using Strg.GraphQl.Inputs.User;
+using Strg.GraphQl.Payloads;
+using Strg.GraphQl.Payloads.User;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Mutations.User;
+namespace Strg.GraphQl.Mutations.User;
 
 [ExtendObjectType<UserMutations>]
 public sealed class UserMutationHandlers
@@ -2398,17 +2398,17 @@ public sealed class UserMutationHandlers
 - [ ] **Step 4: Create `AdminMutationHandlers.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Mutations/Admin/AdminMutationHandlers.cs
+// src/Strg.GraphQl/Mutations/Admin/AdminMutationHandlers.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
-using Strg.GraphQL.Inputs.Admin;
-using Strg.GraphQL.Payloads;
-using Strg.GraphQL.Payloads.User;
+using Strg.GraphQl.Inputs.Admin;
+using Strg.GraphQl.Payloads;
+using Strg.GraphQl.Payloads.User;
 using Strg.Infrastructure.Data;
 
-namespace Strg.GraphQL.Mutations.Admin;
+namespace Strg.GraphQl.Mutations.Admin;
 
 [ExtendObjectType<AdminMutations>]
 public sealed class AdminMutationHandlers
@@ -2467,13 +2467,13 @@ public sealed class AdminMutationHandlers
 - [ ] **Step 5: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter UserMutationsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter UserMutationsTests -v
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Mutations/User/ src/Strg.GraphQL/Mutations/Admin/ tests/Strg.GraphQL.Tests/Mutations/UserMutationsTests.cs
+git add src/Strg.GraphQl/Mutations/User/ src/Strg.GraphQl/Mutations/Admin/ tests/Strg.GraphQl.Tests/Mutations/UserMutationsTests.cs
 git commit -m "feat(graphql): add UserMutations (updateProfile, changePassword) and AdminMutations (quota, lock/unlock)"
 ```
 
@@ -2488,12 +2488,12 @@ git commit -m "feat(graphql): add UserMutations (updateProfile, changePassword) 
 - [ ] **Step 1: Write failing test**
 
 ```csharp
-// tests/Strg.GraphQL.Tests/Subscriptions/FileSubscriptionsTests.cs
+// tests/Strg.GraphQl.Tests/Subscriptions/FileSubscriptionsTests.cs
 using HotChocolate.Subscriptions;
 using Strg.Core.Events;
-using Strg.GraphQL.Tests.Helpers;
+using Strg.GraphQl.Tests.Helpers;
 
-namespace Strg.GraphQL.Tests.Subscriptions;
+namespace Strg.GraphQl.Tests.Subscriptions;
 
 public class FileSubscriptionsTests
 {
@@ -2538,7 +2538,7 @@ public class FileSubscriptionsTests
 - [ ] **Step 2: Run — expect FAIL**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileSubscriptionsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileSubscriptionsTests -v
 ```
 
 - [ ] **Step 3: Create `FileEvent.cs`**
@@ -2569,7 +2569,7 @@ using HotChocolate.Subscriptions;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Events;
-using Strg.GraphQL;
+using Strg.GraphQl;
 
 namespace Strg.Infrastructure.Consumers;
 
@@ -2634,7 +2634,7 @@ cfg.AddConsumer<GraphQLSubscriptionPublisher>();
 - [ ] **Step 6: Run — expect PASS**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests --filter FileSubscriptionsTests -v
+dotnet test tests/Strg.GraphQl.Tests --filter FileSubscriptionsTests -v
 ```
 
 - [ ] **Step 7: Commit**
@@ -2649,18 +2649,18 @@ git commit -m "feat(graphql): add FileEvent DTO and GraphQLSubscriptionPublisher
 ## Task 16: FileSubscriptions GraphQL type (STRG-066)
 
 **Files:**
-- Create: `src/Strg.GraphQL/Subscriptions/Payloads/FileEventPayload.cs`
-- Create: `src/Strg.GraphQL/Types/FileEventOutputType.cs`
-- Create: `src/Strg.GraphQL/Subscriptions/FileSubscriptions.cs`
+- Create: `src/Strg.GraphQl/Subscriptions/Payloads/FileEventPayload.cs`
+- Create: `src/Strg.GraphQl/Types/FileEventOutputType.cs`
+- Create: `src/Strg.GraphQl/Subscriptions/FileSubscriptions.cs`
 
 - [ ] **Step 1: Create `FileEventPayload.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Subscriptions/Payloads/FileEventPayload.cs
+// src/Strg.GraphQl/Subscriptions/Payloads/FileEventPayload.cs
 using Strg.Core.Domain;
 using Strg.Core.Events;
 
-namespace Strg.GraphQL.Subscriptions.Payloads;
+namespace Strg.GraphQl.Subscriptions.Payloads;
 
 // Output payload — no TenantId field (never exposed to clients)
 public sealed record FileEventPayload(
@@ -2674,11 +2674,11 @@ public sealed record FileEventPayload(
 - [ ] **Step 2: Create `FileEventOutputType.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Types/FileEventOutputType.cs
+// src/Strg.GraphQl/Types/FileEventOutputType.cs
 using HotChocolate.Types;
-using Strg.GraphQL.Subscriptions.Payloads;
+using Strg.GraphQl.Subscriptions.Payloads;
 
-namespace Strg.GraphQL.Types;
+namespace Strg.GraphQl.Types;
 
 public sealed class FileEventOutputType : ObjectType<FileEventPayload>
 {
@@ -2696,16 +2696,16 @@ public sealed class FileEventOutputType : ObjectType<FileEventPayload>
 - [ ] **Step 3: Create `FileSubscriptions.cs`**
 
 ```csharp
-// src/Strg.GraphQL/Subscriptions/FileSubscriptions.cs
+// src/Strg.GraphQl/Subscriptions/FileSubscriptions.cs
 using HotChocolate;
 using HotChocolate.AspNetCore.Authorization;
 using HotChocolate.Subscriptions;
 using HotChocolate.Types;
 using Strg.Core.Events;
-using Strg.GraphQL.DataLoaders;
-using Strg.GraphQL.Subscriptions.Payloads;
+using Strg.GraphQl.DataLoaders;
+using Strg.GraphQl.Subscriptions.Payloads;
 
-namespace Strg.GraphQL.Subscriptions;
+namespace Strg.GraphQl.Subscriptions;
 
 [ExtendObjectType("Subscription")]
 public sealed class FileSubscriptions
@@ -2741,7 +2741,7 @@ public sealed class FileSubscriptions
 - [ ] **Step 4: Run all tests**
 
 ```bash
-dotnet test tests/Strg.GraphQL.Tests -v
+dotnet test tests/Strg.GraphQl.Tests -v
 ```
 Expected: All tests PASS.
 
@@ -2758,7 +2758,7 @@ curl -X POST http://localhost:5000/graphql \
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/Strg.GraphQL/Subscriptions/ src/Strg.GraphQL/Types/FileEventOutputType.cs
+git add src/Strg.GraphQl/Subscriptions/ src/Strg.GraphQl/Types/FileEventOutputType.cs
 git commit -m "feat(graphql): add FileSubscriptions with tenant isolation guard and DataLoader file resolution"
 ```
 
@@ -2769,7 +2769,7 @@ git commit -m "feat(graphql): add FileSubscriptions with tenant isolation guard 
 Run after all tasks complete:
 
 - [ ] `dotnet build` — 0 errors, 0 warnings
-- [ ] `dotnet test tests/Strg.GraphQL.Tests` — all tests pass
+- [ ] `dotnet test tests/Strg.GraphQl.Tests` — all tests pass
 - [ ] Schema introspection: `query { __schema { types { name } } }` — returns all expected types
 - [ ] `Drive.providerConfig` absent from introspection
 - [ ] `*.tenantId` absent from all type introspections

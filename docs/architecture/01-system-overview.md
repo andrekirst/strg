@@ -76,7 +76,7 @@ strg/
 │   │   ├── Identity/           OpenIddict config, LdapConnector
 │   │   └── Events/             MassTransit outbox, event handlers
 │   │
-│   ├── Strg.GraphQL/           Hot Chocolate schema, types, resolvers
+│   ├── Strg.GraphQl/           Hot Chocolate schema, types, resolvers
 │   │   ├── Types/              FileType, DriveType, TagType, UserType, ...
 │   │   ├── Queries/            FileQueries, DriveQueries, SearchQueries
 │   │   ├── Mutations/          FileMutations, TagMutations, ShareMutations
@@ -114,7 +114,7 @@ strg/
 
 - `Strg.Core` references: nothing (no NuGet packages except .NET BCL)
 - `Strg.Infrastructure` references: `Strg.Core`, EF Core, OpenIddict, MassTransit
-- `Strg.GraphQL` references: `Strg.Core`, Hot Chocolate
+- `Strg.GraphQl` references: `Strg.Core`, Hot Chocolate
 - `Strg.WebDav` references: `Strg.Core`, WebDav.Server
 - `Strg.Api` references: all above (composition root)
 

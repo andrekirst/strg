@@ -14,7 +14,7 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// Persists a <see cref="Notification"/> row for every <see cref="QuotaWarningEvent"/> so the
 /// user can read the warning history via the notification centre even when they weren't
 /// connected to a GraphQL subscription at the moment of the threshold crossing. The live
-/// subscription push happens in the Strg.GraphQL-layer consumer; this consumer is the durable
+/// subscription push happens in the Strg.GraphQl-layer consumer; this consumer is the durable
 /// surface.
 ///
 /// <para><b>Idempotency:</b> <see cref="Notification.EventId"/> carries the MassTransit

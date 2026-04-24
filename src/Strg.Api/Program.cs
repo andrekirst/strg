@@ -14,12 +14,12 @@ using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Auditing;
-using Strg.GraphQL.DataLoaders;
-using Strg.GraphQL.Errors;
-using Strg.GraphQL.Mutations;
-using Strg.GraphQL.Queries;
-using Strg.GraphQL.Types;
-using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
+using Strg.GraphQl.DataLoaders;
+using Strg.GraphQl.Errors;
+using Strg.GraphQl.Mutations;
+using Strg.GraphQl.Queries;
+using Strg.GraphQl.Types;
+using GraphQlDriveType = Strg.GraphQl.Types.DriveType;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.HealthChecks;
 using Strg.Infrastructure.Identity;
@@ -135,12 +135,12 @@ builder.Services.AddStrgMassTransit(
     builder.Configuration,
     builder.Environment.IsDevelopment(),
     // Sibling-layer consumers register through this hook because Strg.Infrastructure (where
-    // AddStrgMassTransit is defined) cannot reference Strg.GraphQL or Strg.WebDav without
-    // inverting the layer dependency. GraphQLSubscriptionPublisher depends on ITopicEventSender;
+    // AddStrgMassTransit is defined) cannot reference Strg.GraphQl or Strg.WebDav without
+    // inverting the layer dependency. GraphQlSubscriptionPublisher depends on ITopicEventSender;
     // WebDavJwtCacheInvalidationConsumer (STRG-073 Commit 3) depends on IWebDavJwtCache.
     bus =>
     {
-        bus.AddConsumer<Strg.GraphQL.Consumers.GraphQlSubscriptionPublisher>();
+        bus.AddConsumer<Strg.GraphQl.Consumers.GraphQlSubscriptionPublisher>();
         bus.AddConsumer<Strg.WebDav.Consumers.WebDavJwtCacheInvalidationConsumer>();
     });
 
@@ -180,13 +180,13 @@ var graphql = builder.Services
     .AddMutationType(m => m.Name("Mutation"))
     .AddSubscriptionType(s => s.Name("Subscription"))
     .AddType<UserType>()
-    .AddType<GraphQLDriveType>()
+    .AddType<GraphQlDriveType>()
     .AddType<FileItemType>()
     .AddType<FileVersionType>()
     .AddType<AuditEntryType>()
     .AddType<TagType>()
-    .AddType<Strg.GraphQL.Types.FileEventOutputType>()
-    .AddType<Strg.GraphQL.Subscriptions.FileSubscriptions>()
+    .AddType<Strg.GraphQl.Types.FileEventOutputType>()
+    .AddType<Strg.GraphQl.Subscriptions.FileSubscriptions>()
     .AddType<RootQueryExtension>()
     .AddType<RootMutationExtension>()
     .AddType<FileItemByIdDataLoader>()

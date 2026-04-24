@@ -21,7 +21,7 @@ from `CLAUDE.md`):
 ```
 Strg.Core          → NO external NuGet packages (pure BCL + MS abstractions)
 Strg.Infrastructure → depends on Strg.Core
-Strg.GraphQL       → depends on Strg.Core + Strg.Infrastructure
+Strg.GraphQl       → depends on Strg.Core + Strg.Infrastructure
 Strg.WebDav        → depends on Strg.Core + Strg.Infrastructure
 Strg.Api           → depends on all above
 ```

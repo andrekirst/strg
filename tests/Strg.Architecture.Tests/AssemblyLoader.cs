@@ -1,7 +1,7 @@
 using System.Reflection;
 using MassTransit;
 using Strg.Core.Domain;
-using Strg.GraphQL.Consumers;
+using Strg.GraphQl.Consumers;
 using Strg.Infrastructure.Data;
 using Strg.WebDav;
 
@@ -37,7 +37,7 @@ internal static class AssemblyLoader
         {
             typeof(TenantedEntity).Assembly,              // Strg.Core
             typeof(StrgDbContext).Assembly,               // Strg.Infrastructure
-            typeof(GraphQlSubscriptionPublisher).Assembly, // Strg.GraphQL
+            typeof(GraphQlSubscriptionPublisher).Assembly, // Strg.GraphQl
             typeof(IStrgWebDavStore).Assembly,            // Strg.WebDav
             typeof(IConsumer<>).Assembly,                 // MassTransit (for IConsumer<T>)
         };
@@ -50,7 +50,7 @@ internal static class AssemblyLoader
 
         // Strg.Api is intentionally not referenced by this project (see csproj comment).
         // No consumer lives there anyway — the GraphQL bridge consumer lands via a
-        // Program.cs callback and the consumer type itself lives in Strg.GraphQL.
+        // Program.cs callback and the consumer type itself lives in Strg.GraphQl.
 
         return AppDomain.CurrentDomain
             .GetAssemblies()

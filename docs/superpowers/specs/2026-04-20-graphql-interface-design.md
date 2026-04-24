@@ -376,7 +376,7 @@ type InboxFileProcessedEvent {
 ## HC Server Registration (OCP Pattern)
 
 ```csharp
-// IGraphQLMarker is an empty interface in Strg.GraphQL — assembly anchor only
+// IGraphQLMarker is an empty interface in Strg.GraphQl — assembly anchor only
 internal interface IGraphQLMarker { }
 
 // Program.cs — never needs editing when adding new types
@@ -491,7 +491,7 @@ All DataLoaders inherit `BatchDataLoader<Guid, T>` and are auto-discovered by as
 ## Project Structure
 
 ```
-src/Strg.GraphQL/
+src/Strg.GraphQl/
 ├── IGraphQLMarker.cs               empty assembly anchor interface
 ├── Topics.cs                       subscription topic name helpers
 ├── Types/

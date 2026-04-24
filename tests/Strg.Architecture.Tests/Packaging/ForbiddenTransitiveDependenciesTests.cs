@@ -68,7 +68,7 @@ public sealed class ForbiddenTransitiveDependenciesTests
         // (Strg.Api) is referenced; this Architecture.Tests project deliberately omits that
         // reference (see csproj comment) so the test surface stays buildable even when in-flight
         // work on Strg.Api has transient compile errors. Abstractions IS in the graph — both
-        // Strg.Infrastructure and Strg.GraphQL take it via FrameworkReference
+        // Strg.Infrastructure and Strg.GraphQl take it via FrameworkReference
         // Microsoft.AspNetCore.App, and it ships in lockstep with Microsoft.AspNetCore.Http from
         // the same shared framework, so a rogue downgrade pin would move both together.
         _ = AssemblyLoader.StrgAssemblies;

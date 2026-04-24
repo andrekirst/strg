@@ -81,7 +81,7 @@ public static class MassTransitExtensions
             bus.AddConsumer<QuotaNotificationConsumer>();
             bus.AddConsumer<SearchIndexConsumer>();
 
-            // GraphQLSubscriptionPublisher lives in Strg.GraphQL (so it can see ITopicEventSender),
+            // GraphQlSubscriptionPublisher lives in Strg.GraphQl (so it can see ITopicEventSender),
             // which Strg.Infrastructure cannot reference without inverting the layer dependency.
             // Strg.Api wires it in via this hook — see AddStrgMassTransit caller in Program.cs.
             configureConsumers?.Invoke(bus);

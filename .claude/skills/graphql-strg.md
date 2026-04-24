@@ -5,7 +5,7 @@ description: Use when implementing, reviewing, or extending any GraphQL type, qu
 
 # GraphQL Implementation Guide for strg
 
-This skill governs all GraphQL work in `src/Strg.GraphQL/`. Deviating from these patterns requires a design revision — do not improvise.
+This skill governs all GraphQL work in `src/Strg.GraphQl/`. Deviating from these patterns requires a design revision — do not improvise.
 
 ## Non-Negotiable Rules
 

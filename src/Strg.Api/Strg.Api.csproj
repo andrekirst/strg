@@ -33,7 +33,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
     <ProjectReference Include="..\Strg.Infrastructure\Strg.Infrastructure.csproj" />
-    <ProjectReference Include="..\Strg.GraphQL\Strg.GraphQL.csproj" />
+    <ProjectReference Include="..\Strg.GraphQl\Strg.GraphQl.csproj" />
     <ProjectReference Include="..\Strg.WebDav\Strg.WebDav.csproj" />
   </ItemGroup>
 

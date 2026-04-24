@@ -34,9 +34,9 @@ namespace Strg.Integration.Tests.Subscriptions;
 /// <c>Should().Be(broken)</c>.</para>
 ///
 /// <para><b>Why Integration.Tests and not GraphQL.Tests.</b> <c>WebApplicationFactory&lt;Program&gt;</c>
-/// requires a project reference to <c>Strg.Api</c>. <c>Strg.GraphQL.Tests</c> deliberately
+/// requires a project reference to <c>Strg.Api</c>. <c>Strg.GraphQl.Tests</c> deliberately
 /// omits that reference so its build surface stays decoupled from host-wiring in-flight work
-/// (see <c>Strg.GraphQL.Tests.csproj</c>). <c>Strg.Integration.Tests</c> already owns the
+/// (see <c>Strg.GraphQl.Tests.csproj</c>). <c>Strg.Integration.Tests</c> already owns the
 /// <c>StrgWebApplicationFactory</c> harness, so this test lives here.</para>
 /// </summary>
 public sealed class UnauthenticatedSubscriptionRejectionTests(StrgWebApplicationFactory factory)

@@ -2,7 +2,7 @@
 
 Holds solution-wide invariants that no single-project test can enforce:
 
-- **Layer-direction guards** — e.g. `Strg.Infrastructure` must not reference `Strg.GraphQL`.
+- **Layer-direction guards** — e.g. `Strg.Infrastructure` must not reference `Strg.GraphQl`.
 - **DI wiring invariants** — e.g. every `Strg.Core.Events.*` domain event has at least one registered consumer.
 - **Transitive-package guards** — e.g. the CVE-vulnerable `NWebDav.Server.AspNetCore` must never appear in the bin/ graph.
 - **Shape guards on base types** — e.g. `TenantedEntity.TenantId` must stay init-only.

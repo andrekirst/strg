@@ -7,7 +7,7 @@
   <Folder Name="/src/">
     <Project Path="src/Strg.Api/Strg.Api.csproj" />
     <Project Path="src/Strg.Core/Strg.Core.csproj" />
-    <Project Path="src/Strg.GraphQL/Strg.GraphQL.csproj" />
+    <Project Path="src/Strg.GraphQl/Strg.GraphQl.csproj" />
     <Project Path="src/Strg.Infrastructure/Strg.Infrastructure.csproj" />
     <Project Path="src/Strg.WebDav/Strg.WebDav.csproj" />
   </Folder>
@@ -15,7 +15,7 @@
     <Project Path="tests/Strg.Api.Tests/Strg.Api.Tests.csproj" />
     <Project Path="tests/Strg.Architecture.Tests/Strg.Architecture.Tests.csproj" />
     <Project Path="tests/Strg.Core.Tests/Strg.Core.Tests.csproj" />
-    <Project Path="tests/Strg.GraphQL.Tests/Strg.GraphQL.Tests.csproj" />
+    <Project Path="tests/Strg.GraphQl.Tests/Strg.GraphQl.Tests.csproj" />
     <Project Path="tests/Strg.Integration.Tests/Strg.Integration.Tests.csproj" />
   </Folder>
 </Solution>

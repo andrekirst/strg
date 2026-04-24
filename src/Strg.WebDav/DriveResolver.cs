@@ -13,7 +13,7 @@ namespace Strg.WebDav;
 ///
 /// <para><b>Path-traversal defence.</b> <c>driveName</c> arrives straight from the URL segment.
 /// The <see cref="ValidDriveName"/> pattern is the twin of
-/// <c>Strg.GraphQL.Mutations.Storage.DriveMutations.ValidDriveName</c> — same shape as the
+/// <c>Strg.GraphQl.Mutations.Storage.DriveMutations.ValidDriveName</c> — same shape as the
 /// write-side guard, so a name that can't be created via GraphQL can't be impersonated via the
 /// WebDAV URL either. A <c>/</c>, <c>..</c>, or NUL byte trips the regex and the resolver returns
 /// <c>null</c> before the DB is touched.</para>

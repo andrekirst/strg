@@ -6,8 +6,11 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
+using Strg.Api.Cors;
 using Strg.Api.Endpoints;
 using Strg.Api.OpenApi;
+using Strg.Api.RateLimiting;
+using Strg.Api.Security;
 using Strg.Application.Abstractions;
 using Strg.Application.DependencyInjection;
 using Strg.Core.Auditing;
@@ -33,6 +36,13 @@ using Strg.Infrastructure.Versioning;
 using Strg.WebDav;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// STRG-010 — suppress Kestrel's default `Server: Kestrel` response header. The security-headers
+// middleware cannot do this alone: Kestrel writes the Server header at the connection layer,
+// AFTER HttpResponse.OnStarting callbacks fire, so Response.Headers.Remove("Server") from user
+// middleware is a no-op against the default. AddServerHeader=false at the host level is the
+// only reliable switch.
+builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 
 // ---- Logging (STRG-006, partial) ----
 // Replaces the default Microsoft.Extensions.Logging provider with Serilog so that
@@ -100,6 +110,26 @@ builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 // Spec + UI wiring. The UI is gated by environment in UseStrgOpenApi below; registration of
 // the generator itself is always on so the JSON/YAML endpoints work in production.
 builder.Services.AddStrgOpenApi();
+
+// ---- CORS + rate limiting + HSTS (STRG-010) ----
+// AddStrgCors reads Cors:AllowedOrigins from configuration and fails startup on wildcard
+// entries — AllowCredentials() makes '*' spec-invalid and otherwise surfaces only as a
+// browser-side CORS rejection at request time, which is hard to trace back to config.
+// AddStrgRateLimiting registers an in-memory fixed-window limiter (GlobalLimiter + Auth named
+// policy). STRG-117 migrates the limiter store to Redis for multi-node deployments.
+builder.Services.AddStrgCors(builder.Configuration);
+builder.Services.AddStrgRateLimiting(builder.Configuration);
+
+// HSTS values per STRG-010 AC2: max-age=31536000 (1 year), includeSubDomains, preload NOT set
+// (security-review checklist: "HSTS preload is NOT set (risky for new domains)"). The default
+// MaxAge is 30 days — too low for the issue's "(max-age=31536000; includeSubDomains)" pin —
+// so this override is load-bearing. UseHsts itself remains env-gated below.
+builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HstsOptions>(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+    options.Preload = false;
+});
 
 // Storage providers (STRG-021/023/024). AddStrgStorageProviders registers the singleton registry
 // AND the "local" built-in factory atomically — splitting these into two steps would leave a
@@ -231,7 +261,29 @@ if (!builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
+// ---- HTTPS redirection + HSTS (STRG-010) ----
+// UseHttpsRedirection sits at the top so every downstream middleware (including the /dav branch
+// and the OpenAPI spec endpoints) sees the upgraded scheme. In TestServer-hosted integration
+// tests no HTTPS port is bound, so the middleware logs a warning and no-ops — existing tests
+// continue to pass unchanged. UseHsts is env-gated because (a) the header is browser-cached
+// for a year and (b) UseHsts excludes loopback by default, so it would no-op under TestServer
+// anyway; the env gate is the canonical pattern. Preload is deliberately NOT set (security
+// checklist: "HSTS preload is NOT set (risky for new domains)").
+app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
 app.UseRouting();
+
+// ---- Security headers (STRG-010) ----
+// Registered BEFORE the /dav map and UseStrgOpenApi: both short-circuit by path (DAV branch
+// has no endpoint metadata, Swashbuckle matches by path) and a header middleware registered
+// AFTER them would never run on those responses. SecurityHeadersMiddleware uses
+// HttpResponse.OnStarting so headers attach even when a downstream middleware writes the
+// response synchronously (Swashbuckle, Results.File, OpenIddict token writes all do this).
+app.UseStrgSecurityHeaders();
 
 // STRG-067 — WebDAV branches off BEFORE the app-level UseAuthentication()/UseAuthorization() so
 // its middleware terminal (no endpoint metadata) doesn't get caught by the FallbackPolicy
@@ -275,16 +327,41 @@ var openApiUiEnabled = builder.Configuration.GetValue<bool?>("Strg:OpenApi:UiEna
     ?? app.Environment.IsDevelopment();
 app.UseStrgOpenApi(openApiUiEnabled);
 
+// ---- CORS (STRG-010) ----
+// Placed AFTER the /dav map by deliberate choice. RFC 4918 §10.1 makes OPTIONS the WebDAV
+// capability-discovery verb; UseCors's preflight short-circuit would otherwise intercept
+// browser-origin OPTIONS requests to /dav and prevent StrgWebDavMiddleware from emitting the
+// Allow/DAV headers WebDAV clients require. Browsers don't speak DAV so they don't issue
+// cross-origin DAV preflights — keeping CORS scoped after the Map preserves RFC-compliant
+// paths for Finder/Explorer while still guarding every REST/GraphQL surface below.
+app.UseCors(StrgCorsServiceCollectionExtensions.PolicyName);
+
+// ---- Request logging (STRG-006) ----
+// After CORS so the log line reflects the resolved CORS outcome; before auth so unauthenticated
+// 401 responses are still captured in request telemetry.
+app.UseSerilogRequestLogging();
+
+// ---- Rate limiting (STRG-010) ----
+// AFTER UseRouting (endpoint-specific RequireRateLimiting metadata needs the matched endpoint),
+// AFTER UseStrgOpenApi (don't throttle anonymous spec fetches), and BEFORE UseAuthentication —
+// the security-review checklist explicitly requires "rate limit before auth (prevents auth
+// bypass via rate-limit exploit)". Health checks and /metrics chain DisableRateLimiting() on
+// their endpoint mappings below to bypass the limiter.
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseWebSockets();
 
 // AllowAnonymous is required because the fallback authorization policy (RequireAuthenticatedUser)
-// would otherwise reject unauthenticated Prometheus scrape requests with 401.
-app.MapPrometheusScrapingEndpoint("/metrics").AllowAnonymous();
+// would otherwise reject unauthenticated Prometheus scrape requests with 401. DisableRateLimiting
+// is required per STRG-010 AC: "/metrics endpoint bypass auth and rate limiting".
+app.MapPrometheusScrapingEndpoint("/metrics")
+    .AllowAnonymous()
+    .DisableRateLimiting();
 
-// ---- Health endpoints (STRG-008) ----
+// ---- Health endpoints (STRG-008 + STRG-010) ----
 // .AllowAnonymous() is mandatory: the FallbackPolicy above is RequireAuthenticatedUser and
 // would otherwise 401 every K8s probe (probes cannot present credentials). /health/live has
 // zero checks → 200 as long as the process serves HTTP. /health/ready runs the "ready"-tagged
@@ -292,19 +369,19 @@ app.MapPrometheusScrapingEndpoint("/metrics").AllowAnonymous();
 // the captured Exception (Npgsql exception messages embed the database host/username and would
 // leak via the default UIResponseWriter — see SafeHealthCheckResponseWriter XML docs).
 //
-// NOTE: no rate limiter is currently registered in this pipeline. If AspNetCore.RateLimiting
-// is added later, both endpoints MUST receive .DisableRateLimiting() so K8s probes are not
-// throttled.
+// .DisableRateLimiting() satisfies STRG-010 AC "Health check endpoints bypass rate limiting" —
+// K8s probes burst at a steady cadence and are explicitly exempt from the global limiter so
+// the probe cadence itself cannot exhaust the pod's budget for real traffic.
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = _ => false,
-}).AllowAnonymous();
+}).AllowAnonymous().DisableRateLimiting();
 
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("strg-ready"),
     ResponseWriter = SafeHealthCheckResponseWriter.WriteAsync,
-}).AllowAnonymous();
+}).AllowAnonymous().DisableRateLimiting();
 
 app.MapGraphQL();
 app.MapTokenEndpoints();

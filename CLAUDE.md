@@ -297,20 +297,23 @@ per role.
 
 Slash commands in `.claude/commands/` drive these teams:
 
-| Command                    | Arguments       | What it does                              |
-|----------------------------|-----------------|-------------------------------------------|
-| `/implement-issue <ID>`    | `STRG-xxx` or `CC-xxx` (validated with `^(STRG\|CC)-\d{3}$` — arguments that do not match are rejected before any filesystem access) | Runs the feature-dev team end-to-end on the issue. |
-| `/review-pr`               | *(none)*        | Runs the review team on the current diff. |
-| `/next-issue`              | *(none)*        | Finds the next unblocked issue in the dependency graph. |
+| Command                       | Arguments       | What it does                              |
+|-------------------------------|-----------------|-------------------------------------------|
+| `/implement-issue <ISSUE>`    | GitHub issue reference: `123`, `#123`, or `https://github.com/<owner>/<repo>/issues/<n>` (validated with `^(#?\d+\|https://github\.com/[^/]+/[^/]+/issues/\d+)$` — arguments that do not match are rejected before `gh` is invoked; cross-repo URLs are rejected after `gh repo view` resolves the local repo) | Fetches the GitHub issue via `gh`, then runs the feature-dev team end-to-end on its body. |
+| `/review-pr`                  | *(none)*        | Runs the review team on the current diff. |
+| `/next-issue`                 | *(none)*        | Finds the next unblocked issue in the dependency graph. |
 
 ### Typical workflow
 
 1. `/next-issue` → pick the next unblocked issue.
-2. `/implement-issue STRG-xxx` → feature-dev team implements it.
+2. `/implement-issue 57` (or `#57`, or the full URL) → feature-dev team
+   implements it from the GitHub issue body.
 3. Optionally spawn the security team against the diff if the change is
    sensitive (auth, storage, paths, sharing, plugins).
 4. `/review-pr` → review team checks conventions and test coverage.
-5. Commit; the issue frontmatter flips to `status: done` as part of step 2.
+5. Commit / open a PR; the GitHub issue is closed via `gh issue close`
+   only after the gates in Step 8 pass AND the human caller explicitly
+   confirms — the command never auto-closes.
 
 ### Subagent-type mapping
 
@@ -324,12 +327,15 @@ role-specific prompt template.
 
 ### Enforcement caveats (honest disclosure)
 
-- The `^(STRG|CC)-\d{3}$` argument guard on `/implement-issue` is a
-  **prompt-level convention**, not a harness-level sandbox. If the agent
-  follows the command body, traversal arguments are rejected before any
-  filesystem access; if the agent skips Step 0 it is not stopped. A
-  `PreToolUse` hook in `.claude/settings.json` would be the hard
-  enforcement upgrade if it is ever needed.
+- The `^(#?\d+|https://github\.com/[^/]+/[^/]+/issues/\d+)$` argument guard
+  on `/implement-issue` is a **prompt-level convention**, not a
+  harness-level sandbox. If the agent follows the command body, malformed
+  arguments are rejected before `gh` is invoked; if the agent skips Step 0
+  it is not stopped. A `PreToolUse` hook in `.claude/settings.json` that
+  blocks `Bash(gh ...)` invocations on argument-mismatch would be the hard
+  enforcement upgrade if it is ever needed. The cross-repo guard in Step 1
+  is similarly prompt-enforced — `gh` itself will happily fetch issues
+  from other repos given a URL.
 - Review-only roles (`impl-self-reviewer`, `code-reviewer`,
   `pr-test-analyzer`, `type-design-analyzer`, `comment-analyzer`,
   `security-reviewer`, `silent-failure-hunter`, `threat-modeler`) are

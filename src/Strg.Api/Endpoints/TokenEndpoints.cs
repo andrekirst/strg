@@ -2,6 +2,7 @@ using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using Strg.Api.RateLimiting;
 using Strg.Core.Auditing;
 using Strg.Core.Constants;
 using Strg.Core.Identity;
@@ -23,6 +24,7 @@ public static class TokenEndpoints
     {
         app.MapPost("/connect/token", ExchangeAsync)
             .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicies.Auth)
             .WithName("Exchange")
             .WithTags("Auth")
             .Produces(StatusCodes.Status200OK, contentType: MediaTypeNames.Application.Json)

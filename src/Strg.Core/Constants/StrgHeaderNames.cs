@@ -14,4 +14,18 @@ public static class StrgHeaderNames
     /// nginx, traefik, and cloud load balancers emit out-of-the-box.
     /// </summary>
     public const string XForwardedFor = "X-Forwarded-For";
+
+    /// <summary>
+    /// <c>Referrer-Policy</c> response header (STRG-010). Controls how much of the origin
+    /// URL is sent as the <c>Referer</c> in outbound navigations. Absent from
+    /// <c>Microsoft.Net.Http.Headers.HeaderNames</c> as of ASP.NET Core 10.
+    /// </summary>
+    public const string ReferrerPolicy = "Referrer-Policy";
+
+    /// <summary>
+    /// <c>Permissions-Policy</c> response header (STRG-010). Successor to <c>Feature-Policy</c>;
+    /// restricts which browser-feature APIs (geolocation, camera, microphone, …) the served
+    /// document may invoke. Not exposed by <c>Microsoft.Net.Http.Headers.HeaderNames</c>.
+    /// </summary>
+    public const string PermissionsPolicy = "Permissions-Policy";
 }

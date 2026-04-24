@@ -103,6 +103,17 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
                 // exercises the EXACT path a real operator hits. If this hard-code is ever
                 // re-introduced, the factory would diverge from production and the silent-401
                 // regression would resurface undetected.
+
+                // STRG-010 — raise the rate-limit budgets to "effectively unlimited" by default
+                // so existing test classes (BruteForceLockoutTests in particular, which sends
+                // 20+ token requests across its three test methods) are not throttled by the
+                // production-shaped Auth=10/min and Global=1000/min defaults. Tests that
+                // specifically want to exercise the limiter (Middleware/RateLimitingTests)
+                // override these via WithWebHostBuilder. The numbers chosen leave the production
+                // pipeline structure intact — the limiter still runs, the policies are still
+                // attached, only the budgets are wider.
+                ["RateLimiting:Auth:PermitLimit"] = "100000",
+                ["RateLimiting:Global:PermitLimit"] = "100000",
             });
         });
 

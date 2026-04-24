@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using HotChocolate.Types;
 using Strg.Infrastructure.Data;
 using DomainTag = Strg.Core.Domain.Tag;
 

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Net.Http.Headers;
 
@@ -38,7 +37,7 @@ internal static class SafeHealthCheckResponseWriter
         context.Response.Headers[HeaderNames.CacheControl] = "no-store, no-cache";
 
         using var buffer = new MemoryStream();
-        using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
+        await using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteString("status", report.Status.ToString());

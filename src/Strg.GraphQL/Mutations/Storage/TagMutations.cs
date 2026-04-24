@@ -1,5 +1,4 @@
 using HotChocolate.Authorization;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.GraphQL.Inputs.Tag;
 using DomainTag = Strg.Core.Domain.Tag;

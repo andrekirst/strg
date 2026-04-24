@@ -15,28 +15,18 @@ namespace Strg.Infrastructure.HealthChecks;
 ///
 /// <para><b>Why this isn't tagged with the Drive's per-tenant identity:</b> Kubernetes probes
 /// run unauthenticated, so <c>ITenantContext.TenantId</c> is <see cref="Guid.Empty"/> here.
-/// The query uses <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters"/>
+/// The query uses <c>EntityFrameworkQueryableExtensions.IgnoreQueryFilters</c>
 /// (carve-out per CLAUDE.md §Security #1, same shape as
 /// <c>UserRepository.GetByEmailAsync</c>) and re-applies <c>DeletedAt == null</c> inline so soft-deleted
 /// drives are still excluded.</para>
 /// </summary>
-public sealed class StorageHealthCheck : IHealthCheck
+public sealed class StorageHealthCheck(
+    StrgDbContext db,
+    IStorageProviderRegistry providerRegistry,
+    ILogger<StorageHealthCheck> logger)
+    : IHealthCheck
 {
     private const string LocalProviderType = "local";
-
-    private readonly StrgDbContext _db;
-    private readonly IStorageProviderRegistry _providerRegistry;
-    private readonly ILogger<StorageHealthCheck> _logger;
-
-    public StorageHealthCheck(
-        StrgDbContext db,
-        IStorageProviderRegistry providerRegistry,
-        ILogger<StorageHealthCheck> logger)
-    {
-        _db = db;
-        _providerRegistry = providerRegistry;
-        _logger = logger;
-    }
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
@@ -49,7 +39,7 @@ public sealed class StorageHealthCheck : IHealthCheck
             // EF Core tenant filter would hide every Drive. Carve-out per CLAUDE.md §Security #1
             // (same pattern as UserRepository.GetByEmailAsync). IsDeleted is computed (DeletedAt
             // backed) so the soft-delete filter is re-applied inline via DeletedAt == null.
-            defaultLocalDrive = await _db.Drives
+            defaultLocalDrive = await db.Drives
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
@@ -66,7 +56,7 @@ public sealed class StorageHealthCheck : IHealthCheck
             {
                 throw;
             }
-            _logger.LogDebug(ex, "Storage health check skipped: database unreachable");
+            logger.LogDebug(ex, "Storage health check skipped: database unreachable");
             return HealthCheckResult.Healthy("database unreachable; storage check skipped");
         }
 
@@ -89,7 +79,7 @@ public sealed class StorageHealthCheck : IHealthCheck
         try
         {
             var providerConfig = ParseProviderConfig(defaultLocalDrive.ProviderConfig);
-            var provider = _providerRegistry.Resolve(defaultLocalDrive.ProviderType, providerConfig);
+            var provider = providerRegistry.Resolve(defaultLocalDrive.ProviderType, providerConfig);
 
             // Per-process sentinel name avoids collisions when multiple replicas share a mount.
             var sentinel = $".strg-healthcheck-{Environment.ProcessId}";
@@ -114,7 +104,7 @@ public sealed class StorageHealthCheck : IHealthCheck
             // contains the full filesystem path (e.g. "Access to the path
             // '/var/lib/strg/drives/.../.strg-healthcheck-12345' is denied"). Logging carries
             // the diagnostic detail to operators; the wire response stays opaque.
-            _logger.LogWarning(
+            logger.LogWarning(
                 ex,
                 "Storage health probe failed for drive {DriveId} (provider {ProviderType})",
                 defaultLocalDrive.Id,

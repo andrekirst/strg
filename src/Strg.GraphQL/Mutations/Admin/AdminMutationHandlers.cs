@@ -1,5 +1,4 @@
 using HotChocolate.Authorization;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.GraphQL.Inputs.Admin;
 using Strg.GraphQL.Payloads;

@@ -48,9 +48,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
 
-        var v1 = await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        var v2 = await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        var v3 = await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        var v1 = await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        var v2 = await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        var v3 = await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
 
         v1.VersionNumber.Should().Be(1);
         v2.VersionNumber.Should().Be(2);
@@ -64,8 +64,8 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
 
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 111, 130, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 222, 240, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 111, 130, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 222, 240, seed.UserId);
 
         var reloaded = await fx.ReloadFileAsync(seed.File.Id);
         reloaded.VersionCount.Should().Be(2);
@@ -80,7 +80,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 10_000);
 
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 1_500, blobSizeBytes: 1_600, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 1_500, blobSizeBytes: 1_600, seed.UserId);
 
         // Only size (plaintext) moves UsedBytes; blobSizeBytes is not quota-relevant.
         var user = await fx.ReloadUserAsync(seed.UserId);
@@ -97,7 +97,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 1_000);
 
-        var act = () => fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 1_500, 1_600, seed.UserId, default);
+        var act = () => fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 1_500, 1_600, seed.UserId);
         await act.Should().ThrowAsync<QuotaExceededException>();
 
         var versionCount = await fx.CountFileVersionsAsync(seed.File.Id);
@@ -116,10 +116,10 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
 
-        var version = await fx.Store.GetVersionAsync(seed.File.Id, versionNumber: 2, default);
+        var version = await fx.Store.GetVersionAsync(seed.File.Id, versionNumber: 2);
 
         version.Should().NotBeNull();
         version!.StorageKey.Should().Be("blob/v2");
@@ -131,11 +131,11 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
 
-        var versions = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var versions = await fx.Store.GetVersionsAsync(seed.File.Id);
 
         versions.Select(v => v.VersionNumber).Should().ContainInOrder(3, 2, 1);
     }
@@ -148,11 +148,11 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fxA = await CreateFixtureAsync();
         var seedA = await fxA.SeedFileAsync(quotaBytes: 100_000_000);
-        await fxA.Store.CreateVersionAsync(seedA.File, "blob/v1", Hash("v1"), 100, 120, seedA.UserId, default);
+        await fxA.Store.CreateVersionAsync(seedA.File, "blob/v1", Hash("v1"), 100, 120, seedA.UserId);
 
         var fxB = await fxA.WithNewTenantAsync();
 
-        var version = await fxB.Store.GetVersionAsync(seedA.File.Id, versionNumber: 1, default);
+        var version = await fxB.Store.GetVersionAsync(seedA.File.Id, versionNumber: 1);
 
         version.Should().BeNull("a tenant B query must NOT resolve a tenant A file's versions");
     }
@@ -163,18 +163,18 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
 
         // Seed the storage blobs so we can assert the physical deletes.
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
         await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
 
-        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id);
         remaining.Should().HaveCount(1);
         remaining[0].VersionNumber.Should().Be(3);
 
@@ -189,14 +189,14 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 0, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 0);
 
-        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id);
         remaining.Should().HaveCount(2, "keepCount:0 means retention disabled, not mass-delete");
         (await fx.Provider.ExistsAsync("blob/v1")).Should().BeTrue();
         (await fx.Provider.ExistsAsync("blob/v2")).Should().BeTrue();
@@ -207,9 +207,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
         await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
@@ -217,7 +217,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         // Before prune: UsedBytes = 100 + 200 + 300 = 600.
         (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(600);
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
 
         var user = await fx.ReloadUserAsync(seed.UserId);
         user.UsedBytes.Should().Be(300, "pruning v1 (100) + v2 (200) releases 300 bytes; v3 (300) remains");
@@ -232,14 +232,14 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
         await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
 
         var entries = await fx.LoadPruneAuditEntriesAsync(seed.File.Id);
         entries.Should().HaveCount(1, "one bulk entry per successful prune, not one per iteration");
@@ -263,10 +263,10 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
 
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), 400, 420, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), 400, 420, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
         await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
@@ -276,7 +276,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 2);
         var store = fx.BuildStore(failingProvider);
 
-        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
         await act.Should().ThrowAsync<IOException>();
 
         var entries = await fx.LoadPruneAuditEntriesAsync(seed.File.Id);
@@ -297,9 +297,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), 300, 320, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
         await fx.Provider.WriteAsync("blob/v3", new MemoryStream([0x03]));
@@ -308,7 +308,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         // No throw: the per-version loop committed before the audit write is attempted, so the
         // simulated outage is swallowed per the IAuditService contract on non-auth paths.
-        await store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
 
         // Distinct assertions discriminate between the two regression shapes: (a) the swallow
         // was removed — first assertion throws; (b) the swallow was moved somewhere that skipped
@@ -327,14 +327,14 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), 100, 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), 200, 220, seed.UserId);
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 5, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 5);
 
-        (await fx.Store.GetVersionsAsync(seed.File.Id, default)).Should().HaveCount(2);
+        (await fx.Store.GetVersionsAsync(seed.File.Id)).Should().HaveCount(2);
         (await fx.Provider.ExistsAsync("blob/v1")).Should().BeTrue();
         (await fx.Provider.ExistsAsync("blob/v2")).Should().BeTrue();
     }
@@ -352,9 +352,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     {
         var fxA = await CreateFixtureAsync();
         var seedA = await fxA.SeedFileAsync(quotaBytes: 100_000_000);
-        await fxA.Store.CreateVersionAsync(seedA.File, "blob/cross/v1", Hash("v1"), 100, 120, seedA.UserId, default);
-        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v2", Hash("v2"), 200, 220, seedA.UserId, default);
-        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v3", Hash("v3"), 300, 320, seedA.UserId, default);
+        await fxA.Store.CreateVersionAsync(seedA.File, "blob/cross/v1", Hash("v1"), 100, 120, seedA.UserId);
+        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v2", Hash("v2"), 200, 220, seedA.UserId);
+        await fxA.Store.CreateVersionAsync(await fxA.ReloadFileAsync(seedA.File.Id), "blob/cross/v3", Hash("v3"), 300, 320, seedA.UserId);
         await fxA.Provider.WriteAsync("blob/cross/v1", new MemoryStream([0x01]));
         await fxA.Provider.WriteAsync("blob/cross/v2", new MemoryStream([0x02]));
         await fxA.Provider.WriteAsync("blob/cross/v3", new MemoryStream([0x03]));
@@ -363,12 +363,12 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         // Act — tenant B attempts to prune tenant A's file. Must not throw (no oracle via
         // exception type) and must silently return.
-        var act = () => fxB.Store.PruneVersionsAsync(seedA.File.Id, keepCount: 1, default);
+        var act = () => fxB.Store.PruneVersionsAsync(seedA.File.Id, keepCount: 1);
         await act.Should().NotThrowAsync(
             "a cross-tenant Prune is a silent no-op — throwing NotFoundException would leak existence to tenant B");
 
         // FileVersion rows in tenant A must be intact.
-        (await fxA.Store.GetVersionsAsync(seedA.File.Id, default)).Should().HaveCount(3,
+        (await fxA.Store.GetVersionsAsync(seedA.File.Id)).Should().HaveCount(3,
             "cross-tenant Prune must NOT delete rows belonging to another tenant");
 
         // Blobs must be intact — a reaper that bypassed the tenant check would orphan tenant A's
@@ -412,11 +412,11 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         // Distinct sizes per version → quota arithmetic is unambiguous across release-math
         // errors (equal sizes would mask a release-wrong-version bug).
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId);
 
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
@@ -432,7 +432,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3);
         var store = fx.BuildStore(failingProvider);
 
-        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
         var thrown = await act.Should().ThrowAsync<IOException>(
             "the provider failure must bubble unchanged through PruneVersionsAsync — catching it "
             + "would hide partial-failure state from the caller and prevent retry-driven recovery");
@@ -443,7 +443,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         // DB state: iterations [0..1] committed (v4, v3 rows gone), iter 2 (v2) row PRESENT because
         // its tx was never opened, iter 3 (v1) never attempted. Plus the kept v5.
-        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id);
         remaining.Select(v => v.VersionNumber).Should().ContainInOrder(5, 2, 1);
         remaining.Should().HaveCount(3,
             "surviving VersionNumbers are {1,2,5} — a middle gap at {3,4} is the documented shape of "
@@ -489,11 +489,11 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
 
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId);
 
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
@@ -506,10 +506,10 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         // needed as the retry precondition.
         var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3);
         var failingStore = fx.BuildStore(failingProvider);
-        var firstAttempt = () => failingStore.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var firstAttempt = () => failingStore.PruneVersionsAsync(seed.File.Id, keepCount: 1);
         await firstAttempt.Should().ThrowAsync<IOException>();
 
-        var afterFirst = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var afterFirst = await fx.Store.GetVersionsAsync(seed.File.Id);
         afterFirst.Select(v => v.VersionNumber).Should().ContainInOrder(new[] { 5, 2, 1 },
             "partial failure must leave {1,2,5} — retry precondition");
         (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(800,
@@ -519,9 +519,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         // retry re-reads versions (now {v5, v2, v1}), computes toPrune = {v2, v1} under the same
         // keepCount=1, and walks the per-version loop to completion. No manual state reset
         // between attempts — the retry contract is that the caller just calls Prune again.
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
 
-        var afterRetry = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var afterRetry = await fx.Store.GetVersionsAsync(seed.File.Id);
         afterRetry.Should().HaveCount(1, "retry must resume pruning the tail beyond keepCount=1");
         afterRetry[0].VersionNumber.Should().Be(5, "only the kept (newest) version survives the full lifecycle");
 
@@ -561,11 +561,11 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var fx = await CreateFixtureAsync();
         var seed = await fx.SeedFileAsync(quotaBytes: 100_000_000);
 
-        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId, default);
-        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId, default);
+        await fx.Store.CreateVersionAsync(seed.File, "blob/v1", Hash("v1"), size: 100, blobSizeBytes: 120, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v2", Hash("v2"), size: 200, blobSizeBytes: 220, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v3", Hash("v3"), size: 300, blobSizeBytes: 320, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v4", Hash("v4"), size: 400, blobSizeBytes: 420, seed.UserId);
+        await fx.Store.CreateVersionAsync(await fx.ReloadFileAsync(seed.File.Id), "blob/v5", Hash("v5"), size: 500, blobSizeBytes: 520, seed.UserId);
 
         await fx.Provider.WriteAsync("blob/v1", new MemoryStream([0x01]));
         await fx.Provider.WriteAsync("blob/v2", new MemoryStream([0x02]));
@@ -579,7 +579,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var failingProvider = new ThrowOnNthDeleteProvider(fx.Provider, throwOnNthCall: 3, throwAfterInner: true);
         var store = fx.BuildStore(failingProvider);
 
-        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1, default);
+        var act = () => store.PruneVersionsAsync(seed.File.Id, keepCount: 1);
         var thrown = await act.Should().ThrowAsync<IOException>(
             "the post-inner-delete throw must still bubble — per-version-scope relies on the caller "
             + "observing the failure to trigger retry");
@@ -592,7 +592,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         // DB rows: iters 1 + 2 committed (v4, v3 gone), iter 3's row PRESERVED because its tx
         // never opened. Plus the kept v5 and the untouched v1. Count = 3.
-        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id);
         remaining.Select(v => v.VersionNumber).Should().ContainInOrder(5, 2, 1);
         remaining.Should().HaveCount(3,
             "v2's row must survive — its remove + quota release were inside the tx the post-delete throw "
@@ -626,13 +626,13 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         for (var i = 1; i <= 5; i++)
         {
             var file = i == 1 ? seed.File : await fx.ReloadFileAsync(seed.File.Id);
-            await fx.Store.CreateVersionAsync(file, $"blob/v{i}", Hash($"v{i}"), 10, 12, seed.UserId, default);
+            await fx.Store.CreateVersionAsync(file, $"blob/v{i}", Hash($"v{i}"), 10, 12, seed.UserId);
             await fx.Provider.WriteAsync($"blob/v{i}", new MemoryStream([(byte)i]));
         }
 
-        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 3, default);
+        await fx.Store.PruneVersionsAsync(seed.File.Id, keepCount: 3);
 
-        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id, default);
+        var remaining = await fx.Store.GetVersionsAsync(seed.File.Id);
         remaining.Select(v => v.VersionNumber).Should().ContainInOrder(5, 4, 3);
         (await fx.Provider.ExistsAsync("blob/v1")).Should().BeFalse();
         (await fx.Provider.ExistsAsync("blob/v2")).Should().BeFalse();

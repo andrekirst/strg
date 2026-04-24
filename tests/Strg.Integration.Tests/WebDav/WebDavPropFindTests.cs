@@ -1,9 +1,7 @@
 using System.Net;
-using System.Net.Http;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,7 +197,7 @@ public sealed class WebDavPropFindTests(StrgWebApplicationFactory factory)
         await SeedFileAsync(name: "d.txt", path: "d.txt", content: "d"u8.ToArray());
         await SeedFileAsync(name: "e.txt", path: "e.txt", content: "e"u8.ToArray());
 
-        using var cappedFactory = factory.WithWebHostBuilder(builder =>
+        await using var cappedFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, config) =>
             {

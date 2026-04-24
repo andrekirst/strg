@@ -5,7 +5,7 @@ namespace Strg.Infrastructure.Storage.Encryption;
 
 /// <summary>
 /// Read-only forward <see cref="Stream"/> that emits the encrypted envelope produced by
-/// <see cref="AesGcmFileWriter"/>. Pulls plaintext from <see cref="_source"/> on demand, one
+/// <see cref="AesGcmFileWriter"/>. Pulls plaintext from the <c>source</c> ctor parameter on demand, one
 /// chunk at a time, so neither the plaintext nor the ciphertext is ever fully materialized in
 /// memory — peak memory is bounded by two chunk buffers (~128 KiB).
 ///
@@ -19,14 +19,12 @@ namespace Strg.Infrastructure.Storage.Encryption;
 /// the reader can distinguish "legitimate empty file" from "truncated-after-header".</para>
 ///
 /// <para><b>DEK lifetime.</b> This stream does NOT own the DEK. The writer zeros the DEK after
-/// calling <see cref="IStorageProvider.WriteAsync"/> on the inner provider — by which point this
+/// calling <c>IStorageProvider.WriteAsync</c> on the inner provider — by which point this
 /// stream has been fully consumed.</para>
 /// </summary>
-internal sealed class ChunkedGcmEncryptStream : Stream
+internal sealed class ChunkedGcmEncryptStream(Stream source, byte[] dek, byte[] fileNonce) : Stream
 {
-    private readonly Stream _source;
-    private readonly byte[] _fileNonce;
-    private readonly AesGcm _aes;
+    private readonly AesGcm _aes = new(dek, AesGcmFileWriter.TagLength);
 
     private readonly byte[] _currentPlaintext = new byte[AesGcmFileWriter.ChunkPlaintextSize];
     private readonly byte[] _nextPlaintext = new byte[AesGcmFileWriter.ChunkPlaintextSize];
@@ -42,13 +40,6 @@ internal sealed class ChunkedGcmEncryptStream : Stream
     private bool _eof;
 
     private long _plaintextBytesRead;
-
-    public ChunkedGcmEncryptStream(Stream source, byte[] dek, byte[] fileNonce)
-    {
-        _source = source;
-        _fileNonce = fileNonce;
-        _aes = new AesGcm(dek, AesGcmFileWriter.TagLength);
-    }
 
     /// <summary>Cumulative plaintext bytes pulled from the source. Populated as the stream is consumed.</summary>
     public long PlaintextLength => _plaintextBytesRead;
@@ -75,7 +66,7 @@ internal sealed class ChunkedGcmEncryptStream : Stream
         {
             var header = new byte[AesGcmFileWriter.HeaderLength];
             AesGcmFileWriter.Magic.CopyTo(header.AsSpan(0, AesGcmFileWriter.MagicLength));
-            _fileNonce.AsSpan().CopyTo(header.AsSpan(AesGcmFileWriter.MagicLength, AesGcmFileWriter.FileNonceLength));
+            fileNonce.AsSpan().CopyTo(header.AsSpan(AesGcmFileWriter.MagicLength, AesGcmFileWriter.FileNonceLength));
             StageEmit(header);
             _headerEmitted = true;
             return await ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
@@ -88,11 +79,11 @@ internal sealed class ChunkedGcmEncryptStream : Stream
 
         if (_firstIteration)
         {
-            _currentLen = await FillAsync(_source, _currentPlaintext, cancellationToken).ConfigureAwait(false);
+            _currentLen = await FillAsync(source, _currentPlaintext, cancellationToken).ConfigureAwait(false);
             _firstIteration = false;
         }
 
-        var nextLen = await FillAsync(_source, _nextPlaintext, cancellationToken).ConfigureAwait(false);
+        var nextLen = await FillAsync(source, _nextPlaintext, cancellationToken).ConfigureAwait(false);
         var isFinal = nextLen == 0;
 
         var chunkEnvelope = new byte[_currentLen + AesGcmFileWriter.TagLength];
@@ -125,11 +116,11 @@ internal sealed class ChunkedGcmEncryptStream : Stream
     private void EncryptChunk(ReadOnlySpan<byte> plaintext, Span<byte> ciphertext, Span<byte> tag, long chunkIndex, bool isFinal)
     {
         Span<byte> nonce = stackalloc byte[AesGcmFileWriter.FileNonceLength];
-        _fileNonce.AsSpan(0, AesGcmFileWriter.NonceSaltLength).CopyTo(nonce[..AesGcmFileWriter.NonceSaltLength]);
+        fileNonce.AsSpan(0, AesGcmFileWriter.NonceSaltLength).CopyTo(nonce[..AesGcmFileWriter.NonceSaltLength]);
         BinaryPrimitives.WriteInt64LittleEndian(nonce[AesGcmFileWriter.NonceSaltLength..], chunkIndex);
 
         Span<byte> aad = stackalloc byte[AesGcmFileWriter.AadLength];
-        _fileNonce.AsSpan(0, AesGcmFileWriter.FileNonceLength).CopyTo(aad[..AesGcmFileWriter.FileNonceLength]);
+        fileNonce.AsSpan(0, AesGcmFileWriter.FileNonceLength).CopyTo(aad[..AesGcmFileWriter.FileNonceLength]);
         BinaryPrimitives.WriteInt64LittleEndian(aad.Slice(AesGcmFileWriter.FileNonceLength, 8), chunkIndex);
         aad[AesGcmFileWriter.FileNonceLength + 8] = isFinal ? (byte)1 : (byte)0;
 

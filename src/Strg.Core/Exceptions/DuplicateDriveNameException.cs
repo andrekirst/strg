@@ -1,7 +1,3 @@
 namespace Strg.Core.Exceptions;
 
-public sealed class DuplicateDriveNameException : Exception
-{
-    public DuplicateDriveNameException(string name)
-        : base($"A drive named '{name}' already exists.") { }
-}
+public sealed class DuplicateDriveNameException(string name) : Exception($"A drive named '{name}' already exists.");

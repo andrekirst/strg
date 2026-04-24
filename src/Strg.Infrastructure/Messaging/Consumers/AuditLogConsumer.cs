@@ -17,7 +17,7 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// so the forensic trail lives alongside auth/tag/prune entries in the same <c>AuditEntries</c>
 /// table.
 ///
-/// <para><b>Tenant sourcing — load-bearing.</b> Every <see cref="AuditEntry.TenantId"/> here is
+/// <para><b>Tenant sourcing — load-bearing.</b> Every <c>AuditEntry.TenantId</c> here is
 /// taken directly from the event payload (<c>msg.TenantId</c>), NOT from the ambient
 /// <c>ITenantContext</c>. MassTransit consumers execute in a background-service DI scope outside
 /// any HTTP request, so the ambient <c>HttpTenantContext</c> resolves to <see cref="Guid.Empty"/>.
@@ -34,7 +34,7 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 ///
 /// <para><b>Idempotency via EventId.</b> The outbox guarantees at-least-once delivery — on retry
 /// or after a dispatcher restart the same message can arrive twice. Each row is tagged with
-/// <see cref="ConsumeContext.MessageId"/> into <see cref="AuditEntry.EventId"/>, and a partial
+/// <c>ConsumeContext.MessageId</c> into <see cref="AuditEntry.EventId"/>, and a partial
 /// unique index at the DB layer collapses duplicates. A <see cref="DbUpdateException"/> whose
 /// inner Npgsql exception is a unique-violation on that index is the "already-persisted" signal
 /// — logged and swallowed. Any other <see cref="DbUpdateException"/> rethrows so MassTransit's
@@ -53,7 +53,7 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// carries the class name + top-level message without re-entering the <c>@</c>-destructure
 /// leakage window.</para>
 /// </summary>
-public sealed class AuditLogConsumer :
+public sealed class AuditLogConsumer(StrgDbContext db, ILogger<AuditLogConsumer> logger) :
     IConsumer<FileUploadedEvent>,
     IConsumer<FileDeletedEvent>,
     IConsumer<FileMovedEvent>,
@@ -70,15 +70,6 @@ public sealed class AuditLogConsumer :
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
-
-    private readonly StrgDbContext _db;
-    private readonly ILogger<AuditLogConsumer> _logger;
-
-    public AuditLogConsumer(StrgDbContext db, ILogger<AuditLogConsumer> logger)
-    {
-        _db = db;
-        _logger = logger;
-    }
 
     public Task Consume(ConsumeContext<FileUploadedEvent> context)
     {
@@ -127,7 +118,7 @@ public sealed class AuditLogConsumer :
 
     public Task Consume(ConsumeContext<Fault<FileUploadedEvent>> context)
     {
-        _logger.LogError(
+        logger.LogError(
             "Dead-letter: FileUploadedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
@@ -135,7 +126,7 @@ public sealed class AuditLogConsumer :
 
     public Task Consume(ConsumeContext<Fault<FileDeletedEvent>> context)
     {
-        _logger.LogError(
+        logger.LogError(
             "Dead-letter: FileDeletedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
@@ -143,7 +134,7 @@ public sealed class AuditLogConsumer :
 
     public Task Consume(ConsumeContext<Fault<FileMovedEvent>> context)
     {
-        _logger.LogError(
+        logger.LogError(
             "Dead-letter: FileMovedEvent dispatch failed after retries. Tenant={TenantId} File={FileId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.FileId, ProjectExceptions(context.Message.Exceptions));
         return Task.CompletedTask;
@@ -187,7 +178,7 @@ public sealed class AuditLogConsumer :
         // the condition if it ever appears in production.
         if (!context.MessageId.HasValue)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "AuditLogConsumer: {EventType} arrived with no MessageId — writing non-idempotent audit row",
                 typeof(TEvent).Name);
         }
@@ -203,18 +194,18 @@ public sealed class AuditLogConsumer :
             EventId = context.MessageId,
         };
 
-        _db.AuditEntries.Add(entry);
+        db.AuditEntries.Add(entry);
 
         try
         {
-            await _db.SaveChangesAsync(context.CancellationToken);
+            await db.SaveChangesAsync(context.CancellationToken);
         }
         catch (DbUpdateException ex) when (IsEventIdUniqueViolation(ex))
         {
             // At-least-once redelivery — the row already landed on an earlier attempt. Detach
             // the tracked entity so a retry within the same scope doesn't re-attempt the INSERT.
-            _db.Entry(entry).State = EntityState.Detached;
-            _logger.LogInformation(
+            db.Entry(entry).State = EntityState.Detached;
+            logger.LogInformation(
                 "AuditLogConsumer: swallowing duplicate {Action} for EventId={EventId} (at-least-once redelivery)",
                 action, context.MessageId);
         }

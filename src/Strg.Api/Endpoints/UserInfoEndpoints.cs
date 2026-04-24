@@ -30,7 +30,7 @@ public static class UserInfoEndpoints
             })
             .WithName("GetUserInfo")
             .WithTags("Auth")
-            .Produces<Dictionary<string, object>>(StatusCodes.Status200OK, contentType: MediaTypeNames.Application.Json)
+            .Produces<Dictionary<string, object>>(contentType: MediaTypeNames.Application.Json)
             .Produces(StatusCodes.Status401Unauthorized);
 
         return app;

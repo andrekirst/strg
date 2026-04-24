@@ -66,7 +66,7 @@ public static class AuditActions
     /// <summary>
     /// A file was uploaded (new blob committed). ResourceType is <c>"FileItem"</c>, ResourceId is
     /// the file id, UserId + TenantId carry the uploader/tenant, and Details is a JSON object
-    /// <c>{ driveId, size, mimeType }</c>. Emitted by <see cref="Strg.Infrastructure.Messaging.Consumers.AuditLogConsumer"/>
+    /// <c>{ driveId, size, mimeType }</c>. Emitted by <c>Strg.Infrastructure.Messaging.Consumers.AuditLogConsumer</c>
     /// from <c>FileUploadedEvent</c>; <see cref="Strg.Core.Domain.AuditEntry.EventId"/> is the
     /// outbox MessageId so redelivery is idempotent.
     /// </summary>

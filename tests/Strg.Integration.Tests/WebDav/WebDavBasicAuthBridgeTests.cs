@@ -1,10 +1,8 @@
 using System.Net;
-using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -61,7 +59,7 @@ namespace Strg.Integration.Tests.WebDav;
 /// (a config-driven base address would let a deploy-time typo redirect every WebDAV user's
 /// cleartext password to an attacker-controlled URL). <see cref="TestServer"/> registers the
 /// feature but its <c>Addresses</c> collection is empty, so the production callback throws
-/// <see cref="InvalidOperationException"/> and the request 500s.
+/// <see cref="InvalidOperationException"/> and the request 500s.</para>
 ///
 /// <para>The fix used here: rebuild the named client in <see cref="IWebHostBuilder.ConfigureServices"/>
 /// with a <see cref="HttpClientFactoryOptions.HttpClientActions"/> list cleared and repopulated

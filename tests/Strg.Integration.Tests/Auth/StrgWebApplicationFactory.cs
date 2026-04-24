@@ -12,7 +12,6 @@ using Microsoft.Extensions.Hosting;
 using OpenIddict.Server.AspNetCore;
 using Npgsql;
 using Strg.Core.Domain;
-using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;

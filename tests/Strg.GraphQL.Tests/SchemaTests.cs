@@ -13,7 +13,7 @@ public class SchemaTests
     [Fact]
     public async Task DriveType_ProviderConfig_NotInSchema()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b.AddType<GraphQLDriveType>());
 
         var result = (IOperationResult)await executor.ExecuteAsync("""
@@ -33,7 +33,7 @@ public class SchemaTests
     [Fact]
     public async Task FileItemType_HasIsFolder_NotIsDirectory()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b
                 .AddType<FileItemType>()
                 .AddType<FileVersionType>());

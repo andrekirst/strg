@@ -12,7 +12,7 @@ namespace Strg.Infrastructure.Services;
 /// <summary>
 /// <see cref="IQuotaService"/> (and <see cref="IQuotaAdminService"/>) backed by
 /// <see cref="StrgDbContext"/>. All mutating operations compile to a single atomic SQL UPDATE via
-/// <see cref="RelationalQueryableExtensions.ExecuteUpdateAsync{TSource}"/> — the WHERE clause
+/// <c>RelationalQueryableExtensions.ExecuteUpdateAsync</c> — the WHERE clause
 /// enforces the pre-condition, the SET clause performs the mutation, and the rows-affected
 /// return value is the success signal. Row count of 0 means the pre-condition failed (quota
 /// exceeded for <see cref="CommitAsync"/>, user missing for the others).

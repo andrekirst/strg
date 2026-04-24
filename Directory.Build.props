@@ -7,5 +7,20 @@
     <LangVersion>latest</LangVersion>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- Required for IDE0005 (unused usings) to fire at build: without xmldoc generation the
+         compiler cannot disambiguate "unused in code" from "referenced only in xmldoc". -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Suppress missing-xmldoc noise — we want IDE0005 enforcement, not SA1600-style doc coverage. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Enabling GenerateDocumentationFile surfaces pre-existing xmldoc-validation bugs (unresolvable
+         cref targets, ambiguous overloads, invalid paramref names) that were previously invisible.
+         Demote these from build errors to build warnings so IDE0005 enforcement isn't blocked by
+         xmldoc debt. Errors still appear in build output for gradual cleanup; the hard-stop behaviour
+         of TreatWarningsAsErrors no longer applies to these specific codes.
+         - CS0419 : ambiguous cref
+         - CS1573 : parameter has no matching param tag
+         - CS1574 : cref cannot be resolved
+         - CS1734 : paramref target does not exist -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);CS0419;CS1573;CS1574;CS1734</WarningsNotAsErrors>
   </PropertyGroup>
 </Project>

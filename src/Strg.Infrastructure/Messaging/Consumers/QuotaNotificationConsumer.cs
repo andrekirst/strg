@@ -32,19 +32,11 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// <c>UsedBytes/QuotaBytes</c> ratio at the time of publish. Stored as JSON so future
 /// notification types reuse the same column without a migration per variant.</para>
 /// </summary>
-public sealed class QuotaNotificationConsumer :
-    IConsumer<QuotaWarningEvent>,
-    IConsumer<Fault<QuotaWarningEvent>>
+public sealed class QuotaNotificationConsumer(StrgDbContext db, ILogger<QuotaNotificationConsumer> logger)
+    :
+        IConsumer<QuotaWarningEvent>,
+        IConsumer<Fault<QuotaWarningEvent>>
 {
-    private readonly StrgDbContext _db;
-    private readonly ILogger<QuotaNotificationConsumer> _logger;
-
-    public QuotaNotificationConsumer(StrgDbContext db, ILogger<QuotaNotificationConsumer> logger)
-    {
-        _db = db;
-        _logger = logger;
-    }
-
     public async Task Consume(ConsumeContext<QuotaWarningEvent> context)
     {
         var msg = context.Message;
@@ -69,12 +61,12 @@ public sealed class QuotaNotificationConsumer :
             EventId = context.MessageId,
         };
 
-        _db.Notifications.Add(notification);
+        db.Notifications.Add(notification);
 
         try
         {
-            await _db.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
-            _logger.LogInformation(
+            await db.SaveChangesAsync(context.CancellationToken).ConfigureAwait(false);
+            logger.LogInformation(
                 "QuotaNotificationConsumer: wrote {Level} notification for tenant={TenantId} user={UserId} (ratio={Ratio:P0})",
                 level, msg.TenantId, msg.UserId, ratio);
         }
@@ -83,7 +75,7 @@ public sealed class QuotaNotificationConsumer :
             // Duplicate EventId → redelivery of an already-persisted warning. Swallow at Debug:
             // idempotent redelivery is expected under at-least-once; louder levels would drown
             // the log on broker replays.
-            _logger.LogDebug(
+            logger.LogDebug(
                 "QuotaNotificationConsumer: duplicate EventId {EventId} for tenant={TenantId} user={UserId} — row already persisted",
                 context.MessageId, msg.TenantId, msg.UserId);
         }
@@ -101,7 +93,7 @@ public sealed class QuotaNotificationConsumer :
         var projected = context.Message.Exceptions
             .Select(e => $"{e.ExceptionType}: {e.Message}")
             .ToArray();
-        _logger.LogError(
+        logger.LogError(
             "Dead-letter: QuotaWarningEvent dispatch failed. Tenant={TenantId} User={UserId} Exceptions={Exceptions}",
             context.Message.Message.TenantId, context.Message.Message.UserId, projected);
         return Task.CompletedTask;

@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Strg.GraphQL.Mutations;
 using Strg.GraphQL.Mutations.Storage;
 using Strg.GraphQL.Tests.Helpers;
-using Strg.GraphQL.Types;
 using Strg.Infrastructure.Data;
 using Xunit;
 using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
@@ -19,7 +18,7 @@ public class DriveMutationsTests
     private static readonly TestTenantContext SharedTenantCtx = TestTenantContext.Shared;
 
     private Task<TestExecutor> CreateExecutorAsync(Guid tenantId, string dbName) =>
-        GraphQLTestFixture.CreateExecutorAsync(
+        GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);

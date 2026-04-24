@@ -1,8 +1,6 @@
 using HotChocolate.Authorization;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
-using Strg.Core.Exceptions;
 using Strg.Core.Storage;
 using Strg.GraphQL.Inputs.File;
 using Strg.GraphQL.Payloads;

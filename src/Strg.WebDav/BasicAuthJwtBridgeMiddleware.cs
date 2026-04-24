@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -85,7 +84,11 @@ namespace Strg.WebDav;
 /// skipped because the branch's <c>UseAuthentication</c> downstream performs the full
 /// validation, and a double-validation here would double the crypto cost on every request.</para>
 /// </summary>
-public sealed class BasicAuthJwtBridgeMiddleware
+public sealed class BasicAuthJwtBridgeMiddleware(
+    RequestDelegate next,
+    IHttpClientFactory httpClientFactory,
+    IWebDavJwtCache cache,
+    ILogger<BasicAuthJwtBridgeMiddleware> logger)
 {
     private const string BearerPrefix = "Bearer ";
     private const string BasicPrefix = "Basic ";
@@ -116,27 +119,10 @@ public sealed class BasicAuthJwtBridgeMiddleware
     /// </summary>
     internal static readonly TimeSpan CacheSafetyMargin = TimeSpan.FromSeconds(60);
 
-    private readonly RequestDelegate _next;
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IWebDavJwtCache _cache;
-    private readonly ILogger<BasicAuthJwtBridgeMiddleware> _logger;
-
     // Thread-safe per Microsoft's API contract; reused so every request doesn't pay the handler-
     // construction cost. The handler is used purely for the UNVALIDATED ReadJsonWebToken peek —
     // signature validation happens downstream in the branch's UseAuthentication.
     private static readonly JsonWebTokenHandler JwtPayloadPeeker = new();
-
-    public BasicAuthJwtBridgeMiddleware(
-        RequestDelegate next,
-        IHttpClientFactory httpClientFactory,
-        IWebDavJwtCache cache,
-        ILogger<BasicAuthJwtBridgeMiddleware> logger)
-    {
-        _next = next;
-        _httpClientFactory = httpClientFactory;
-        _cache = cache;
-        _logger = logger;
-    }
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -147,7 +133,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         // reach StrgWebDavMiddleware, which lets OPTIONS through and 401s everything else.
         if (!authHeader.StartsWith(BasicPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
@@ -164,7 +150,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         var driveName = ExtractDriveName(context.Request.Path);
 
         string accessToken;
-        var cached = _cache.TryGet(username, password);
+        var cached = cache.TryGet(username, password);
         // IsNullOrEmpty rather than "is not null": the cache contract returns null on miss, but a
         // future test double or a corrupt in-memory entry could surface an empty string. Treating
         // empty as miss is defense-in-depth — rewriting the Authorization header to literal
@@ -179,14 +165,14 @@ public sealed class BasicAuthJwtBridgeMiddleware
             var exchange = await ExchangeForJwtAsync(username, password, context.RequestAborted);
             if (exchange.Outcome == ExchangeOutcome.InvalidCredentials)
             {
-                _logger.LogInformation(
+                logger.LogInformation(
                     "WebDAV Basic Auth exchange rejected by OpenIddict for user {Username}", username);
                 await RespondUnauthorizedAsync(context);
                 return;
             }
             if (exchange.Outcome == ExchangeOutcome.UpstreamFailure)
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "WebDAV Basic Auth exchange failed upstream at {TokenEndpoint} for user {Username} — returning 502",
                     TokenEndpoint, username);
                 context.Response.StatusCode = StatusCodes.Status502BadGateway;
@@ -194,7 +180,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
             }
 
             accessToken = exchange.AccessToken!;
-            _cache.Set(username, password, accessToken, exchange.CacheTtl);
+            cache.Set(username, password, accessToken, exchange.CacheTtl);
         }
 
         // Cross-tenant verification MUST run on both cache-hit and post-exchange paths: a cached
@@ -217,7 +203,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
                 // under a DIFFERENT password hash (e.g. the OTHER tenant's legitimate session)
                 // must survive. A tenant-scoped cache key (task #146) is the structural fix; this
                 // is the narrow availability win that ships first.
-                _cache.Remove(username, password);
+                cache.Remove(username, password);
 
                 // RespondUnauthorizedAsync — SAME shape as a credential rejection. Returning 403
                 // would tell the attacker "credential was accepted, but not for this tenant";
@@ -242,7 +228,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         }
 
         context.Request.Headers.Authorization = BearerPrefix + accessToken;
-        await _next(context);
+        await next(context);
     }
 
     /// <summary>
@@ -263,7 +249,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
     {
         if (!TryPeekJwtTenantId(accessToken, out var jwtTenantId))
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "WebDAV Basic Auth: JWT for user {Username} is missing or has unparseable tenant_id claim",
                 username);
             return TenantVerificationOutcome.MalformedJwt;
@@ -280,7 +266,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         }
         if (driveTenantId.Value != jwtTenantId)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "WebDAV Basic Auth: cross-tenant mismatch for user {Username} on drive {DriveName} — JWT tenant does not match drive tenant; returning 401",
                 username, driveName);
             return TenantVerificationOutcome.Mismatch;
@@ -401,7 +387,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         string password,
         CancellationToken cancellationToken)
     {
-        var client = _httpClientFactory.CreateClient(OidcHttpClientName);
+        var client = httpClientFactory.CreateClient(OidcHttpClientName);
         var form = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("grant_type", "password"),
@@ -418,7 +404,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogWarning(ex,
+            logger.LogWarning(ex,
                 "WebDAV Basic Auth exchange: HTTP request to {TokenEndpoint} threw — returning upstream failure",
                 TokenEndpoint);
             return ExchangeResult.UpstreamFailure();
@@ -428,7 +414,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
             // TaskCanceledException without the caller's cancellation token means the HttpClient's
             // own timeout fired. Treat as upstream failure — the token endpoint is unreachable
             // within the budget, not that the caller gave up.
-            _logger.LogWarning(ex,
+            logger.LogWarning(ex,
                 "WebDAV Basic Auth exchange: {TokenEndpoint} timed out — returning upstream failure",
                 TokenEndpoint);
             return ExchangeResult.UpstreamFailure();
@@ -452,7 +438,7 @@ public sealed class BasicAuthJwtBridgeMiddleware
             }
             catch (JsonException ex)
             {
-                _logger.LogWarning(ex,
+                logger.LogWarning(ex,
                     "WebDAV Basic Auth exchange: {TokenEndpoint} returned 2xx with non-JSON body — returning upstream failure",
                     TokenEndpoint);
                 return ExchangeResult.UpstreamFailure();

@@ -25,20 +25,16 @@ namespace Strg.Infrastructure.Messaging.Consumers;
 /// in v0.1 so the queue binding stays in place — dropping it would mean a broker-topology
 /// migration when the v0.2 body lands.</para>
 /// </summary>
-public sealed class SearchIndexConsumer :
+public sealed class SearchIndexConsumer(ILogger<SearchIndexConsumer> logger) :
     IConsumer<FileUploadedEvent>,
     IConsumer<FileDeletedEvent>,
     IConsumer<FileMovedEvent>
 {
-    private readonly ILogger<SearchIndexConsumer> _logger;
-
-    public SearchIndexConsumer(ILogger<SearchIndexConsumer> logger) => _logger = logger;
-
     public Task Consume(ConsumeContext<FileUploadedEvent> context)
     {
         // TODO v0.2: resolve ISearchProvider from the scope and call
         // provider.IndexAsync(context.Message.FileId, context.CancellationToken).
-        _logger.LogDebug(
+        logger.LogDebug(
             "SearchIndexConsumer: file.uploaded fileId={FileId} (indexing deferred to v0.2)",
             context.Message.FileId);
         return Task.CompletedTask;
@@ -47,7 +43,7 @@ public sealed class SearchIndexConsumer :
     public Task Consume(ConsumeContext<FileDeletedEvent> context)
     {
         // TODO v0.2: resolve ISearchProvider + call provider.RemoveAsync(fileId).
-        _logger.LogDebug(
+        logger.LogDebug(
             "SearchIndexConsumer: file.deleted fileId={FileId} (indexing deferred to v0.2)",
             context.Message.FileId);
         return Task.CompletedTask;
@@ -56,7 +52,7 @@ public sealed class SearchIndexConsumer :
     public Task Consume(ConsumeContext<FileMovedEvent> context)
     {
         // TODO v0.2: resolve ISearchProvider + call provider.UpdatePathAsync(fileId, newPath).
-        _logger.LogDebug(
+        logger.LogDebug(
             "SearchIndexConsumer: file.moved fileId={FileId} (indexing deferred to v0.2)",
             context.Message.FileId);
         return Task.CompletedTask;

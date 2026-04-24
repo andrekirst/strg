@@ -24,14 +24,17 @@ public readonly struct StoragePath : IEquatable<StoragePath>
         // `//` / leading-slash rules. Without this, `ContainsTraversal` sees backslashes as
         // literal characters and the traversal check passes.
         var normalized = decoded.Replace('\\', '/');
+
         if (ContainsTraversal(normalized))
         {
             throw new StoragePathException($"Path traversal detected: {raw}");
         }
+
         if (IsReservedName(normalized))
         {
             throw new StoragePathException($"Reserved path name: {raw}");
         }
+
         return new StoragePath(Normalize(normalized));
     }
 

@@ -26,7 +26,7 @@ public class FileQueriesTests
         SharedTenantCtx.TenantId = tenantId;
         var dbName = Guid.NewGuid().ToString();
 
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);
@@ -75,7 +75,7 @@ public class FileQueriesTests
         SharedTenantCtx.TenantId = tenantId;
         var dbName = Guid.NewGuid().ToString();
 
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);

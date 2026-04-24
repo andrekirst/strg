@@ -14,10 +14,10 @@ namespace Strg.Core.Events;
 /// UserId would force the consumer to round-trip the DB just to translate Id → Email. <c>UserId</c>
 /// is still carried for audit/observability and any future consumer that prefers the opaque Id.</para>
 ///
-/// <para><b>Publisher discipline.</b> Publish BEFORE <see cref="Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(System.Threading.CancellationToken)"/>
+/// <para><b>Publisher discipline.</b> Publish BEFORE <c>Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(CancellationToken)</c>
 /// so the outbox row commits atomically with the password-hash change. MassTransit's EF outbox
 /// (wired via <c>UseBusOutbox()</c> in <c>AddStrgMassTransit</c>) buffers the <c>Publish</c> call
-/// on the same <see cref="Microsoft.EntityFrameworkCore.DbContext"/> change tracker, so a single
+/// on the same <c>Microsoft.EntityFrameworkCore.DbContext</c> change tracker, so a single
 /// <c>SaveChangesAsync</c> flushes BOTH the entity row and the outbox row in one transaction.
 /// Publishing AFTER the save would require a second <c>SaveChangesAsync</c> to flush the outbox
 /// row, reopening the dual-write race — a crash between the hash-commit and the outbox-row-commit

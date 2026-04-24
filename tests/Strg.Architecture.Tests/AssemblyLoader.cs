@@ -37,7 +37,7 @@ internal static class AssemblyLoader
         {
             typeof(TenantedEntity).Assembly,              // Strg.Core
             typeof(StrgDbContext).Assembly,               // Strg.Infrastructure
-            typeof(GraphQLSubscriptionPublisher).Assembly, // Strg.GraphQL
+            typeof(GraphQlSubscriptionPublisher).Assembly, // Strg.GraphQL
             typeof(IStrgWebDavStore).Assembly,            // Strg.WebDav
             typeof(IConsumer<>).Assembly,                 // MassTransit (for IConsumer<T>)
         };

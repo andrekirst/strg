@@ -2,7 +2,7 @@ namespace Strg.Core.Constants;
 
 /// <summary>
 /// Header names we reference from project code but which are absent from
-/// <see cref="Microsoft.Net.Http.Headers.HeaderNames"/>. Prefer the framework constants; add
+/// <c>Microsoft.Net.Http.Headers.HeaderNames</c>. Prefer the framework constants; add
 /// entries here only when the header is not exposed by ASP.NET Core's static list.
 /// </summary>
 public static class StrgHeaderNames

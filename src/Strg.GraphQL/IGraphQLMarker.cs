@@ -1,3 +1,3 @@
 namespace Strg.GraphQL;
 
-internal interface IGraphQLMarker { }
+internal interface IGraphQlMarker { }

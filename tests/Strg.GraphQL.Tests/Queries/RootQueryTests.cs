@@ -13,7 +13,7 @@ public class RootQueryTests
     [Fact]
     public async Task Query_HasStorageInboxAdminMeFields()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b
                 .AddAuthorization()
                 .AddType<RootQueryExtension>());
@@ -31,7 +31,7 @@ public class RootQueryTests
     [Fact]
     public async Task Mutation_HasStorageUserAdminInboxFields()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b
                 .AddMutationType(m => m.Name("Mutation"))
                 .AddType<RootMutationExtension>());

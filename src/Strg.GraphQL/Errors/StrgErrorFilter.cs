@@ -1,4 +1,3 @@
-using HotChocolate;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Exceptions;
@@ -6,17 +5,8 @@ using Strg.Core.Storage;
 
 namespace Strg.GraphQL.Errors;
 
-public sealed class StrgErrorFilter : IErrorFilter
+public sealed class StrgErrorFilter(IHostEnvironment env, ILogger<StrgErrorFilter> logger) : IErrorFilter
 {
-    private readonly IHostEnvironment _env;
-    private readonly ILogger<StrgErrorFilter> _logger;
-
-    public StrgErrorFilter(IHostEnvironment env, ILogger<StrgErrorFilter> logger)
-    {
-        _env = env;
-        _logger = logger;
-    }
-
     public IError OnError(IError error)
     {
         return error.Exception switch
@@ -35,10 +25,10 @@ public sealed class StrgErrorFilter : IErrorFilter
     {
         if (error.Exception is not null)
         {
-            _logger.LogError(error.Exception, "Unhandled GraphQL error");
+            logger.LogError(error.Exception, "Unhandled GraphQL error");
         }
 
-        if (_env.IsDevelopment())
+        if (env.IsDevelopment())
         {
             return error.WithCode("INTERNAL_ERROR");
         }

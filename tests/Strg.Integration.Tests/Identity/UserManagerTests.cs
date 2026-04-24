@@ -4,7 +4,6 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Strg.Core;
 using Strg.Core.Domain;
 using Strg.Core.Identity;
 using Strg.Core.Services;
@@ -377,7 +376,7 @@ public sealed class UserManagerTests : IAsyncLifetime
         var services = BuildFirstRunServiceProvider(connectionString);
         await using var _ = services;
 
-        using var capturedStdout = new StringWriter();
+        await using var capturedStdout = new StringWriter();
         var originalOut = Console.Out;
         Console.SetOut(capturedStdout);
         try
@@ -433,7 +432,7 @@ public sealed class UserManagerTests : IAsyncLifetime
         var services = BuildFirstRunServiceProvider(connectionString);
         await using var _ = services;
 
-        using var capturedStdout = new StringWriter();
+        await using var capturedStdout = new StringWriter();
         var originalOut = Console.Out;
         Console.SetOut(capturedStdout);
         try

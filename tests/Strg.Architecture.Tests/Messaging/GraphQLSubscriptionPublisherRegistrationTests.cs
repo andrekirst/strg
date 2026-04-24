@@ -1,15 +1,17 @@
 using FluentAssertions;
+using Strg.Architecture.Tests.Layering;
+using Strg.GraphQL.Consumers;
 using Xunit;
 
 namespace Strg.Architecture.Tests.Messaging;
 
 /// <summary>
 /// Pins that <c>Strg.Api/Program.cs</c> registers
-/// <see cref="Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher"/> via the
+/// <see cref="GraphQlSubscriptionPublisher"/> via the
 /// <c>configureConsumers</c> callback passed to
 /// <c>AddStrgMassTransit</c> (STRG-065 audit INFO-3). The layering forbids
 /// Strg.Infrastructure referencing Strg.GraphQL
-/// (see <see cref="Layering.InfrastructureDoesNotReferenceGraphQLTests"/>), so the publisher
+/// (see <see cref="InfrastructureDoesNotReferenceGraphQlTests"/>), so the publisher
 /// cannot be registered inside <c>MassTransitExtensions.AddStrgMassTransit</c>; Program.cs is
 /// the only place where the one-directional dependency allows the wire-up. A refactor that
 /// drops the callback argument silently turns off every GraphQL subscription notification —
@@ -22,7 +24,7 @@ namespace Strg.Architecture.Tests.Messaging;
 /// Program.cs — pinning the source directly is cheaper and less brittle than pinning a
 /// downstream DI consequence of that line.</para>
 /// </summary>
-public sealed class GraphQLSubscriptionPublisherRegistrationTests
+public sealed class GraphQlSubscriptionPublisherRegistrationTests
 {
     [Fact]
     public void Program_cs_registers_GraphQLSubscriptionPublisher_via_configureConsumers_callback()

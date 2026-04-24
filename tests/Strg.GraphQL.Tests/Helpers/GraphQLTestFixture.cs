@@ -7,7 +7,7 @@ using Strg.GraphQL.Errors;
 
 namespace Strg.GraphQL.Tests.Helpers;
 
-public static class GraphQLTestFixture
+public static class GraphQlTestFixture
 {
     public static async Task<TestExecutor> CreateExecutorAsync(
         Action<IServiceCollection>? configureServices = null,

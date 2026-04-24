@@ -1,6 +1,3 @@
 namespace Strg.Core.Exceptions;
 
-public sealed class QuotaExceededException : Exception
-{
-    public QuotaExceededException() : base("Storage quota exceeded.") { }
-}
+public sealed class QuotaExceededException() : Exception("Storage quota exceeded.");

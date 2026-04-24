@@ -1,5 +1,4 @@
 using HotChocolate.Authorization;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;

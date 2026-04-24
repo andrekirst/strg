@@ -6,7 +6,7 @@ namespace Strg.Core.Services;
 /// <summary>
 /// Lifecycle orchestrator for <see cref="FileVersion"/> records. Sits one layer above the raw
 /// repositories: the upload path has already written the blob (via <c>IEncryptingFileWriter</c>
-/// or the plaintext equivalent) and knows its <paramref name="storageKey"/>, content hash, and
+/// or the plaintext equivalent) and knows its <c>storageKey</c>, content hash, and
 /// sizes. This store then atomically persists the version row AND charges the owner's quota,
 /// so an out-of-memory crash between "blob on disk" and "row in DB" at worst leaves an orphan
 /// blob (reaped by the cleanup job, STRG-026 #2) — never a row pointing at vanished bytes.
@@ -17,7 +17,7 @@ namespace Strg.Core.Services;
 /// quota UPDATE rolls both back atomically — no need for a compensating <c>ReleaseAsync</c> in
 /// the caller's catch path.</para>
 ///
-/// <para><b>Quota goes to the file owner.</b> Even if <paramref name="createdBy"/> (the uploader)
+/// <para><b>Quota goes to the file owner.</b> Even if <c>createdBy</c> (the uploader)
 /// differs from <c>file.CreatedBy</c> (the owner) — a v0.2 ACL scenario — quota is charged to
 /// the owner. This matches how shared cloud storage bills the one who owns the file, not the
 /// last editor.</para>
@@ -47,6 +47,7 @@ public interface IFileVersionStore
     /// <param name="blobSizeBytes">Actual on-disk blob size (plaintext + envelope overhead for
     /// encrypted drives). NOT charged to quota. See <see cref="FileVersion.BlobSizeBytes"/>.</param>
     /// <param name="createdBy">User id of the uploader (may differ from <c>file.CreatedBy</c>).</param>
+    /// <param name="cancellationToken">Propagates notification that the operation should be cancelled.</param>
     Task<FileVersion> CreateVersionAsync(
         FileItem file,
         string storageKey,

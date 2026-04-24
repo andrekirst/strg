@@ -1,5 +1,4 @@
 using HotChocolate.Execution;
-using HotChocolate.Types;
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Storage;
 using Strg.GraphQL.Tests.Helpers;
@@ -12,7 +11,7 @@ public class ErrorFilterTests
     [Fact]
     public async Task StoragePathException_MapsTo_InvalidPathCode()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b.AddType<ThrowingQuery>());
 
         var result = (IOperationResult)await executor.ExecuteAsync("{ throwPath }");
@@ -25,7 +24,7 @@ public class ErrorFilterTests
     [Fact]
     public async Task UnhandledException_MapsTo_InternalErrorCode()
     {
-        var executor = await GraphQLTestFixture.CreateExecutorAsync(
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
             configureSchema: b => b.AddType<ThrowingQuery>());
 
         var result = (IOperationResult)await executor.ExecuteAsync("{ throwUnknown }");

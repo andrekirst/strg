@@ -12,7 +12,7 @@ namespace Strg.Architecture.Tests.Layering;
 /// currently does — see the callback hook comment in
 /// <c>MassTransitExtensions.AddStrgMassTransit</c>.
 /// </summary>
-public sealed class InfrastructureDoesNotReferenceGraphQLTests
+public sealed class InfrastructureDoesNotReferenceGraphQlTests
 {
     [Fact]
     public void Strg_Infrastructure_does_not_reference_Strg_GraphQL()

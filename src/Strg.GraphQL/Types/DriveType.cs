@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using HotChocolate.Types;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 

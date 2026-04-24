@@ -63,9 +63,6 @@ public sealed class FileRepository(StrgDbContext db) : IFileRepository
     public async Task SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken).ConfigureAwait(false);
-        if (file is not null)
-        {
-            file.DeletedAt = DateTimeOffset.UtcNow;
-        }
+        file?.DeletedAt = DateTimeOffset.UtcNow;
     }
 }

@@ -22,14 +22,14 @@ namespace Strg.GraphQL.Tests.Consumers;
 /// pipeline works." Direct Consume(...) calls with a substituted <see cref="ConsumeContext{T}"/>
 /// keep the test surface tight and run in &lt;100ms.</para>
 /// </summary>
-public sealed class GraphQLSubscriptionPublisherTests
+public sealed class GraphQlSubscriptionPublisherTests
 {
     private readonly ITopicEventSender _sender = Substitute.For<ITopicEventSender>();
-    private readonly GraphQLSubscriptionPublisher _consumer;
+    private readonly GraphQlSubscriptionPublisher _consumer;
 
-    public GraphQLSubscriptionPublisherTests()
+    public GraphQlSubscriptionPublisherTests()
     {
-        _consumer = new GraphQLSubscriptionPublisher(_sender, NullLogger<GraphQLSubscriptionPublisher>.Instance);
+        _consumer = new GraphQlSubscriptionPublisher(_sender, NullLogger<GraphQlSubscriptionPublisher>.Instance);
     }
 
     // TC-001

@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using OpenIddict.Abstractions;
 using Strg.Core.Constants;
-using Strg.Core.Identity;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
 using Testcontainers.PostgreSql;

@@ -22,7 +22,7 @@ public class FileSubscriptionsTests
     private static readonly TestTenantContext SharedTenantCtx = TestTenantContext.Shared;
 
     private Task<TestExecutor> CreateExecutorAsync(Guid tenantId, Guid userId, string dbName) =>
-        GraphQLTestFixture.CreateExecutorAsync(
+        GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);
@@ -327,7 +327,7 @@ public class FileSubscriptionsTests
     // same EF model — the value is in pinning wire-emission of `isFolder` from the
     // subscription surface at all, catching a future [GraphQLName] / [GraphQLIgnore] drift.
     private Task<TestExecutor> CreateExecutorWithDataLoaderAsync(Guid tenantId, Guid userId, string dbName) =>
-        GraphQLTestFixture.CreateExecutorAsync(
+        GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);

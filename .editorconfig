@@ -18,11 +18,33 @@ csharp_style_var_for_built_in_types = true:warning
 csharp_style_var_when_type_is_apparent = true:warning
 csharp_style_var_elsewhere = true:warning
 
+# Analyzer severities — surface Rider/ReSharper cleanups at build time.
+# IDE0005 additionally requires <GenerateDocumentationFile>true</GenerateDocumentationFile>
+# in Directory.Build.props so the compiler can disambiguate "unused in code" from
+# "referenced in xmldoc that would otherwise not be generated."
+dotnet_diagnostic.IDE0005.severity = warning    # Remove unnecessary using directives
+dotnet_diagnostic.IDE0290.severity = warning    # Use primary constructor
+dotnet_diagnostic.IDE0031.severity = suggestion # Null propagation (incl. C# 14 null-conditional assignment)
+dotnet_diagnostic.IDE0270.severity = suggestion # Null check → coalesce expression
+
+# Local constants are camelCase. Project-specific deviation from Microsoft convention — pins
+# Rider/ReSharper cleanup output so test data extracted to a local `const` doesn't re-case on
+# the next cleanup pass. Field-scope constants stay PascalCase (covered by the default rule).
+dotnet_naming_symbols.local_constants.applicable_kinds                          = local
+dotnet_naming_symbols.local_constants.required_modifiers                        = const
+dotnet_naming_style.camel_case_style.capitalization                             = camel_case
+dotnet_naming_rule.local_constants_are_camel_case.symbols                       = local_constants
+dotnet_naming_rule.local_constants_are_camel_case.style                         = camel_case_style
+dotnet_naming_rule.local_constants_are_camel_case.severity                      = warning
+
 [*.{xml,csproj,props,targets}]
 indent_style = space
 indent_size = 2
 
-# EF Core migration scaffolds emit block-scoped namespaces; don't block the build on style there.
+# EF Core migration scaffolds emit block-scoped namespaces and occasionally carry scaffold-time
+# usings that the runtime code doesn't need; don't block the build on style there.
 [**/Migrations/**.cs]
 csharp_style_namespace_declarations = file_scoped:silent
 dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.IDE0005.severity = silent
+dotnet_diagnostic.IDE0290.severity = silent

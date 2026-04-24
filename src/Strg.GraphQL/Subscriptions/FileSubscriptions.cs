@@ -1,16 +1,15 @@
-using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Execution;
 using HotChocolate.Subscriptions;
-using HotChocolate.Types;
 using Strg.Core.Events;
+using Strg.GraphQL.Consumers;
 using Strg.GraphQL.Subscriptions.Payloads;
 
 namespace Strg.GraphQL.Subscriptions;
 
 /// <summary>
 /// Exposes the <c>fileEvents(driveId: ID!)</c> GraphQL subscription. Events published via
-/// <see cref="Consumers.GraphQLSubscriptionPublisher"/> (STRG-065) are routed per-(tenant, drive)
+/// <see cref="GraphQlSubscriptionPublisher"/> (STRG-065) are routed per-(tenant, drive)
 /// at the topic layer and re-checked per-event at the resolver layer before a payload reaches
 /// the subscriber.
 /// </summary>

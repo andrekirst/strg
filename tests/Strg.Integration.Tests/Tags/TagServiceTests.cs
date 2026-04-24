@@ -44,7 +44,7 @@ public sealed class TagServiceTests : IAsyncLifetime
         var (user, file) = await fx.CreateUserAndFileAsync();
         var service = fx.BuildService();
 
-        var tag = await service.UpsertAsync(file.Id, user.Id, "Project", "acme", TagValueType.String);
+        var tag = await service.UpsertAsync(file.Id, user.Id, "Project", "acme");
 
         tag.Key.Should().Be("project", "the entity setter lowercases on init");
         tag.Value.Should().Be("acme");
@@ -214,7 +214,7 @@ public sealed class TagServiceTests : IAsyncLifetime
         var (user, file) = await fx.CreateUserAndFileAsync();
         var service = fx.BuildService();
 
-        await service.UpsertAsync(file.Id, user.Id, "project", "acme", TagValueType.String);
+        await service.UpsertAsync(file.Id, user.Id, "project", "acme");
 
         var audits = await fx.LoadAuditEntriesAsync(AuditActions.TagAssigned);
         audits.Should().HaveCount(1);
@@ -249,7 +249,7 @@ public sealed class TagServiceTests : IAsyncLifetime
         var (user, file) = await fx.CreateUserAndFileAsync();
         var service = fx.BuildService();
 
-        await service.UpsertAsync(file.Id, user.Id, "project", "acme", TagValueType.String);
+        await service.UpsertAsync(file.Id, user.Id, "project", "acme");
         await service.UpsertAsync(file.Id, user.Id, "priority", "3", TagValueType.Number);
         await service.UpsertAsync(file.Id, user.Id, "done", "false", TagValueType.Boolean);
 
@@ -288,7 +288,7 @@ public sealed class TagServiceTests : IAsyncLifetime
         var (user, file) = await fx.CreateUserAndFileAsync();
         var service = fx.BuildService();
 
-        await service.UpsertAsync(file.Id, user.Id, "s", "v", TagValueType.String);
+        await service.UpsertAsync(file.Id, user.Id, "s", "v");
         await service.UpsertAsync(file.Id, user.Id, "n", "42", TagValueType.Number);
         await service.UpsertAsync(file.Id, user.Id, "b", "true", TagValueType.Boolean);
 

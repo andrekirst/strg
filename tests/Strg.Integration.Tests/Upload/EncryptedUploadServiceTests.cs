@@ -89,7 +89,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
         (await fx.Provider.ExistsAsync(version.StorageKey)).Should()
             .BeTrue("the writer commits ciphertext during the upload");
 
-        (await fx.Store.GetVersionsAsync(seed.File.Id, default)).Should().ContainSingle();
+        (await fx.Store.GetVersionsAsync(seed.File.Id)).Should().ContainSingle();
 
         (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(plaintext.Length,
             "quota is plaintext-denominated (devils-advocate STRG-026 #5) — envelope overhead is off-books");
@@ -112,7 +112,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
         var act = () => uploadService.UploadAsync(seed.File, plaintext, seed.UserId);
         await act.Should().ThrowAsync<QuotaExceededException>();
 
-        (await fx.Store.GetVersionsAsync(seed.File.Id, default)).Should().BeEmpty(
+        (await fx.Store.GetVersionsAsync(seed.File.Id)).Should().BeEmpty(
             "transactional rollback must leave zero FileVersion rows for the failed upload");
         (await fx.ReloadUserAsync(seed.UserId)).UsedBytes.Should().Be(0,
             "quota UPDATE rolls back in the same tx the FileVersion insert lives in");

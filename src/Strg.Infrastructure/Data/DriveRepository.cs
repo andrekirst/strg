@@ -37,9 +37,6 @@ public sealed class DriveRepository(StrgDbContext db) : IDriveRepository
     public async Task SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var drive = await db.Drives.FindAsync([id], cancellationToken);
-        if (drive is not null)
-        {
-            drive.DeletedAt = DateTimeOffset.UtcNow;
-        }
+        drive?.DeletedAt = DateTimeOffset.UtcNow;
     }
 }

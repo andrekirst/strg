@@ -5,7 +5,6 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Domain;
-using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;

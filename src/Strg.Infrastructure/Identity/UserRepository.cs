@@ -40,9 +40,6 @@ public sealed class UserRepository(StrgDbContext db) : IUserRepository
     public async Task SoftDeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var user = await db.Users.FindAsync([id], cancellationToken);
-        if (user is not null)
-        {
-            user.DeletedAt = DateTimeOffset.UtcNow;
-        }
+        user?.DeletedAt = DateTimeOffset.UtcNow;
     }
 }

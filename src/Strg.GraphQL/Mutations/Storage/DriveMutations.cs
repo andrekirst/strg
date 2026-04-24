@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using HotChocolate.Authorization;
-using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
 using Strg.GraphQL.Inputs.Drive;

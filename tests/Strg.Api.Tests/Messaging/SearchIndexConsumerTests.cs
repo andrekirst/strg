@@ -192,7 +192,7 @@ public sealed class SearchIndexConsumerTests
         var seeds = new[]
         {
             typeof(Strg.Infrastructure.Storage.LocalFileSystemProvider).Assembly,
-            typeof(Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher).Assembly,
+            typeof(Strg.GraphQL.Consumers.GraphQlSubscriptionPublisher).Assembly,
         };
         foreach (var seed in seeds)
         {

@@ -7,7 +7,7 @@ namespace Strg.Architecture.Tests.Messaging;
 /// Pins that <c>Strg.Api/Program.cs</c> registers
 /// <see cref="Strg.WebDav.Consumers.WebDavJwtCacheInvalidationConsumer"/> via the
 /// <c>configureConsumers</c> callback passed to <c>AddStrgMassTransit</c> (STRG-073 Commit 3).
-/// Mirrors <see cref="GraphQLSubscriptionPublisherRegistrationTests"/> for the sibling-layer
+/// Mirrors <see cref="GraphQlSubscriptionPublisherRegistrationTests"/> for the sibling-layer
 /// reason: Strg.Infrastructure cannot reference Strg.WebDav without inverting the layer
 /// dependency, so the consumer can only be registered at the Strg.Api composition root.
 ///

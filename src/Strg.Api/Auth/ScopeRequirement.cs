@@ -21,7 +21,7 @@ public sealed class ScopeRequirementHandler : AuthorizationHandler<ScopeRequirem
         ScopeRequirement requirement)
     {
         // Use OpenIddict's built-in scope evaluation (handles space-separated and multi-claim scopes)
-        if (OpenIddict.Abstractions.OpenIddictExtensions.HasScope(context.User, requirement.Scope))
+        if (context.User.HasScope(requirement.Scope))
         {
             context.Succeed(requirement);
         }

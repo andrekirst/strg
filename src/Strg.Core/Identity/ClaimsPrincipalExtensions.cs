@@ -9,22 +9,25 @@ namespace Strg.Core.Identity;
 /// </summary>
 public static class ClaimsPrincipalExtensions
 {
-    /// <summary>Returns the authenticated user's ID from the JWT <c>sub</c> claim.</summary>
-    public static Guid GetUserId(this ClaimsPrincipal user) =>
-        Guid.Parse(user.FindFirst(StrgClaimNames.Subject)?.Value
-            ?? throw new InvalidOperationException("The 'sub' claim is missing from the current principal."));
+    extension(ClaimsPrincipal user)
+    {
+        /// <summary>Returns the authenticated user's ID from the JWT <c>sub</c> claim.</summary>
+        public Guid GetUserId() =>
+            Guid.Parse(user.FindFirst(StrgClaimNames.Subject)?.Value
+                       ?? throw new InvalidOperationException("The 'sub' claim is missing from the current principal."));
 
-    /// <summary>Returns the tenant ID from the JWT <c>tenant_id</c> claim.</summary>
-    public static Guid GetTenantId(this ClaimsPrincipal user) =>
-        Guid.Parse(user.FindFirst(StrgClaimNames.TenantId)?.Value
-            ?? throw new InvalidOperationException("The 'tenant_id' claim is missing from the current principal."));
+        /// <summary>Returns the tenant ID from the JWT <c>tenant_id</c> claim.</summary>
+        public Guid GetTenantId() =>
+            Guid.Parse(user.FindFirst(StrgClaimNames.TenantId)?.Value
+                       ?? throw new InvalidOperationException("The 'tenant_id' claim is missing from the current principal."));
 
-    /// <summary>
-    /// Returns <see langword="true"/> when the principal holds the specified scope.
-    /// Handles both space-separated single claims and multiple individual scope claims.
-    /// </summary>
-    public static bool HasScope(this ClaimsPrincipal user, string scope) =>
-        user.FindAll(StrgClaimNames.Scope)
-            .Any(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                       .Contains(scope, StringComparer.Ordinal));
+        /// <summary>
+        /// Returns <see langword="true"/> when the principal holds the specified scope.
+        /// Handles both space-separated single claims and multiple individual scope claims.
+        /// </summary>
+        public bool HasScope(string scope) =>
+            user.FindAll(StrgClaimNames.Scope)
+                .Any(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Contains(scope, StringComparer.Ordinal));
+    }
 }

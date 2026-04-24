@@ -1,4 +1,3 @@
-using HotChocolate.Types;
 using Strg.GraphQL.Mutations.Admin;
 using Strg.GraphQL.Mutations.Storage;
 using Strg.GraphQL.Mutations.User;

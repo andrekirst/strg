@@ -5,7 +5,6 @@ using MassTransit.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Npgsql;
 using Serilog;
 using Serilog.Core;
@@ -31,17 +30,13 @@ namespace Strg.Integration.Tests.Messaging;
 /// <para>Same container shape as STRG-061's outbox tests: one <see cref="PostgreSqlContainer"/> +
 /// one <see cref="RabbitMqContainer"/> per class, fresh database per fact.</para>
 /// </summary>
-public sealed class AuditLogConsumerTests : IAsyncLifetime
+public sealed class AuditLogConsumerTests(ITestOutputHelper output) : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
         .Build();
 
     private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management-alpine")
         .Build();
-
-    private readonly ITestOutputHelper _output;
-
-    public AuditLogConsumerTests(ITestOutputHelper output) => _output = output;
 
     public async Task InitializeAsync()
     {
@@ -151,15 +146,15 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
     {
         var tenantId = Guid.NewGuid();
         var fileId = Guid.NewGuid();
-        const string OldPath = "/docs/draft.md";
-        const string NewPath = "/docs/archive/draft-2026.md";
+        const string oldPath = "/docs/draft.md";
+        const string newPath = "/docs/archive/draft-2026.md";
 
         await using var provider = await BuildServiceProviderAsync(tenantId);
         var harness = provider.GetRequiredService<ITestHarness>();
         await harness.Start();
 
         await PublishAsync(provider, tenantId, new FileMovedEvent(
-            tenantId, fileId, DriveId: Guid.NewGuid(), OldPath, NewPath, UserId: Guid.NewGuid()));
+            tenantId, fileId, DriveId: Guid.NewGuid(), oldPath, newPath, UserId: Guid.NewGuid()));
 
         (await harness.Consumed.Any<FileMovedEvent>()).Should().BeTrue();
 
@@ -167,8 +162,8 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         entry.Action.Should().Be(AuditActions.FileMoved);
 
         var details = JsonDocument.Parse(entry.Details!).RootElement;
-        details.GetProperty("oldPath").GetString().Should().Be(OldPath);
-        details.GetProperty("newPath").GetString().Should().Be(NewPath);
+        details.GetProperty("oldPath").GetString().Should().Be(oldPath);
+        details.GetProperty("newPath").GetString().Should().Be(newPath);
     }
 
     [Fact]
@@ -397,7 +392,7 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         // Serilog → in-memory capturing sink, then wrapped as MEL ILoggerFactory. Mirrors prod
         // (Program.cs UseSerilog) rendering semantics, which is the pipeline the {Exceptions}
         // template was specced against — MEL-only tests would measure a different render path.
-        using var serilog = new LoggerConfiguration()
+        await using var serilog = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Sink(new CapturingSink(capturedEvents))
             .CreateLogger();
@@ -477,25 +472,25 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         // Empirical dump — human inspects this to decide Option A vs Option B shape. Keep in
         // test output permanently: a future reader diagnosing a production Fault log by searching
         // "what does {Exceptions} actually look like?" finds this test + its captured output.
-        _output.WriteLine("=== EMPIRICAL RENDER of {Exceptions} template on a real Fault<FileUploadedEvent> ===");
-        _output.WriteLine(renderedMessage);
-        _output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
+        output.WriteLine("=== EMPIRICAL RENDER of {Exceptions} template on a real Fault<FileUploadedEvent> ===");
+        output.WriteLine(renderedMessage);
+        output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
         if (deadLetter.Properties.TryGetValue("Exceptions", out var exProp))
         {
-            _output.WriteLine(exProp.ToString());
-            _output.WriteLine("  (property value type: " + exProp.GetType().Name + ")");
+            output.WriteLine(exProp.ToString());
+            output.WriteLine("  (property value type: " + exProp.GetType().Name + ")");
         }
         else
         {
-            _output.WriteLine("  <Exceptions property NOT BOUND>");
+            output.WriteLine("  <Exceptions property NOT BOUND>");
         }
-        _output.WriteLine("=== LogEvent.Exception (MEL-side .Exception, separate from template bindings) ===");
-        _output.WriteLine(deadLetter.Exception?.ToString() ?? "<null>");
+        output.WriteLine("=== LogEvent.Exception (MEL-side .Exception, separate from template bindings) ===");
+        output.WriteLine(deadLetter.Exception?.ToString() ?? "<null>");
 
-        const string ProbeMarker = "DEAD_LETTER_PROBE";
+        const string probeMarker = "DEAD_LETTER_PROBE";
         renderedMessage.Should().Contain("InvalidOperationException",
             "the ExceptionType: Message projection must carry the exception class name into the scalar render");
-        renderedMessage.Should().Contain(ProbeMarker,
+        renderedMessage.Should().Contain(probeMarker,
             "the ExceptionType: Message projection must carry the exception Message into the scalar render");
 
         // Defence against a future refactor that "improves" the Fault log by flipping
@@ -540,7 +535,7 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         var fileId = Guid.NewGuid();
         var capturedEvents = new List<LogEvent>();
 
-        using var serilog = new LoggerConfiguration()
+        await using var serilog = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Sink(new CapturingSink(capturedEvents))
             .CreateLogger();
@@ -613,16 +608,16 @@ public sealed class AuditLogConsumerTests : IAsyncLifetime
         // Empirical dump kept for audit — a future reader investigating the FK-leak vector
         // inspects this captured output to verify the projection shape without re-running the
         // probe. Same rationale as the sibling render test.
-        _output.WriteLine("=== EMPIRICAL RENDER of FK-violation Fault<FileUploadedEvent> ===");
-        _output.WriteLine(renderedMessage);
-        _output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
+        output.WriteLine("=== EMPIRICAL RENDER of FK-violation Fault<FileUploadedEvent> ===");
+        output.WriteLine(renderedMessage);
+        output.WriteLine("=== Exceptions property raw (Serilog scalar/sequence value) ===");
         if (deadLetter.Properties.TryGetValue("Exceptions", out var exProp))
         {
-            _output.WriteLine(exProp.ToString());
+            output.WriteLine(exProp.ToString());
         }
         else
         {
-            _output.WriteLine("  <Exceptions property NOT BOUND>");
+            output.WriteLine("  <Exceptions property NOT BOUND>");
         }
 
         // Positive signal: the projection still carries Type + Message forensic signal. The
@@ -876,12 +871,9 @@ internal sealed class FkViolationProbeConsumer : IConsumer<FileUploadedEvent>
 /// <c>{Exceptions}</c> template binding against a real <c>ExceptionInfo[]</c> produced by
 /// MassTransit's fault publication pipeline.
 /// </summary>
-internal sealed class CapturingSink : ILogEventSink
+internal sealed class CapturingSink(List<LogEvent> events) : ILogEventSink
 {
-    private readonly List<LogEvent> _events;
     private readonly object _gate = new();
-
-    public CapturingSink(List<LogEvent> events) => _events = events;
 
     public void Emit(LogEvent logEvent)
     {
@@ -889,7 +881,7 @@ internal sealed class CapturingSink : ILogEventSink
         // consistent when the probe's published event triggers concurrent consumer logs.
         lock (_gate)
         {
-            _events.Add(logEvent);
+            events.Add(logEvent);
         }
     }
 }

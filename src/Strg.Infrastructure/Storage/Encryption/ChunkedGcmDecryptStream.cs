@@ -20,12 +20,9 @@ namespace Strg.Infrastructure.Storage.Encryption;
 /// from the underlying <see cref="AesGcm"/>. This is the defence against a malicious inner
 /// provider returning a valid-looking-but-reordered envelope.</para>
 /// </summary>
-internal sealed class ChunkedGcmDecryptStream : Stream
+internal sealed class ChunkedGcmDecryptStream(Stream ciphertext, byte[] dek, byte[] fileNonce) : Stream
 {
-    private readonly Stream _ciphertext;
-    private readonly byte[] _fileNonce;
-    private readonly byte[] _dek;
-    private readonly AesGcm _aes;
+    private readonly AesGcm _aes = new(dek, AesGcmFileWriter.TagLength);
 
     private readonly byte[] _currentChunk = new byte[AesGcmFileWriter.ChunkPlaintextSize + AesGcmFileWriter.TagLength];
     private readonly byte[] _nextChunk = new byte[AesGcmFileWriter.ChunkPlaintextSize + AesGcmFileWriter.TagLength];
@@ -38,14 +35,6 @@ internal sealed class ChunkedGcmDecryptStream : Stream
     private long _chunkIndex;
     private bool _firstIteration = true;
     private bool _eof;
-
-    public ChunkedGcmDecryptStream(Stream ciphertext, byte[] dek, byte[] fileNonce)
-    {
-        _ciphertext = ciphertext;
-        _dek = dek;
-        _fileNonce = fileNonce;
-        _aes = new AesGcm(dek, AesGcmFileWriter.TagLength);
-    }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
@@ -72,7 +61,7 @@ internal sealed class ChunkedGcmDecryptStream : Stream
 
         if (_firstIteration)
         {
-            _currentLen = await FillAsync(_ciphertext, _currentChunk, cancellationToken).ConfigureAwait(false);
+            _currentLen = await FillAsync(ciphertext, _currentChunk, cancellationToken).ConfigureAwait(false);
             _firstIteration = false;
             if (_currentLen == 0)
             {
@@ -82,7 +71,7 @@ internal sealed class ChunkedGcmDecryptStream : Stream
             }
         }
 
-        var nextLen = await FillAsync(_ciphertext, _nextChunk, cancellationToken).ConfigureAwait(false);
+        var nextLen = await FillAsync(ciphertext, _nextChunk, cancellationToken).ConfigureAwait(false);
         var isFinal = nextLen == 0;
 
         if (_currentLen < AesGcmFileWriter.TagLength)
@@ -119,11 +108,11 @@ internal sealed class ChunkedGcmDecryptStream : Stream
     private void DecryptChunk(ReadOnlySpan<byte> ciphertext, ReadOnlySpan<byte> tag, Span<byte> plaintext, long chunkIndex, bool isFinal)
     {
         Span<byte> nonce = stackalloc byte[AesGcmFileWriter.FileNonceLength];
-        _fileNonce.AsSpan(0, AesGcmFileWriter.NonceSaltLength).CopyTo(nonce[..AesGcmFileWriter.NonceSaltLength]);
+        fileNonce.AsSpan(0, AesGcmFileWriter.NonceSaltLength).CopyTo(nonce[..AesGcmFileWriter.NonceSaltLength]);
         BinaryPrimitives.WriteInt64LittleEndian(nonce[AesGcmFileWriter.NonceSaltLength..], chunkIndex);
 
         Span<byte> aad = stackalloc byte[AesGcmFileWriter.AadLength];
-        _fileNonce.AsSpan(0, AesGcmFileWriter.FileNonceLength).CopyTo(aad[..AesGcmFileWriter.FileNonceLength]);
+        fileNonce.AsSpan(0, AesGcmFileWriter.FileNonceLength).CopyTo(aad[..AesGcmFileWriter.FileNonceLength]);
         BinaryPrimitives.WriteInt64LittleEndian(aad.Slice(AesGcmFileWriter.FileNonceLength, 8), chunkIndex);
         aad[AesGcmFileWriter.FileNonceLength + 8] = isFinal ? (byte)1 : (byte)0;
 
@@ -163,8 +152,8 @@ internal sealed class ChunkedGcmDecryptStream : Stream
         if (disposing)
         {
             _aes.Dispose();
-            _ciphertext.Dispose();
-            CryptographicOperations.ZeroMemory(_dek);
+            ciphertext.Dispose();
+            CryptographicOperations.ZeroMemory(dek);
             CryptographicOperations.ZeroMemory(_plaintext);
         }
         base.Dispose(disposing);
@@ -173,8 +162,8 @@ internal sealed class ChunkedGcmDecryptStream : Stream
     public override async ValueTask DisposeAsync()
     {
         _aes.Dispose();
-        await _ciphertext.DisposeAsync().ConfigureAwait(false);
-        CryptographicOperations.ZeroMemory(_dek);
+        await ciphertext.DisposeAsync().ConfigureAwait(false);
+        CryptographicOperations.ZeroMemory(dek);
         CryptographicOperations.ZeroMemory(_plaintext);
         await base.DisposeAsync().ConfigureAwait(false);
         GC.SuppressFinalize(this);

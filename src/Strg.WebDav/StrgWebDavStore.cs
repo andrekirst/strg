@@ -5,7 +5,6 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Domain;
-using Strg.Core.Exceptions;
 using Strg.Core.Services;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Data;

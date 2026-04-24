@@ -140,7 +140,7 @@ builder.Services.AddStrgMassTransit(
     // WebDavJwtCacheInvalidationConsumer (STRG-073 Commit 3) depends on IWebDavJwtCache.
     bus =>
     {
-        bus.AddConsumer<Strg.GraphQL.Consumers.GraphQLSubscriptionPublisher>();
+        bus.AddConsumer<Strg.GraphQL.Consumers.GraphQlSubscriptionPublisher>();
         bus.AddConsumer<Strg.WebDav.Consumers.WebDavJwtCacheInvalidationConsumer>();
     });
 
@@ -293,7 +293,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
     ResponseWriter = SafeHealthCheckResponseWriter.WriteAsync,
 }).AllowAnonymous();
 
-app.MapGraphQL("/graphql");
+app.MapGraphQL();
 app.MapTokenEndpoints();
 app.MapUserInfoEndpoints();
 app.MapDriveEndpoints();

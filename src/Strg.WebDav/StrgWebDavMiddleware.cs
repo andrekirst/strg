@@ -49,22 +49,13 @@ namespace Strg.WebDav;
 /// 201/204/409/507 per RFC 4918 §9.7. Remaining write verbs (MKCOL, DELETE, COPY, MOVE,
 /// PROPPATCH, LOCK, UNLOCK) still return 501 — STRG-071/072 replace each in turn.</para>
 /// </summary>
-public sealed class StrgWebDavMiddleware
+public sealed class StrgWebDavMiddleware(RequestDelegate next, ILogger<StrgWebDavMiddleware> logger)
 {
     private static readonly HashSet<string> WebDavMethods = new(StringComparer.OrdinalIgnoreCase)
     {
         "OPTIONS", "HEAD", "GET", "PUT", "DELETE",
         "PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK",
     };
-
-    private readonly RequestDelegate _next;
-    private readonly ILogger<StrgWebDavMiddleware> _logger;
-
-    public StrgWebDavMiddleware(RequestDelegate next, ILogger<StrgWebDavMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
 
     public async Task InvokeAsync(
         HttpContext context,
@@ -78,7 +69,7 @@ public sealed class StrgWebDavMiddleware
 
         if (!WebDavMethods.Contains(method))
         {
-            await _next(context);
+            await next(context);
             return;
         }
 
@@ -110,7 +101,7 @@ public sealed class StrgWebDavMiddleware
         var drive = await resolver.ResolveAsync(driveName, tenantContext.TenantId, context.RequestAborted);
         if (drive is null)
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "WebDAV: drive {DriveName} not resolvable for tenant {TenantId} — returning 404",
                 driveName, tenantContext.TenantId);
             context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -127,7 +118,7 @@ public sealed class StrgWebDavMiddleware
             // TC-004 pin — `..`, `%00`, UNC-style backslash, reserved names all fail fast at the
             // URL boundary, not at the storage provider. The 400 tells the client the request
             // was malformed; no information about whether the target existed is leaked.
-            _logger.LogDebug(ex,
+            logger.LogDebug(ex,
                 "WebDAV: rejected unsafe path {Path} on drive {DriveName}",
                 context.Request.Path.Value, driveName);
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
@@ -204,7 +195,7 @@ public sealed class StrgWebDavMiddleware
                 // Store raises this for "parent folder missing", "overwriting a folder", and
                 // "PUT on root" — all RFC 4918 §9.7.1 / §9.7.2 "409 Conflict" territory. The
                 // message is diagnostic; we log it but don't echo to the client.
-                _logger.LogInformation(
+                logger.LogInformation(
                     "WebDAV PUT refused on drive {DriveName} path {Path}: {Reason}",
                     drive.Name, itemPath, ex.Message);
                 context.Response.StatusCode = StatusCodes.Status409Conflict;

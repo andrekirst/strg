@@ -54,7 +54,7 @@ public class UserMutationsTests
     private static readonly TestTenantContext SharedTenantCtx = TestTenantContext.Shared;
 
     private Task<TestExecutor> CreateExecutorAsync(Guid tenantId, Guid userId, string dbName) =>
-        GraphQLTestFixture.CreateExecutorAsync(
+        GraphQlTestFixture.CreateExecutorAsync(
             configureServices: services =>
             {
                 services.AddSingleton<ITenantContext>(SharedTenantCtx);

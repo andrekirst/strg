@@ -13,8 +13,7 @@ public sealed class DictionaryStorageProviderConfig(IDictionary<string, string?>
 {
     private readonly Dictionary<string, string?> _values = new(values, StringComparer.OrdinalIgnoreCase);
 
-    public string? GetValue(string key) =>
-        _values.TryGetValue(key, out var value) ? value : null;
+    public string? GetValue(string key) => _values.GetValueOrDefault(key);
 
     public T? GetValue<T>(string key)
     {

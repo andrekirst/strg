@@ -102,7 +102,133 @@ For **project-specific** strings that repeat across files (a role name, a subscr
 - **`var` for built-in types and when the type is apparent**: `var user = new User();`
 - **4-space indent, LF line endings, trailing newline** on every file.
 - **`sealed` by default** for concrete classes — see the main `CLAUDE.md` `Class Structure` section.
-- **Primary constructors** where they replace a one-line `_field = param` ctor, e.g. `public sealed class FooService(IFooRepo repo) : IFooService`.
+- **No unused `using` directives.** Enforced at build via `IDE0005` (warning → error under `TreatWarningsAsErrors`). Rider/ReSharper's "Remove unused usings" is the canonical cleanup.
+- **`await using` for `IAsyncDisposable` in async methods.** When the target implements `IAsyncDisposable` and the containing method is `async`, use `await using`. Example: `Utf8JsonWriter` exposes an async flush path via its `IAsyncDisposable` implementation, so `await using var writer = new Utf8JsonWriter(buffer, opts);` inside an async method — never plain `using`.
+- **Null-conditional assignment** (C# 14) instead of `is not null` guards around a single property assignment:
+  ```csharp
+  // CORRECT (C# 14)
+  drive?.DeletedAt = DateTimeOffset.UtcNow;
+
+  // WRONG
+  if (drive is not null)
+  {
+      drive.DeletedAt = DateTimeOffset.UtcNow;
+  }
+  ```
+- **`const` over `static readonly`** when every component is already `const`. Example: `private const string JsonPath = $"/openapi/{DocumentName}.json";` when `DocumentName` is `const`.
+
+### Primary constructors
+
+Use a primary constructor when the constructor body is *any combination* of pure `_field = param` assignments, `: base(…)` delegation, or trivial field initializers derived from parameters — regardless of parameter count. Remove the `_field_` prefix at call sites and reference the parameter name directly. Applies to DI-heavy services, exception classes, stream wrappers that capture ctor args, test helper stubs, and xUnit test classes that receive `ITestOutputHelper`/fixtures.
+
+```csharp
+// CORRECT — DI service with primary ctor
+public sealed class StrgErrorFilter(IHostEnvironment env, ILogger<StrgErrorFilter> logger) : IErrorFilter
+{
+    public IError OnError(IError error) => /* uses env, logger directly */;
+}
+
+// CORRECT — exception with parameter-backed property
+public sealed class ValidationException(string message, string? propertyName = null)
+    : Exception(message)
+{
+    public string? PropertyName { get; } = propertyName;
+}
+
+// CORRECT — DataLoader with base delegation
+public sealed class DriveByIdDataLoader(
+    IDbContextFactory<StrgDbContext> dbFactory,
+    IBatchScheduler batchScheduler,
+    DataLoaderOptions? options = null)
+    : BatchDataLoader<Guid, Drive>(batchScheduler, options ?? new DataLoaderOptions())
+{
+    protected override async Task<IReadOnlyDictionary<Guid, Drive>> LoadBatchAsync(/*…*/)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        /* … */
+    }
+}
+
+// CORRECT — xUnit class receiving helpers
+public sealed class AuditLogConsumerTests(ITestOutputHelper output) : IAsyncLifetime { /* … */ }
+```
+
+Classic constructors are only kept when the body contains logic beyond trivial assignment/delegation (e.g., validation, branching, parameter transformation).
+
+### Extension methods: C# 14 `extension(T)` block
+
+When two or more extension methods target the same receiver type, group them into a single `extension(T x)` block rather than a series of `public static Foo(this T x, …)` methods. The block form is the idiomatic .NET 10 / C# 14 syntax, single-sources the receiver parameter, and lets you promote to extension properties/operators later without breaking call sites.
+
+```csharp
+// CORRECT
+public static class ClaimsPrincipalExtensions
+{
+    extension(ClaimsPrincipal user)
+    {
+        public Guid GetUserId() =>
+            Guid.Parse(user.FindFirst(StrgClaimNames.Subject)?.Value
+                       ?? throw new InvalidOperationException("…"));
+
+        public bool HasScope(string scope) =>
+            user.FindAll(StrgClaimNames.Scope)
+                .Any(c => c.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Contains(scope, StringComparer.Ordinal));
+    }
+}
+
+// WRONG — unrelated top-level static methods when they all share a receiver
+public static class ClaimsPrincipalExtensions
+{
+    public static Guid GetUserId(this ClaimsPrincipal user) => /*…*/;
+    public static bool HasScope(this ClaimsPrincipal user, string scope) => /*…*/;
+}
+```
+
+A single standalone extension method may still use the classic `this T` form; switch to a block as soon as a second member is added for the same receiver.
+
+---
+
+## Naming Conventions
+
+### Filename must match typename
+
+After any type rename, rename the containing file too. `git status` must show a `R` (renamed) entry for the file, not a content-only `M`. Rider does not rename files by default — enable "Rename file when renaming type" in settings, or use `git mv` manually. A mismatch (file `IFooMarker.cs` containing `interface IBarMarker`) should not land in a commit.
+
+### Acronyms: PascalCase for 3+ letters, everywhere
+
+Per Microsoft Framework Design Guidelines, acronyms of 3 or more letters are PascalCase — first letter uppercase, rest lowercase: `GraphQl`, `Html`, `Json`, `Xml`, `Http`. Two-letter acronyms stay fully uppercase: `IO`, `ID`, `DB`. Applies uniformly to types, members, namespaces, folder names, and filenames — no half-application (a type named `GraphQlFoo` inside namespace `Strg.GraphQL` is wrong; both must match).
+
+```csharp
+// CORRECT
+namespace Strg.GraphQl.Consumers;
+public sealed class GraphQlSubscriptionPublisher { }
+
+// WRONG
+namespace Strg.GraphQL.Consumers;
+public sealed class GraphQLSubscriptionPublisher { }
+```
+
+### Local `const`: camelCase (project-specific)
+
+Deviation from Microsoft's convention: local `const` identifiers inside method bodies are **camelCase**. Non-local constants (field-scope) remain PascalCase as per Microsoft.
+
+```csharp
+// CORRECT
+public void Test()
+{
+    const string oldPath = "/docs/draft.md";
+    const string newPath = "/docs/archive/draft-2026.md";
+    /* … */
+}
+
+// WRONG
+public void Test()
+{
+    const string OldPath = "/docs/draft.md";
+}
+```
+
+Rationale: matches Rider/ReSharper's cleanup output; eliminates a recurring churn source where test data is extracted to a local `const` for readability and then re-cased on the next cleanup pass. Enforced by a naming rule in `.editorconfig`.
 
 ---
 
@@ -115,6 +241,14 @@ Before finishing any edit, verify:
 - [ ] No MIME-type, header-name, claim-type, HTTP-method, or auth-scheme **string literal** — use the BCL constant.
 - [ ] Any project-specific string repeating across files lives in `Strg.Core/Constants/`.
 - [ ] Target framework references (`.csproj` if overridden) are `net10.0` or absent (inherited from `Directory.Build.props`).
+- [ ] No unused `using` directives.
+- [ ] Primary constructor used where the body would be trivial assignment/delegation only.
+- [ ] Extension methods grouped under `extension(T)` block when two or more share a receiver.
+- [ ] Any renamed type has its file renamed to match (and `git status` shows `R`).
+- [ ] Acronyms of 3+ letters are PascalCase (`GraphQl`, not `GraphQL`) in types, members, namespaces, folders, filenames.
+- [ ] Local `const` identifiers are camelCase; field-level constants remain PascalCase.
+- [ ] `await using` used for `IAsyncDisposable` targets inside async methods.
+- [ ] `x?.Prop = v` used instead of `if (x is not null) x.Prop = v` when the body is a single assignment.
 
 ---
 

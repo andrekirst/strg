@@ -393,36 +393,26 @@ public sealed class BasicAuthJwtBridgeMiddlewareTests
         return context;
     }
 
-    private sealed class StubHttpClientFactory : IHttpClientFactory
+    private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory
     {
-        private readonly HttpMessageHandler _handler;
-        public StubHttpClientFactory(HttpMessageHandler handler) => _handler = handler;
         public HttpClient CreateClient(string name) =>
-            new(_handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost") };
+            new(handler, disposeHandler: false) { BaseAddress = new Uri("http://localhost") };
     }
 
     // HttpMessageHandler stub that returns a fixed (status, body) for POST /connect/token and
     // tracks invocation count so the cache-hit test can assert zero re-exchanges.
-    private sealed class StubTokenHandler : HttpMessageHandler
+    private sealed class StubTokenHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
-        private readonly HttpStatusCode _status;
-        private readonly string _body;
         public int InvocationCount { get; private set; }
-
-        public StubTokenHandler(HttpStatusCode status, string body)
-        {
-            _status = status;
-            _body = body;
-        }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             InvocationCount++;
-            var response = new HttpResponseMessage(_status)
+            var response = new HttpResponseMessage(status)
             {
-                Content = new StringContent(_body, Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
             };
             return Task.FromResult(response);
         }

@@ -2,7 +2,6 @@ using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry;
 using OpenTelemetry.Trace;
 using Strg.Infrastructure.Data;
 using Strg.Integration.Tests.Auth;
@@ -28,7 +27,7 @@ public sealed class TracingTests(StrgWebApplicationFactory factory) : IClassFixt
         // Stack an in-memory exporter alongside the OTLP exporter that AddStrgObservability
         // already registered. ConfigureOpenTelemetryTracerProvider merges into the existing
         // builder — we do NOT rebuild or replace the provider.
-        using var tracerFactory = factory.WithWebHostBuilder(builder =>
+        await using var tracerFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {
@@ -70,7 +69,7 @@ public sealed class TracingTests(StrgWebApplicationFactory factory) : IClassFixt
     {
         var exportedActivities = new List<Activity>();
 
-        using var tracerFactory = factory.WithWebHostBuilder(builder =>
+        await using var tracerFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {

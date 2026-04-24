@@ -24,7 +24,7 @@ internal static class OpenApiApplicationBuilderExtensions
     // Single source of truth for the JSON spec URL. Derived from DocumentName rather than
     // duplicating the literal — keeps the SwaggerEndpoint reference in sync with the
     // RouteTemplate if DocumentName ever moves off "v1".
-    private static readonly string JsonPath = $"/openapi/{OpenApiServiceCollectionExtensions.DocumentName}.json";
+    private const string JsonPath = $"/openapi/{OpenApiServiceCollectionExtensions.DocumentName}.json";
     private const string UiRoutePrefix = "openapi/ui";
 
     /// <summary>

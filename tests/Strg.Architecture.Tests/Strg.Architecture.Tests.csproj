@@ -29,6 +29,7 @@
          keeps Architecture.Tests buildable when Strg.Api has transient compile errors
          from in-flight work on other tranches. -->
     <ProjectReference Include="..\..\src\Strg.Core\Strg.Core.csproj" />
+    <ProjectReference Include="..\..\src\Strg.Application\Strg.Application.csproj" />
     <ProjectReference Include="..\..\src\Strg.GraphQl\Strg.GraphQl.csproj" />
     <ProjectReference Include="..\..\src\Strg.Infrastructure\Strg.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Strg.WebDav\Strg.WebDav.csproj" />

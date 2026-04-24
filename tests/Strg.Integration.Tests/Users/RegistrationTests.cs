@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 using Strg.Integration.Tests.Auth;
 using Xunit;

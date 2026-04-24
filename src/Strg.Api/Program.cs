@@ -8,6 +8,8 @@ using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
 using Strg.Api.OpenApi;
+using Strg.Application.Abstractions;
+using Strg.Application.DependencyInjection;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Identity;
@@ -122,6 +124,17 @@ builder.Services.AddDbContext<StrgDbContext>(options =>
     options.UseNpgsql(connectionString);
     options.UseOpenIddict();
 });
+
+// Strg.Application handlers depend on IStrgDbContext (the port) rather than StrgDbContext
+// directly. Register the same scoped instance under both.
+builder.Services.AddScoped<IStrgDbContext>(sp => sp.GetRequiredService<StrgDbContext>());
+
+// ---- Strg.Application (CQRS foundation) ----
+// Wires the source-generated Mediator dispatcher, the five pipeline behaviors, and scans
+// Strg.Application for AbstractValidator<T> implementations. Existing Strg.Api validators
+// (e.g. RegisterUserRequestValidator) stay registered via the separate AddValidatorsFromAssemblyContaining<Program>
+// call below until the matching features are ported into Strg.Application.
+builder.Services.AddStrgApplication();
 
 // ---- OpenIddict (STRG-012) ----
 builder.Services.AddStrgOpenIddict(builder.Configuration, builder.Environment.IsDevelopment());

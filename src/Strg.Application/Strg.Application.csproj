@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- AspNetCore.App gives us Microsoft.Extensions.Logging.Abstractions and
+         Microsoft.Extensions.DependencyInjection.Abstractions via the shared framework,
+         matching how Strg.Infrastructure acquires the same surface. Layering is enforced
+         by convention (handlers never touch HttpContext/IActionResult) rather than by
+         starving the project of the types. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mediator.Abstractions" />
+    <PackageReference Include="Mediator.SourceGenerator">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="MassTransit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Strg.Api.Tests" />
+    <InternalsVisibleTo Include="Strg.Integration.Tests" />
+  </ItemGroup>
+
+</Project>

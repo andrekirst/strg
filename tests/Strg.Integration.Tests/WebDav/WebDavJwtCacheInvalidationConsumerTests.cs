@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using Strg.Core.Domain;
 using Strg.Core.Events;
 using Strg.Infrastructure.Data;
 using Strg.WebDav;

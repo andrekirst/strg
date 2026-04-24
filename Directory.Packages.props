@@ -42,6 +42,11 @@
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.6" />
     <!-- Validation -->
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <!-- CQRS / Mediator (source-generated, MIT — martinothamar/Mediator) -->
+    <PackageVersion Include="Mediator.Abstractions" Version="3.0.2" />
+    <PackageVersion Include="Mediator.SourceGenerator" Version="3.0.2" />
     <!-- OpenAPI / Swagger (STRG-009) -->
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
     <!-- Redis -->

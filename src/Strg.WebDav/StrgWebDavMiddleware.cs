@@ -2,10 +2,10 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
+using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Identity;
 using Strg.Core.Storage;
-using Strg.Infrastructure.Data;
 
 namespace Strg.WebDav;
 

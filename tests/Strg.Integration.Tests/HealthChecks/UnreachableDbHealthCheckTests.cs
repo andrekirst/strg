@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Net.Http.Headers;
+using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.HealthChecks;
 using Strg.Infrastructure.Storage;

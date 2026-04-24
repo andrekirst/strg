@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using OpenIddict.Abstractions;
+using Strg.Core.Domain;
 using Strg.Core.Constants;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;

@@ -6,6 +6,7 @@
   </Configurations>
   <Folder Name="/src/">
     <Project Path="src/Strg.Api/Strg.Api.csproj" />
+    <Project Path="src/Strg.Application/Strg.Application.csproj" />
     <Project Path="src/Strg.Core/Strg.Core.csproj" />
     <Project Path="src/Strg.GraphQl/Strg.GraphQl.csproj" />
     <Project Path="src/Strg.Infrastructure/Strg.Infrastructure.csproj" />

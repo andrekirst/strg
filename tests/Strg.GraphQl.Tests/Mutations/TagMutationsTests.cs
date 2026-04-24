@@ -3,6 +3,7 @@ using HotChocolate.Authorization;
 using HotChocolate.Execution;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Strg.Core.Domain;
 using Strg.GraphQl.Mutations;
 using Strg.GraphQl.Mutations.Storage;
 using Strg.GraphQl.Tests.Helpers;

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Strg.Core.Domain;
 
 namespace Strg.Infrastructure.Data;
 

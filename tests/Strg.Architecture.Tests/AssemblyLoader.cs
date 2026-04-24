@@ -1,5 +1,6 @@
 using System.Reflection;
 using MassTransit;
+using Strg.Application.Behaviors;
 using Strg.Core.Domain;
 using Strg.GraphQl.Consumers;
 using Strg.Infrastructure.Data;
@@ -36,6 +37,7 @@ internal static class AssemblyLoader
         var seeds = new[]
         {
             typeof(TenantedEntity).Assembly,              // Strg.Core
+            typeof(AuditBehavior<,>).Assembly,            // Strg.Application
             typeof(StrgDbContext).Assembly,               // Strg.Infrastructure
             typeof(GraphQlSubscriptionPublisher).Assembly, // Strg.GraphQl
             typeof(IStrgWebDavStore).Assembly,            // Strg.WebDav

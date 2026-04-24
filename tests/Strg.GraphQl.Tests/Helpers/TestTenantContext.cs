@@ -1,4 +1,4 @@
-using Strg.Infrastructure.Data;
+using Strg.Core.Domain;
 
 namespace Strg.GraphQl.Tests.Helpers;
 

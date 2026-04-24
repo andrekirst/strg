@@ -2,12 +2,13 @@ using System.Linq.Expressions;
 using System.Reflection;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Strg.Application.Abstractions;
 using Strg.Core.Domain;
 
 namespace Strg.Infrastructure.Data;
 
 public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+    : DbContext(options), IStrgDbContext
 {
     public const string TenantFilterName = "Tenant";
     public const string SoftDeleteFilterName = "SoftDelete";

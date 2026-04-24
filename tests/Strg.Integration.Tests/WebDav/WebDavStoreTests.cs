@@ -279,12 +279,12 @@ public sealed class WebDavStoreTests(StrgWebApplicationFactory factory)
     private ServiceProvider BuildScopedDb()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<Strg.Infrastructure.Data.ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
+        services.AddSingleton<Strg.Core.Domain.ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
     }
 
-    private sealed class FixtureTenantContext(Guid tenantId) : Strg.Infrastructure.Data.ITenantContext
+    private sealed class FixtureTenantContext(Guid tenantId) : Strg.Core.Domain.ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
     }

@@ -43,6 +43,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
+    <ProjectReference Include="..\Strg.Application\Strg.Application.csproj" />
   </ItemGroup>
 
   <ItemGroup>

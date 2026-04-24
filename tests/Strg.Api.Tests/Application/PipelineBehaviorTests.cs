@@ -3,8 +3,10 @@ using Mediator;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Application.Behaviors;
 using Strg.Core;
+using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Xunit;
 
@@ -55,26 +57,193 @@ public sealed class PipelineBehaviorTests
     }
 
     [Fact]
-    public async Task AuditBehavior_invokes_handler_and_completes_for_audited_command()
+    public async Task AuditBehavior_skips_write_when_command_is_not_audited()
     {
-        var logger = NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance;
-        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(logger);
-        var nextCalled = false;
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(SampleAuditEntry());
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<TenantScopedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<TenantScopedDummy, Result<string>>>.Instance);
+
+        var result = await behavior.Handle(
+            new TenantScopedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        await auditService.DidNotReceive().LogAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditBehavior_skips_write_when_scope_is_not_populated()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(false);
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
 
         var result = await behavior.Handle(
             new AuditedDummy(),
-            (_, _) =>
-            {
-                nextCalled = true;
-                return ValueTask.FromResult(Result<string>.Success("ok"));
-            },
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
             CancellationToken.None);
 
-        nextCalled.Should().BeTrue("audit runs post-success — next() must complete first");
         result.IsSuccess.Should().BeTrue();
+        await auditService.DidNotReceive().LogAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task AuditBehavior_skips_write_on_result_failure()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(SampleAuditEntry());
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        var result = await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Failure("SomeError", "nope")),
+            CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        await auditService.DidNotReceive().LogAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditBehavior_writes_entry_when_audited_scope_populated_and_success()
+    {
+        var entry = SampleAuditEntry();
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(entry);
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        var result = await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        await auditService.Received(1).LogAsync(entry, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditBehavior_writes_entry_when_response_is_not_a_result_shape()
+    {
+        var entry = SampleAuditEntry();
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(entry);
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<NonResultAuditedDummy, int>(
+            auditScope, auditService, NullLogger<AuditBehavior<NonResultAuditedDummy, int>>.Instance);
+
+        var value = await behavior.Handle(
+            new NonResultAuditedDummy(),
+            (_, _) => ValueTask.FromResult(42),
+            CancellationToken.None);
+
+        value.Should().Be(42);
+        await auditService.Received(1).LogAsync(entry, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AuditBehavior_swallows_non_cancellation_exception_from_audit_service()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(SampleAuditEntry());
+        var auditService = Substitute.For<IAuditService>();
+        auditService
+            .LogAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("audit store unreachable"));
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        var result = await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue("primary op must survive an audit-store outage");
+        result.Value.Should().Be("ok");
+    }
+
+    [Fact]
+    public async Task AuditBehavior_rethrows_operation_canceled_from_audit_service()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(SampleAuditEntry());
+        var auditService = Substitute.For<IAuditService>();
+        auditService
+            .LogAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new OperationCanceledException());
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        var act = async () => await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task AuditBehavior_resets_scope_after_successful_handler()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        auditScope.BuildEntry().Returns(SampleAuditEntry());
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => ValueTask.FromResult(Result<string>.Success("ok")),
+            CancellationToken.None);
+
+        auditScope.Received(1).Reset();
+    }
+
+    [Fact]
+    public async Task AuditBehavior_resets_scope_when_handler_throws()
+    {
+        var auditScope = Substitute.For<IAuditScope>();
+        auditScope.IsPopulated.Returns(true);
+        var auditService = Substitute.For<IAuditService>();
+        var behavior = new AuditBehavior<AuditedDummy, Result<string>>(
+            auditScope, auditService, NullLogger<AuditBehavior<AuditedDummy, Result<string>>>.Instance);
+
+        var act = async () => await behavior.Handle(
+            new AuditedDummy(),
+            (_, _) => throw new InvalidOperationException("handler crashed"),
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        auditScope.Received(1).Reset();
+    }
+
+    private static AuditEntry SampleAuditEntry() => new()
+    {
+        TenantId = Guid.NewGuid(),
+        UserId = Guid.NewGuid(),
+        Action = "test.action",
+        ResourceType = "TestResource",
+        ResourceId = Guid.NewGuid(),
+        Details = "sample",
+    };
 
     private sealed record TenantScopedDummy : ICommand<Result<string>>, ITenantScopedCommand;
 
     private sealed record AuditedDummy : ICommand<Result<string>>, IAuditedCommand;
+
+    private sealed record NonResultAuditedDummy : ICommand<int>, IAuditedCommand;
 }

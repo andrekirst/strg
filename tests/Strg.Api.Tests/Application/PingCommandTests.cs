@@ -5,6 +5,7 @@ using NSubstitute;
 using Strg.Application.Abstractions;
 using Strg.Application.DependencyInjection;
 using Strg.Application.Features.Ping;
+using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Xunit;
 
@@ -67,6 +68,15 @@ public sealed class PingCommandTests
         // TransactionBehavior never touches Database. The substitute's properties return nulls
         // by default, which is never observed along the PingCommand code path.
         services.AddScoped<IStrgDbContext>(_ => Substitute.For<IStrgDbContext>());
+
+        // Same reasoning for ICurrentUser: PingCommand is not IAuditedCommand, so the AuditScope
+        // never calls BuildEntry. ICurrentUser is only resolved if a populated entry needs to be
+        // composed; the substitute satisfies AuditScope's ctor activation.
+        services.AddScoped<ICurrentUser>(_ => Substitute.For<ICurrentUser>());
+
+        // Same reasoning for IAuditService: PingCommand is not IAuditedCommand, so AuditBehavior
+        // never invokes LogAsync. The substitute satisfies the behavior's ctor activation.
+        services.AddScoped<IAuditService>(_ => Substitute.For<IAuditService>());
 
         services.AddStrgApplication();
 

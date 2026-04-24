@@ -1,7 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
@@ -13,8 +13,7 @@ internal sealed class CreateFolderHandler(
     IStrgDbContext db,
     ITenantContext tenantContext,
     ICurrentUser currentUser,
-    IAuditService auditService,
-    ILogger<CreateFolderHandler> logger)
+    IAuditScope auditScope)
     : ICommandHandler<CreateFolderCommand, Result<FileItem>>
 {
     public async ValueTask<Result<FileItem>> Handle(CreateFolderCommand command, CancellationToken cancellationToken)
@@ -50,36 +49,12 @@ internal sealed class CreateFolderHandler(
         db.Files.Add(folder);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        auditScope.Record(
             AuditActions.FolderCreated,
+            AuditResourceTypes.FileItem,
             folder.Id,
-            $"driveId={command.DriveId}; path={path.Value}",
-            cancellationToken).ConfigureAwait(false);
+            details: $"driveId={command.DriveId}; path={path.Value}");
 
         return Result<FileItem>.Success(folder);
-    }
-
-    private async Task SafeAuditAsync(string action, Guid folderId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = currentUser.UserId,
-                Action = action,
-                ResourceType = "FileItem",
-                ResourceId = folderId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(ex, "CreateFolder: audit write failed for folder {FolderId}; folder op succeeded", folderId);
-        }
     }
 }

@@ -1,6 +1,6 @@
 using Mediator;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
@@ -17,10 +17,8 @@ internal sealed class RemoveAllTagsHandler(
     IStrgDbContext db,
     ITagRepository tagRepository,
     IFileRepository fileRepository,
-    ITenantContext tenantContext,
     ICurrentUser currentUser,
-    IAuditService auditService,
-    ILogger<RemoveAllTagsHandler> logger)
+    IAuditScope auditScope)
     : ICommandHandler<RemoveAllTagsCommand, Result<int>>
 {
     public async ValueTask<Result<int>> Handle(RemoveAllTagsCommand command, CancellationToken cancellationToken)
@@ -41,41 +39,13 @@ internal sealed class RemoveAllTagsHandler(
         await tagRepository.RemoveAllAsync(command.FileId, userId, cancellationToken).ConfigureAwait(false);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        auditScope.Record(
             AuditActions.TagRemoved,
+            AuditResourceTypes.FileItem,
             command.FileId,
-            userId,
-            $"bulk=true; count={existing.Count}",
-            cancellationToken).ConfigureAwait(false);
+            details: $"bulk=true; count={existing.Count}",
+            userId: userId);
 
         return Result<int>.Success(existing.Count);
-    }
-
-    private async Task SafeAuditAsync(
-        string action, Guid fileId, Guid userId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = userId,
-                Action = action,
-                ResourceType = "FileItem",
-                ResourceId = fileId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(
-                ex,
-                "RemoveAllTags: audit write failed for {Action} on file {FileId} by user {UserId}; tag op succeeded",
-                action, fileId, userId);
-        }
     }
 }

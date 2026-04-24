@@ -11,4 +11,4 @@ public sealed record CreateDriveCommand(
     string? ProviderConfigJson = null,
     bool EncryptionEnabled = false,
     bool? IsDefault = null)
-    : ICommand<Result<Drive>>, ITenantScopedCommand;
+    : ICommand<Result<Drive>>, ITenantScopedCommand, IAuditedCommand;

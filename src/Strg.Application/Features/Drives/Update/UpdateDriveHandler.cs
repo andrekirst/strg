@@ -1,7 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
@@ -10,10 +10,7 @@ namespace Strg.Application.Features.Drives.Update;
 
 internal sealed class UpdateDriveHandler(
     IStrgDbContext db,
-    ITenantContext tenantContext,
-    ICurrentUser currentUser,
-    IAuditService auditService,
-    ILogger<UpdateDriveHandler> logger)
+    IAuditScope auditScope)
     : ICommandHandler<UpdateDriveCommand, Result<Drive>>
 {
     public async ValueTask<Result<Drive>> Handle(UpdateDriveCommand command, CancellationToken cancellationToken)
@@ -46,36 +43,12 @@ internal sealed class UpdateDriveHandler(
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        auditScope.Record(
             AuditActions.DriveUpdated,
+            AuditResourceTypes.Drive,
             drive.Id,
-            string.Join("; ", changes),
-            cancellationToken).ConfigureAwait(false);
+            details: string.Join("; ", changes));
 
         return Result<Drive>.Success(drive);
-    }
-
-    private async Task SafeAuditAsync(string action, Guid driveId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = currentUser.UserId,
-                Action = action,
-                ResourceType = "Drive",
-                ResourceId = driveId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(ex, "UpdateDrive: audit write failed for drive {DriveId}; drive op succeeded", driveId);
-        }
     }
 }

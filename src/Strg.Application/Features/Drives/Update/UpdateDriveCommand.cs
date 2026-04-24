@@ -6,4 +6,4 @@ using Strg.Core.Domain;
 namespace Strg.Application.Features.Drives.Update;
 
 public sealed record UpdateDriveCommand(Guid Id, string? Name, bool? IsDefault)
-    : ICommand<Result<Drive>>, ITenantScopedCommand;
+    : ICommand<Result<Drive>>, ITenantScopedCommand, IAuditedCommand;

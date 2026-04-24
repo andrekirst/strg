@@ -6,4 +6,4 @@ using Strg.Core.Domain;
 namespace Strg.Application.Features.Folders.Create;
 
 public sealed record CreateFolderCommand(Guid DriveId, string Path)
-    : ICommand<Result<FileItem>>, ITenantScopedCommand;
+    : ICommand<Result<FileItem>>, ITenantScopedCommand, IAuditedCommand;

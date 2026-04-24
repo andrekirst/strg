@@ -6,4 +6,4 @@ using Strg.Core.Domain;
 namespace Strg.Application.Features.Tags.AddTag;
 
 public sealed record AddTagCommand(Guid FileId, string Key, string Value, TagValueType ValueType)
-    : ICommand<Result<Tag>>, ITenantScopedCommand;
+    : ICommand<Result<Tag>>, ITenantScopedCommand, IAuditedCommand;

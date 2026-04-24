@@ -1,7 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
@@ -17,9 +17,7 @@ namespace Strg.Application.Features.Tags.RemoveTag;
 internal sealed class RemoveTagHandler(
     IStrgDbContext db,
     ITagRepository tagRepository,
-    ITenantContext tenantContext,
-    IAuditService auditService,
-    ILogger<RemoveTagHandler> logger)
+    IAuditScope auditScope)
     : ICommandHandler<RemoveTagCommand, Result<Guid>>
 {
     public async ValueTask<Result<Guid>> Handle(RemoveTagCommand command, CancellationToken cancellationToken)
@@ -33,41 +31,14 @@ internal sealed class RemoveTagHandler(
         await tagRepository.RemoveAsync(tag.FileId, tag.UserId, tag.Key, cancellationToken).ConfigureAwait(false);
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        // Audit against the tag's owner, not the caller — same rationale as UpdateTagHandler.
+        auditScope.Record(
             AuditActions.TagRemoved,
+            AuditResourceTypes.FileItem,
             tag.FileId,
-            tag.UserId,
-            $"key={tag.Key}",
-            cancellationToken).ConfigureAwait(false);
+            details: $"key={tag.Key}",
+            userId: tag.UserId);
 
         return Result<Guid>.Success(command.Id);
-    }
-
-    private async Task SafeAuditAsync(
-        string action, Guid fileId, Guid userId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = userId,
-                Action = action,
-                ResourceType = "FileItem",
-                ResourceId = fileId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(
-                ex,
-                "RemoveTag: audit write failed for {Action} on file {FileId} by user {UserId}; tag op succeeded",
-                action, fileId, userId);
-        }
     }
 }

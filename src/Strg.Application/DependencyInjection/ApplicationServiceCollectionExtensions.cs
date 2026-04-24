@@ -1,6 +1,7 @@
 using FluentValidation;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
+using Strg.Application.Auditing;
 using Strg.Application.Behaviors;
 
 namespace Strg.Application.DependencyInjection;
@@ -34,6 +35,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TenantScopeBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(AuditBehavior<,>));
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
+
+        services.AddScoped<IAuditScope, AuditScope>();
 
         services.AddValidatorsFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
 

@@ -1,7 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
@@ -13,11 +13,7 @@ namespace Strg.Application.Features.Tags.UpdateTag;
 /// RemoveTag + AddTag. Tenant scoping comes from the StrgDbContext global query filter so a
 /// caller in tenant B cannot update a tenant-A tag (the row is invisible to the load).
 /// </summary>
-internal sealed class UpdateTagHandler(
-    IStrgDbContext db,
-    ITenantContext tenantContext,
-    IAuditService auditService,
-    ILogger<UpdateTagHandler> logger)
+internal sealed class UpdateTagHandler(IStrgDbContext db, IAuditScope auditScope)
     : ICommandHandler<UpdateTagCommand, Result<Tag>>
 {
     public async ValueTask<Result<Tag>> Handle(UpdateTagCommand command, CancellationToken cancellationToken)
@@ -32,41 +28,15 @@ internal sealed class UpdateTagHandler(
         tag.ValueType = command.ValueType;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        // Audit against the tag's owner, not the caller. Tags are a user-scoped overlay; the
+        // audit row is about the metadata-owner's state, not who triggered the mutation.
+        auditScope.Record(
             AuditActions.TagAssigned,
+            AuditResourceTypes.FileItem,
             tag.FileId,
-            tag.UserId,
-            $"key={tag.Key}; value_type={command.ValueType.ToString().ToLowerInvariant()}",
-            cancellationToken).ConfigureAwait(false);
+            details: $"key={tag.Key}; value_type={command.ValueType.ToString().ToLowerInvariant()}",
+            userId: tag.UserId);
 
         return Result<Tag>.Success(tag);
-    }
-
-    private async Task SafeAuditAsync(
-        string action, Guid fileId, Guid userId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = userId,
-                Action = action,
-                ResourceType = "FileItem",
-                ResourceId = fileId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(
-                ex,
-                "UpdateTag: audit write failed for {Action} on file {FileId} by user {UserId}; tag op succeeded",
-                action, fileId, userId);
-        }
     }
 }

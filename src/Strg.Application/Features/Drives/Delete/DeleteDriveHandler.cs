@@ -1,19 +1,15 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Strg.Application.Abstractions;
+using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
-using Strg.Core.Domain;
 
 namespace Strg.Application.Features.Drives.Delete;
 
 internal sealed class DeleteDriveHandler(
     IStrgDbContext db,
-    ITenantContext tenantContext,
-    ICurrentUser currentUser,
-    IAuditService auditService,
-    ILogger<DeleteDriveHandler> logger)
+    IAuditScope auditScope)
     : ICommandHandler<DeleteDriveCommand, Result<Guid>>
 {
     public async ValueTask<Result<Guid>> Handle(DeleteDriveCommand command, CancellationToken cancellationToken)
@@ -28,36 +24,12 @@ internal sealed class DeleteDriveHandler(
         drive.DeletedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await SafeAuditAsync(
+        auditScope.Record(
             AuditActions.DriveDeleted,
+            AuditResourceTypes.Drive,
             drive.Id,
-            $"name={drive.Name}",
-            cancellationToken).ConfigureAwait(false);
+            details: $"name={drive.Name}");
 
         return Result<Guid>.Success(command.Id);
-    }
-
-    private async Task SafeAuditAsync(string action, Guid driveId, string details, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await auditService.LogAsync(new AuditEntry
-            {
-                TenantId = tenantContext.TenantId,
-                UserId = currentUser.UserId,
-                Action = action,
-                ResourceType = "Drive",
-                ResourceId = driveId,
-                Details = details,
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            if (ex is OperationCanceledException)
-            {
-                throw;
-            }
-            logger.LogWarning(ex, "DeleteDrive: audit write failed for drive {DriveId}; drive op succeeded", driveId);
-        }
     }
 }

@@ -20,7 +20,7 @@ public sealed class TokenController(
 {
     /// <summary>
     /// Token endpoint passthrough — OpenIddict validates the request and calls
-    /// <see cref="SignInAsync"/> with the principal produced here.
+    /// <c>SignInAsync</c> with the principal produced here.
     /// </summary>
     [HttpPost("~/connect/token")]
     [AllowAnonymous]

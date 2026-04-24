@@ -9,6 +9,10 @@ using System.Security.Claims;
 
 namespace Strg.Api.Endpoints;
 
+/// <summary>
+/// Drive management endpoints for the current tenant. A <c>Drive</c> is a named mount point
+/// that binds a storage provider configuration; create/delete require the <c>admin</c> scope.
+/// </summary>
 public static class DriveEndpoints
 {
     public static IEndpointRouteBuilder MapDriveEndpoints(this IEndpointRouteBuilder app)
@@ -23,6 +27,10 @@ public static class DriveEndpoints
         return app;
     }
 
+    /// <summary>
+    /// Returns every non-deleted drive visible to the current tenant. Storage credentials
+    /// (<c>ProviderConfig</c>) are stripped from the response.
+    /// </summary>
     private static async Task<IResult> ListDrives(
         StrgDbContext db,
         ClaimsPrincipal user,
@@ -35,6 +43,9 @@ public static class DriveEndpoints
         return Results.Ok(dtos);
     }
 
+    /// <summary>
+    /// Returns a single drive by id, or 404 if the caller's tenant does not own it.
+    /// </summary>
     private static async Task<IResult> GetDrive(
         Guid id,
         StrgDbContext db,
@@ -50,6 +61,11 @@ public static class DriveEndpoints
         return Results.Ok(new DriveDto(drive.Id, drive.Name, drive.ProviderType, drive.EncryptionEnabled, drive.CreatedAt));
     }
 
+    /// <summary>
+    /// Creates a new drive in the current tenant. Requires the <c>admin</c> scope.
+    /// Returns 422 on invalid input and 409 if the drive name already exists (soft-deleted
+    /// names count — names are reserved for the lifetime of the tenant).
+    /// </summary>
     private static async Task<IResult> CreateDrive(
         [FromBody] CreateDriveRequest request,
         StrgDbContext db,
@@ -100,6 +116,10 @@ public static class DriveEndpoints
         return Results.Created($"/api/v1/drives/{drive.Id}", new DriveDto(drive.Id, drive.Name, drive.ProviderType, drive.EncryptionEnabled, drive.CreatedAt));
     }
 
+    /// <summary>
+    /// Soft-deletes a drive. The record is retained so its name remains reserved in the tenant.
+    /// Requires the <c>admin</c> scope.
+    /// </summary>
     private static async Task<IResult> DeleteDrive(
         Guid id,
         StrgDbContext db,

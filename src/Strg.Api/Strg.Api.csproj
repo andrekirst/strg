@@ -1,5 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <PropertyGroup>
+    <!-- STRG-009: emit XML docs so Swashbuckle's IncludeXmlComments() can surface /// summaries
+         in the generated OpenAPI spec. Scoped to Strg.Api ONLY — NOT lifted into
+         Directory.Build.props — because TreatWarningsAsErrors=true would otherwise turn CS1591
+         ("missing XML comment on publicly visible type or member") into a hard build failure
+         across Strg.Core/Infrastructure/GraphQL/WebDav, which have hundreds of public surfaces
+         that are deliberately undocumented. 1591 is suppressed here for the same reason. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Lets Strg.Integration.Tests pin the contract of internal types like
          SafeHealthCheckResponseWriter (STRG-008) without widening their public surface. -->
@@ -12,6 +23,7 @@
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="FluentValidation.AspNetCore" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

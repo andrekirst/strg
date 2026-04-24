@@ -7,6 +7,7 @@ using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
 using Strg.Api.Endpoints;
+using Strg.Api.OpenApi;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Identity;
@@ -92,6 +93,11 @@ builder.Services.AddStrgWebDav(builder.Configuration);
 // Scan Strg.Api for AbstractValidator<T> implementations so self-registration (and future
 // validated endpoints) can resolve IValidator<T> from DI without hand-wiring each.
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+
+// ---- OpenAPI / Swagger (STRG-009) ----
+// Spec + UI wiring. The UI is gated by environment in UseStrgOpenApi below; registration of
+// the generator itself is always on so the JSON/YAML endpoints work in production.
+builder.Services.AddStrgOpenApi();
 
 // Storage providers (STRG-021/023/024). AddStrgStorageProviders registers the singleton registry
 // AND the "local" built-in factory atomically — splitting these into two steps would leave a
@@ -242,6 +248,22 @@ app.Map("/dav", webdavApp =>
     webdavApp.UseAuthentication();
     webdavApp.UseMiddleware<StrgWebDavMiddleware>();
 });
+
+// ---- OpenAPI / Swagger (STRG-009) ----
+// Registered BEFORE UseAuthentication/UseAuthorization: Swashbuckle's middleware matches by
+// path (not endpoint routing) and short-circuits with the spec response, so it never enters
+// the FallbackPolicy = RequireAuthenticatedUser gate that would otherwise 401 anonymous
+// callers. The Swagger UI is registration-time gated — the prod contract is 404 at the path
+// (not a runtime 403) so static UI assets are never served.
+//
+// UI gate resolution: explicit Strg:OpenApi:UiEnabled config key wins; fallback is
+// IsDevelopment(). The config key defends against a classic misconfiguration where a
+// Development-branded container ships to prod (rich error pages, dev env var copied from a
+// compose file) — flipping only the env would otherwise expose the UI silently. An operator
+// must ALSO flip a named key, so the failure mode is "wrong-and-noticed", not "wrong-and-silent".
+var openApiUiEnabled = builder.Configuration.GetValue<bool?>("Strg:OpenApi:UiEnabled")
+    ?? app.Environment.IsDevelopment();
+app.UseStrgOpenApi(openApiUiEnabled);
 
 app.UseAuthentication();
 app.UseAuthorization();

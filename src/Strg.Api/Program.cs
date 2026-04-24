@@ -1,5 +1,7 @@
 using FluentValidation;
+using Strg.Api.HealthChecks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StackExchange.Redis;
@@ -18,6 +20,7 @@ using Strg.GraphQL.Queries;
 using Strg.GraphQL.Types;
 using GraphQLDriveType = Strg.GraphQL.Types.DriveType;
 using Strg.Infrastructure.Data;
+using Strg.Infrastructure.HealthChecks;
 using Strg.Infrastructure.Identity;
 using Strg.Infrastructure.Messaging;
 using Strg.Infrastructure.Observability;
@@ -43,6 +46,21 @@ builder.Host.UseSerilog((context, services, loggerConfig) => loggerConfig
 
 // ---- Observability (STRG-007) ----
 builder.Services.AddStrgObservability(builder.Configuration);
+
+// ---- Health checks (STRG-008) ----
+// Tag is "strg-ready" (NOT the more common "ready") because MassTransit's AddMassTransit
+// auto-registers a "masstransit-bus" check tagged "ready" by default, and including it in the
+// readiness gate would defeat the EF Outbox pattern: RabbitMQ outages would mark the pod
+// not-ready even though business writes still commit and the outbox dispatches the backlog
+// when the broker recovers (STRG-061). The "strg-ready" namespace is owned by this app, so
+// only checks we explicitly opt in are surfaced through /health/ready.
+//
+// /health/live runs ZERO checks (Predicate = _ => false) and reflects pure process liveness
+// — by design it does not catch deadlocks where the HTTP listener still responds; that's the
+// standard tradeoff with K8s liveness probes.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<StrgDbContext>("database", tags: ["strg-ready"])
+    .AddCheck<StorageHealthCheck>("storage", tags: ["strg-ready"]);
 
 // ---- Infrastructure ----
 builder.Services.AddHttpContextAccessor();
@@ -233,6 +251,28 @@ app.UseWebSockets();
 // AllowAnonymous is required because the fallback authorization policy (RequireAuthenticatedUser)
 // would otherwise reject unauthenticated Prometheus scrape requests with 401.
 app.MapPrometheusScrapingEndpoint("/metrics").AllowAnonymous();
+
+// ---- Health endpoints (STRG-008) ----
+// .AllowAnonymous() is mandatory: the FallbackPolicy above is RequireAuthenticatedUser and
+// would otherwise 401 every K8s probe (probes cannot present credentials). /health/live has
+// zero checks → 200 as long as the process serves HTTP. /health/ready runs the "ready"-tagged
+// checks; SafeHealthCheckResponseWriter emits a minimal JSON envelope that NEVER serializes
+// the captured Exception (Npgsql exception messages embed the database host/username and would
+// leak via the default UIResponseWriter — see SafeHealthCheckResponseWriter XML docs).
+//
+// NOTE: no rate limiter is currently registered in this pipeline. If AspNetCore.RateLimiting
+// is added later, both endpoints MUST receive .DisableRateLimiting() so K8s probes are not
+// throttled.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("strg-ready"),
+    ResponseWriter = SafeHealthCheckResponseWriter.WriteAsync,
+}).AllowAnonymous();
 
 app.MapGraphQL("/graphql");
 app.MapControllers();

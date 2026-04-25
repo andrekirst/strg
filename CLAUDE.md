@@ -313,6 +313,30 @@ Issues are in `docs/issues/`. To implement an issue:
 
 **Build order**: see `docs/issues/README.md` for the dependency graph.
 
+### Follow-up issues from verification
+
+When a `/implement-issue` verification step (especially the multi-agent team's devil's-advocate role) surfaces a real concern that is **out of scope for the source issue's spec** — typically an unrelated design question, a constraint from a neighboring phase, or a latent correctness gap the spec didn't address — file it as its own GitHub issue **before closing the source**. Do not bury it in the close comment.
+
+**Triage:**
+
+| Finding type | Action |
+|---|---|
+| **In-scope defect** (spec-spirit violation) | Fold the fix into the source issue's commit; mark the source issue's checkbox when verified. |
+| **Out-of-scope but real** (design choice, neighboring-phase constraint, latent value-semantics bug) | File a follow-up issue (template below); reference it under the source issue's close comment in a "Known design choices (spec-aligned, not gaps)" section. |
+| **Low-signal nit** (JIT noise, hypothetical edge case nobody is hitting) | Close the source issue with no follow-up; mention briefly in the close comment if the verification team raised it. |
+
+**Follow-up issue body template:**
+
+1. **Source**: link to originating issue + verification step (e.g., "Devil's Advocate finding #N from STRG-XXX verification, closed in `<commit-sha>`").
+2. **Current state**: code with `file:line` citations.
+3. **Risk**: concrete failure mode if unfixed (latent vs. live).
+4. **Proposed change(s)**: at least one concrete option, ranked if multiple. Cite project memories where relevant (e.g., `feedback_shared_constants_layering.md` for constant-placement decisions).
+5. **Trade-offs**: pros + cons per option.
+
+**Title convention**: `Follow-up STRG-XXX: <short description>` so a future engineer searching for "follow-up STRG-022" can discover all deferred work from a single source verification pass.
+
+**Why this discipline:** verification findings carry rich context (the audit trail of *why* something was deferred, what alternatives were considered) that is expensive to recreate. A dedicated tracker preserves the analysis instead of letting it die in a session transcript.
+
 ---
 
 ## Agent Teams & Slash Commands

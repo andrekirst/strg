@@ -253,19 +253,52 @@ dotnet test --collect:"XPlat Code Coverage"
 
 Integration tests use SQLite in-memory + `InMemoryStorageProvider` — no external services needed.
 
-### Run only affected tests while iterating
+### Integration test execution policy
 
-During implementation, prefer targeted test runs to keep the feedback loop fast:
+Integration tests boot Testcontainers (PostgreSQL + one RabbitMQ per test class). Full-suite runs are wall-clock expensive and frequently outlast interactive attention. The suite is therefore split between Claude (targeted) and the user (full suite).
 
-```bash
-# Filter by fully-qualified name fragment
-dotnet test --filter "FullyQualifiedName~StrgDbContextTests"
+**Claude never runs `dotnet test tests/Strg.Integration.Tests` without a `--filter` argument unsupervised.** The user runs the full integration suite before commit / PR.
 
-# Target a single project
-dotnet test tests/Strg.Core.Tests
+While iterating, Claude classifies each touched file into one of three buckets, and **the strictest bucket wins**:
+
+| Bucket | Trigger | Action |
+|---|---|---|
+| **Shared-infra (S1)** | File matches the S1 allowlist below | Run **zero** integration tests. Hand the full suite to the user. |
+| **Source-with-paired-test (B3a)** | File under `src/` whose stem matches a test class | `dotnet test tests/Strg.Integration.Tests --filter "FullyQualifiedName~<stem>"`. Multiple files OR'd in one filter: `FullyQualifiedName~Stem1\|FullyQualifiedName~Stem2`. |
+| **Test-only change** | File under `tests/Strg.Integration.Tests/**` | Same `~<stem>` filter, derived from the test class name. |
+
+Refinements:
+
+- **No-match case.** Touched `src/` file with no paired test class → run zero integration tests, note `no integration test matches <File.cs>` in the handoff.
+- **Wide-refactor cap (W2).** If the touched-file set produces more than 5 distinct stems, treat as cross-cutting → full handoff (same path as S1).
+- Unit tests (`Strg.Core.Tests`, `Strg.Api.Tests`) are **always** run by Claude regardless of bucket — fast, no Docker cost.
+
+**S1 allowlist (shared-infra):**
+
+- `src/Strg.Api/Program.cs`
+- `src/Strg.Infrastructure/Data/StrgDbContext*` (DbContext, factory, model snapshot)
+- `src/Strg.Api/Middleware/**`
+- `**/Migrations/**`
+- `*ServiceCollectionExtensions.cs`, `Add*Module.cs`
+- Authentication/authorization pipeline: `*Authentication*`, `*Authorization*`, `OpenIddict*`
+- Global query filters anywhere in `OnModelCreating`
+- MassTransit / Outbox config: `*Mass*`, `*Outbox*`, `*Bus*`
+
+**Verification handoff format.** When Claude claims a task is done, the verification report follows this exact shape:
+
+```
+Verification status
+- Unit tests: PASS | FAIL (with failing test name)
+- Integration tests I ran: <command> → PASS | FAIL  OR  NONE — <reason>
+- Touched files & buckets:
+  - <file>  → B3a (~<stem>)  |  S1 (full handoff)  |  test-only  |  no match
+- Before you commit, please run:
+  dotnet test tests/Strg.Integration.Tests
 ```
 
-Run the full suite (`dotnet test`) only once before declaring a task complete, committing, or opening a PR.
+The "Before you commit" line is **always** present, even when the targeted run passed. The targeted run is a smoke signal, not a substitute. The user decides whether to skip the full suite for a trivial change.
+
+PASS/FAIL claims are backed by actual command output, never inferred.
 
 ---
 

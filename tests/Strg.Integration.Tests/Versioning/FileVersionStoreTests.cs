@@ -913,6 +913,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         public Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default)
             => inner.WriteAsync(path, content, cancellationToken);
 
+        public Task AppendAsync(string path, Stream content, CancellationToken cancellationToken = default)
+            => inner.AppendAsync(path, content, cancellationToken);
+
         public Task MoveAsync(string source, string destination, CancellationToken cancellationToken = default)
             => inner.MoveAsync(source, destination, cancellationToken);
 

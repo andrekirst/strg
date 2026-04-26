@@ -435,3 +435,6 @@ FodyWeavers.xsd
 *.msm
 *.msp
 .idea
+
+# Claude Code session state (lock files for scheduled tasks, etc.)
+.claude/*.lock

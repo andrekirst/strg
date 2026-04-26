@@ -75,6 +75,17 @@ public static class MassTransitExtensions
                 outbox.UseBusOutbox();
                 outbox.QueryDelay = TimeSpan.FromSeconds(pollingSeconds);
                 outbox.DuplicateDetectionWindow = TimeSpan.FromMinutes(30);
+
+                // Optional: disable the InboxCleanupService background loop entirely. Used by
+                // integration tests where the short test lifetime races the cleanup loop's
+                // mid-query DbContext disposal — the in-flight query gets an
+                // EndOfStreamException-wrapped "transient failure" logged as
+                // `[ERR] CleanUpInboxState faulted` even though tests still pass. Production
+                // keeps the default (cleanup enabled) so old inbox-state rows don't accumulate.
+                if (configuration.GetValue<bool?>("RabbitMQ:DisableInboxCleanup") == true)
+                {
+                    outbox.DisableInboxCleanupService();
+                }
             });
 
             bus.AddConsumer<AuditLogConsumer>();
@@ -92,12 +103,42 @@ public static class MassTransitExtensions
             {
                 var host = configuration["RabbitMQ:Host"] ?? "localhost";
                 var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
+                // Port is optional — production uses the AMQP default (5672) and the config key
+                // is a test-only escape hatch for Testcontainers, which exposes RabbitMQ on a
+                // random host port.
+                var port = configuration.GetValue<ushort?>("RabbitMQ:Port");
 
-                cfg.Host(host, virtualHost, h =>
+                // Optional opt-out of RabbitMQ publisher confirmations. Default is true (prod
+                // safety). Set RabbitMQ:PublisherConfirmation=false to disable — used in
+                // integration tests to dodge a known SemaphoreSlim disposal race in
+                // RabbitMQ.Client 7.x's `Channel.MaybeHandlePublisherConfirmationTcsOnChannelShutdownAsync`
+                // that crashes the test host when the bus is disposed mid-run.
+                //
+                // Safe to disable in tests because the EF Core outbox (UseBusOutbox above) is
+                // the durability boundary: messages are persisted with the DB transaction
+                // BEFORE dispatch is attempted, so a publish that doesn't get a broker ack is
+                // re-dispatched on the next outbox poll. Publisher confirmations are a redundant
+                // ack-on-publish that doesn't add semantic guarantees beyond what the outbox
+                // already provides. PublisherConfirmation is a host-level setting (lives on
+                // IRabbitMqHostConfigurator), so it's applied inside the host callback below.
+                var publisherConfirmation =
+                    configuration.GetValue<bool?>("RabbitMQ:PublisherConfirmation") ?? true;
+
+                void ConfigureHost(IRabbitMqHostConfigurator h)
                 {
                     h.Username(username);
                     h.Password(password);
-                });
+                    h.PublisherConfirmation = publisherConfirmation;
+                }
+
+                if (port.HasValue)
+                {
+                    cfg.Host(host, port.Value, virtualHost, ConfigureHost);
+                }
+                else
+                {
+                    cfg.Host(host, virtualHost, ConfigureHost);
+                }
 
                 // 5 retries exponential backoff before dead-letter (per STRG-061 spec).
                 cfg.UseMessageRetry(r => r.Exponential(

@@ -3,6 +3,7 @@ using Strg.Api.HealthChecks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
@@ -32,6 +33,7 @@ using Strg.Infrastructure.Messaging;
 using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
+using Strg.Infrastructure.Upload;
 using Strg.Infrastructure.Versioning;
 using Strg.WebDav;
 
@@ -94,6 +96,15 @@ builder.Services.AddScoped<IQuotaService>(sp => sp.GetRequiredService<QuotaServi
 builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<QuotaService>());
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
+
+// STRG-034 — TUS upload pipeline. StrgTusStore creates a fresh StrgDbContext per method (via
+// injected DbContextOptions) because tusdotnet's validation pipeline can interleave read calls
+// during a single PATCH; sharing one scoped DbContext produces concurrent-operation exceptions.
+// TimeProvider.System gives the abandonment-TTL computation a stable clock without coupling to
+// DateTimeOffset.UtcNow at the call site.
+builder.Services.AddScoped<StrgTusStore>();
+builder.Services.Configure<StrgTusOptions>(builder.Configuration.GetSection("Strg:Upload"));
+builder.Services.TryAddSingleton(TimeProvider.System);
 
 // ---- WebDAV (STRG-067/069) ----
 // Pass IConfiguration so WebDavOptions (PropfindInfinityMaxItems etc.) binds against the live
@@ -388,5 +399,12 @@ app.MapTokenEndpoints();
 app.MapUserInfoEndpoints();
 app.MapDriveEndpoints();
 app.MapUserRegistrationEndpoints();
+
+// STRG-034 — TUS upload endpoint. Mapped after UseAuthentication/UseAuthorization (line 352-353)
+// so HttpContext.User is populated before OnAuthorizeAsync runs. .RequireAuthorization() is
+// applied inside MapStrgTusUpload (defence-in-depth alongside the OnAuthorize event hook), and
+// .DisableRateLimiting() exempts byte-rate uploads from the per-request global limiter (Phase-2
+// design memory: "TUS after auth + excluded from rate limiting").
+app.MapStrgTusUpload();
 
 app.Run();

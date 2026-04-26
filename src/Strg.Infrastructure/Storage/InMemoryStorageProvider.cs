@@ -104,6 +104,38 @@ public sealed class InMemoryStorageProvider : IStorageProvider
         }
     }
 
+    public async Task AppendAsync(string path, Stream content, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var key = StoragePath.Parse(path).Value;
+
+        using var buffer = new MemoryStream();
+        await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+        var newBytes = buffer.ToArray();
+
+        var now = DateTimeOffset.UtcNow;
+        _files.AddOrUpdate(
+            key,
+            _ => new FileEntry(newBytes, now, now),
+            (_, existing) =>
+            {
+                // Concat under the per-key update lock — AddOrUpdate's update factory is invoked
+                // atomically per key, so two concurrent appenders against the same key serialize.
+                var combined = new byte[existing.Content.Length + newBytes.Length];
+                Buffer.BlockCopy(existing.Content, 0, combined, 0, existing.Content.Length);
+                Buffer.BlockCopy(newBytes, 0, combined, existing.Content.Length, newBytes.Length);
+                return existing with { Content = combined, UpdatedAt = now };
+            });
+
+        foreach (var ancestor in EnumerateAncestors(key))
+        {
+            _dirs.AddOrUpdate(
+                ancestor,
+                _ => new DirEntry(now, now),
+                (_, existing) => existing with { UpdatedAt = now });
+        }
+    }
+
     public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
         var key = StoragePath.Parse(path).Value;
@@ -165,7 +197,11 @@ public sealed class InMemoryStorageProvider : IStorageProvider
 
     public Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
     {
-        var key = StoragePath.Parse(path).Value;
+        // Empty input is the documented sentinel for the drive root — see
+        // WebDavUriParser.ExtractValidatedPath:48-50 for the same guard precedent. Without this,
+        // StoragePath.Parse rejects empty (the fail-closed contract added in commit 40ed3b7),
+        // which would block `ExistsAsync("")` semantics ("does root exist?") that callers rely on.
+        var key = string.IsNullOrEmpty(path) ? string.Empty : StoragePath.Parse(path).Value;
         if (_files.ContainsKey(key) || _dirs.ContainsKey(key))
         {
             return Task.FromResult(true);
@@ -176,7 +212,9 @@ public sealed class InMemoryStorageProvider : IStorageProvider
 
     public Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
     {
-        var key = StoragePath.Parse(path).Value;
+        // Empty input → create the root directory, which is an implicit no-op. EnumerateSelfAndAncestors
+        // returns no ancestors for empty input, so the loop body is naturally skipped.
+        var key = string.IsNullOrEmpty(path) ? string.Empty : StoragePath.Parse(path).Value;
         var now = DateTimeOffset.UtcNow;
         foreach (var ancestor in EnumerateSelfAndAncestors(key))
         {
@@ -189,7 +227,11 @@ public sealed class InMemoryStorageProvider : IStorageProvider
         string path,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var key = StoragePath.Parse(path).Value;
+        // Empty input is the documented sentinel for "list at the drive root" — the downstream
+        // `key.Length == 0` branch on the next line is already designed to handle this case.
+        // The guard exists because StoragePath.Parse itself rejects empty (commit 40ed3b7's
+        // fail-closed contract), so we must short-circuit before calling Parse.
+        var key = string.IsNullOrEmpty(path) ? string.Empty : StoragePath.Parse(path).Value;
         var prefix = key.Length == 0 ? string.Empty : key + "/";
 
         // Snapshot child names so concurrent mutations during enumeration don't trip us up.

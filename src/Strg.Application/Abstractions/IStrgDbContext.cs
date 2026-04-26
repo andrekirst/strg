@@ -23,6 +23,7 @@ public interface IStrgDbContext
     DbSet<Notification> Notifications { get; }
     DbSet<InboxRule> InboxRules { get; }
     DbSet<FileLock> FileLocks { get; }
+    DbSet<PendingUpload> PendingUploads { get; }
 
     DatabaseFacade Database { get; }
 

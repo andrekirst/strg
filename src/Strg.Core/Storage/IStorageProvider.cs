@@ -34,6 +34,22 @@ public interface IStorageProvider
     Task WriteAsync(string path, Stream content, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Appends <paramref name="content"/> to the file at <paramref name="path"/>, creating it if absent.
+    /// Implementations MUST NOT buffer the entire stream in memory and MUST NOT clobber the existing
+    /// content of the file (in contrast to <see cref="WriteAsync"/>).
+    /// </summary>
+    /// <remarks>
+    /// Required by the TUS upload pipeline (STRG-034): a multi-chunk PATCH stream needs to be
+    /// accumulated at a temp key across HTTP requests before the encrypting writer runs once at
+    /// finalize. Without this primitive the only option is read-existing → concat → re-write, which
+    /// is O(N²) bytes for an N-chunk upload. Concurrent appenders are out-of-scope: tusdotnet
+    /// serialises chunks per upload via its file-lock provider, so single-writer semantics are
+    /// sufficient. The local-FS provider uses <c>FileMode.Append</c>; the in-memory provider
+    /// concatenates byte arrays under its per-key lock.
+    /// </remarks>
+    Task AppendAsync(string path, Stream content, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Removes the file or directory at <paramref name="path"/>. Idempotent — does not throw if the path is absent.
     /// </summary>
     /// <remarks>

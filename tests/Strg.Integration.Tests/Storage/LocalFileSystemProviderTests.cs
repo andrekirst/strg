@@ -124,6 +124,26 @@ public sealed class LocalFileSystemProviderTests : IAsyncLifetime
         await act.Should().ThrowAsync<StoragePathException>();
     }
 
+    [Fact]
+    public async Task ListAsync_at_root_returns_top_level_items_only()
+    {
+        // Mirrors InMemoryStorageProviderTests.ListAsync_at_root_returns_top_level_items_only.
+        // Empty path is the documented sentinel for "list at the drive root". Without the
+        // empty-path guards in ResolvePath + NormalizeRelative, StoragePath.Parse's fail-closed
+        // contract (commit 40ed3b7) blocks this legitimate call shape.
+        await _sut.WriteAsync("top.txt", new MemoryStream([1]));
+        await _sut.WriteAsync("nested/deep.txt", new MemoryStream([2]));
+
+        var names = new List<string>();
+        await foreach (var item in _sut.ListAsync(""))
+        {
+            names.Add(item.Name);
+        }
+
+        names.Should().Contain(["top.txt", "nested"]);
+        names.Should().NotContain("deep.txt");
+    }
+
     [Fact] // TC-008
     public async Task MoveAsync_relocates_file_and_original_is_gone()
     {

@@ -30,6 +30,7 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<InboxRule> InboxRules => Set<InboxRule>();
     public DbSet<FileLock> FileLocks => Set<FileLock>();
+    public DbSet<PendingUpload> PendingUploads => Set<PendingUpload>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using MassTransit.EntityFrameworkCoreIntegration;
 using OpenIddict.Server.AspNetCore;
 using Npgsql;
 using Strg.Core.Domain;
@@ -16,6 +17,7 @@ using Strg.Core.Services;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
 using Testcontainers.PostgreSql;
+using Testcontainers.RabbitMq;
 using Xunit;
 
 namespace Strg.Integration.Tests.Auth;
@@ -49,13 +51,26 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
         .Build();
 
+    // RabbitMQ container provisioned per-fixture so AddStrgMassTransit's bus startup connects
+    // cleanly instead of retrying against `guest@localhost:5672/` for ~30 seconds per affected
+    // test class. WithUsername/WithPassword pinned to `guest/guest` so the container's credentials
+    // match `appsettings.Development.json`'s defaults — sidesteps the `WebApplicationFactory<T>`
+    // configuration-precedence chain (where appsettings.Development.json wins over
+    // AddInMemoryCollection for at least some keys, surfaced during STRG-034 fixture work).
+    private readonly RabbitMqContainer _rabbitMq = new RabbitMqBuilder("rabbitmq:3.13-management-alpine")
+        .WithUsername("guest")
+        .WithPassword("guest")
+        .Build();
+
     public string ConnectionString { get; private set; } = string.Empty;
     public Guid AdminTenantId { get; private set; }
     public Guid AdminUserId { get; private set; }
 
     async Task IAsyncLifetime.InitializeAsync()
     {
-        await _postgres.StartAsync();
+        // Parallel container start — saves ~3-5s on cold runs since both containers' image-pull
+        // and start phases are independent.
+        await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
         // Per-factory DB: the default Testcontainers database is reused, but we create a dedicated
         // one so parallel test classes cannot collide on OpenIddict client rows.
         var dbName = $"strg_it_{Guid.NewGuid():N}";
@@ -78,6 +93,7 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
 
     async Task IAsyncLifetime.DisposeAsync()
     {
+        await _rabbitMq.DisposeAsync();
         await _postgres.DisposeAsync();
         await base.DisposeAsync();
     }
@@ -94,6 +110,29 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Default"] = ConnectionString,
+
+                // RabbitMQ from the testcontainer. Without this, AddStrgMassTransit defaults to
+                // localhost:5672 (the dev fallback) and the bus retries forever in the background
+                // — the `guest@localhost:5672/` retry storm and occasional ObjectDisposedException
+                // testhost crash that drowned full-suite runs before this fix.
+                // RabbitMQ:Port is the optional production-code key (read only when set) added in
+                // src/Strg.Infrastructure/Messaging/MassTransitExtensions.cs to support
+                // Testcontainers' random host port mapping. Username/Password aren't overridden
+                // here because the container's `guest/guest` already matches appsettings defaults.
+                ["RabbitMQ:Host"] = _rabbitMq.Hostname,
+                ["RabbitMQ:Port"] = _rabbitMq.GetMappedPublicPort(5672).ToString(),
+                // Disable publisher confirmations in tests to dodge the RabbitMQ.Client 7.x
+                // SemaphoreSlim disposal race that crashes the testhost when the bus is torn
+                // down mid-run. Outbox-based dispatch (UseBusOutbox) provides durability above
+                // this layer, so disabling confirmations is semantically a no-op for tests.
+                ["RabbitMQ:PublisherConfirmation"] = "false",
+                // Disable MassTransit's InboxCleanupService background loop in tests. Default
+                // 1-minute polling races the test-host shutdown's DbContext disposal — the
+                // in-flight cleanup query gets an EndOfStreamException-wrapped "transient
+                // failure" logged as `[ERR] CleanUpInboxState faulted`. Tests don't generate
+                // enough inbox state to need cleanup, so disabling is semantically free.
+                ["RabbitMQ:DisableInboxCleanup"] = "true",
+
                 // STRG-074 #152 — NO `OpenIddict:Issuer` override here, by design. Earlier
                 // iterations of this factory injected `http://localhost/` as a pin, which masked
                 // the production bug where the same key is absent from `appsettings.json` and the
@@ -139,6 +178,20 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
             // dataflow a production host runs, which means a regression in ResolveIssuer that
             // reverts to request-BaseUri fallback would surface here as 401 on WebDAV tests.
             services.AddHostedService<TestServerAddressesPopulator>();
+
+            // Belt-and-braces: also strip MassTransit's InboxCleanupService<StrgDbContext> hosted
+            // service directly from DI by closed-generic type. AddStrgMassTransit's
+            // `RabbitMQ:DisableInboxCleanup=true` path SHOULD already prevent registration, but
+            // configuration-precedence quirks in WebApplicationFactory can swallow that flag —
+            // and the cleanup loop is the source of the noisy `[ERR] CleanUpInboxState faulted`
+            // shutdown-race log. Closed-generic typeof match is the type-safe equivalent of
+            // walking the registration list.
+            var inboxCleanupRegistration = services.SingleOrDefault(d =>
+                d.ImplementationType == typeof(InboxCleanupService<StrgDbContext>));
+            if (inboxCleanupRegistration is not null)
+            {
+                services.Remove(inboxCleanupRegistration);
+            }
         });
     }
 

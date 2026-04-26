@@ -166,6 +166,41 @@ public sealed class LocalFileSystemProvider : IStorageProvider
         await content.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task AppendAsync(string path, Stream content, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var full = ResolveChildPath(path);
+
+        // Same symlink guard as WriteAsync — appending through a symlink would let an attacker
+        // grow a file outside the drive on every PATCH.
+        var existing = new FileInfo(full);
+        if (existing.Exists && existing.LinkTarget is not null)
+        {
+            throw new StoragePathException($"Refusing to append through symlink: {path}");
+        }
+
+        var parent = Path.GetDirectoryName(full);
+        if (!string.IsNullOrEmpty(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+
+        // FileMode.Append creates the file if it doesn't exist and seeks to the end if it does —
+        // exactly the TUS chunk-accumulator semantics. FileShare.None still locks: tusdotnet
+        // serialises chunks per upload via its in-process file-lock provider, so single-writer
+        // semantics is what we expect, and concurrent appenders against the same path are a bug
+        // we want to fail loudly rather than silently interleave.
+        await using var target = new FileStream(
+            full,
+            FileMode.Append,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920,
+            useAsync: true);
+
+        await content.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+    }
+
     public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
         // Must use ResolveChildPath so `""`, `"."`, `"./"` etc. can't resolve to the base
@@ -321,14 +356,18 @@ public sealed class LocalFileSystemProvider : IStorageProvider
     /// </summary>
     private string ResolvePath(string relativePath)
     {
+        // Empty input is the documented sentinel for the drive root. Short-circuit BEFORE Parse
+        // because StoragePath.Parse rejects empty (commit 40ed3b7's fail-closed contract). Read-only
+        // ops (GetFileAsync, ExistsAsync, ListAsync) legitimately need to accept root; mutating ops
+        // route through ResolveChildPath which then refuses the resolved drive-root path.
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return _basePath;
+        }
+
         var parsed = StoragePath.Parse(relativePath);
 
-        // Empty relative path resolves to the base path itself — Path.Combine handles this, but
-        // Path.GetFullPath on an empty string throws, so we short-circuit.
-        var combined = string.IsNullOrEmpty(parsed.Value)
-            ? _basePath
-            : Path.Combine(_basePath, parsed.Value);
-
+        var combined = Path.Combine(_basePath, parsed.Value);
         var full = Path.GetFullPath(combined);
 
         // The "base + separator" form is load-bearing: without the trailing separator,
@@ -359,7 +398,11 @@ public sealed class LocalFileSystemProvider : IStorageProvider
         return full;
     }
 
-    private static string NormalizeRelative(string path) => StoragePath.Parse(path).Value;
+    // Same root-sentinel handling as ResolvePath: empty input means "the drive root", which the
+    // ListAsync caller (line ~327) is already prepared to handle (string.IsNullOrEmpty(normalizedParent)).
+    // Parse rejects empty per commit 40ed3b7's contract, so we short-circuit.
+    private static string NormalizeRelative(string path) =>
+        string.IsNullOrEmpty(path) ? string.Empty : StoragePath.Parse(path).Value;
 
     private static string TrimTrailingSeparator(string path) =>
         path.Length > 1 && (path[^1] == Path.DirectorySeparatorChar || path[^1] == Path.AltDirectorySeparatorChar)

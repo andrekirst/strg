@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**strg** (pronounced "storage") is a self-hosted cloud storage platform written in C#/.NET 9. It replaces Microsoft OneDrive with a fully owned, extensible, API-first platform.
+**strg** (pronounced "storage") is a self-hosted cloud storage platform written in C# / .NET 10. It replaces Microsoft OneDrive with a fully owned, extensible, API-first platform.
 
 Repository: `github.com/andrekirst/strg`
 License: Apache 2.0
@@ -16,12 +16,15 @@ strg/
 ├── src/
 │   ├── Strg.Api/            ASP.NET Core host (REST + TUS upload + WebDAV)
 │   ├── Strg.Core/           Domain entities, interfaces, events (NO external deps)
+│   ├── Strg.Application/    CQRS handlers (Mediator), validation/audit/transaction behaviors
 │   ├── Strg.Infrastructure/ EF Core, storage providers, OpenIddict, consumers
 │   ├── Strg.GraphQl/        Hot Chocolate schema, types, resolvers
 │   └── Strg.WebDav/         WebDAV server (NWebDav)
 ├── tests/
 │   ├── Strg.Core.Tests/
 │   ├── Strg.Api.Tests/
+│   ├── Strg.GraphQl.Tests/
+│   ├── Strg.Architecture.Tests/  NetArchTest-style layering & dependency assertions
 │   └── Strg.Integration.Tests/
 └── docs/
     ├── issues/              Implementation issues (STRG-xxx, CC-xxx)
@@ -33,6 +36,7 @@ strg/
 
 ```
 Strg.Core          → NO external NuGet packages (only BCL + Microsoft abstractions)
+Strg.Application   → depends on Strg.Core (Mediator, FluentValidation, MassTransit, EF Core)
 Strg.Infrastructure → depends on Strg.Core
 Strg.GraphQl       → depends on Strg.Core + Strg.Infrastructure
 Strg.WebDav        → depends on Strg.Core + Strg.Infrastructure
@@ -45,19 +49,19 @@ Strg.Api           → depends on all above
 
 ## Technology Stack
 
-| Concern | Technology |
-|---|---|
-| Language | C# 13 / .NET 9 |
-| Database (dev) | SQLite (DataSource=:memory: for tests) |
-| Database (prod) | PostgreSQL (Npgsql) |
-| ORM | Entity Framework Core 9 (multi-provider) |
-| Auth | OpenIddict (embedded OIDC/JWT) |
-| Upload | tusdotnet (TUS resumable upload protocol) |
-| GraphQL | Hot Chocolate 14 |
-| Events | MassTransit + EF Core Outbox |
-| WebDAV | NWebDav |
-| Logging | Serilog (CompactJsonFormatter in prod) |
-| Observability | OpenTelemetry → Prometheus + OTLP |
+| Concern       | Technology                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Language      | C# 14 / .NET 10 (LTS)                                                                            |
+| Database      | PostgreSQL (Npgsql) for production; SQLite for local dev — chosen via `Database:Provider` config |
+| ORM           | Entity Framework Core 10 (multi-provider)                                                        |
+| Auth          | OpenIddict (embedded OIDC/JWT)                                                                   |
+| Upload        | tusdotnet (TUS resumable upload protocol)                                                        |
+| GraphQL       | Hot Chocolate 15                                                                                 |
+| CQRS          | Mediator (martinothamar, source-generated) + FluentValidation                                    |
+| Events        | MassTransit + EF Core Outbox                                                                     |
+| WebDAV        | NWebDav                                                                                          |
+| Logging       | Serilog (CompactJsonFormatter in prod)                                                           |
+| Observability | OpenTelemetry → Prometheus + OTLP                                                                |
 
 ---
 
@@ -128,10 +132,10 @@ return Results.File(bytes, contentType: file.MimeType);
 
 ## Security Rules
 
-### NEVER do these:
+### NEVER do these
 
 1. **Never bypass tenant isolation** — no `IgnoreQueryFilters()` in application code.
-   *Carve-out:* repositories that run pre-auth (when no JWT exists yet, so `ITenantContext.TenantId` is `Guid.Empty`) MAY use `IgnoreQueryFilters()` provided they re-apply `TenantId` and `IsDeleted` inline AND carry a justification comment. `UserRepository.GetByEmailAsync` is the canonical example — login lookup must run before auth completes.
+   _Carve-out:_ repositories that run pre-auth (when no JWT exists yet, so `ITenantContext.TenantId` is `Guid.Empty`) MAY use `IgnoreQueryFilters()` provided they re-apply `TenantId` and `IsDeleted` inline AND carry a justification comment. `UserRepository.GetByEmailAsync` is the canonical example — login lookup must run before auth completes.
 2. **Never trust user-supplied paths** — always use `StoragePath.Parse()`
 3. **Never log passwords, tokens, or secrets** — use Serilog destructuring policies
 4. **Never expose `ProviderConfig`** — storage credentials live in `Drive.ProviderConfig`, which is ignored in all GraphQL types and DTOs
@@ -163,7 +167,7 @@ var userId = request.UserId;
 - Target framework is `net10.0` (LTS); SDK pinned in `global.json`.
 - Solution file is `strg.slnx` — never reintroduce `strg.sln`.
 - No magic strings for MIME types, headers, claim types, HTTP methods, or auth schemes — use `System.Net.Mime.MediaTypeNames`, `Microsoft.Net.Http.Headers.HeaderNames`, `System.Security.Claims.ClaimTypes`, `Microsoft.AspNetCore.Http.HttpMethods`, `JwtBearerDefaults`, etc. Project-specific repeating strings live in `Strg.Core/Constants/`.
-- Microsoft's C# coding conventions are the baseline: https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions
+- Microsoft's C# coding conventions are the baseline: <https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions>
 
 ### Naming
 
@@ -193,17 +197,20 @@ public sealed class FooService : IFooService  // sealed by default
 
 Two patterns coexist by deliberate design — pick the one that matches the failure semantics:
 
-**`Result` / `Result<T>`** — for *expected* failure modes that the caller will branch on. Identity and auth surfaces are the canonical example: `EmailAlreadyExists`, `InvalidPassword`, `PasswordTooShort` are not exceptional, they are part of the API contract. Use this when:
+**`Result` / `Result<T>`** — for _expected_ failure modes that the caller will branch on. Identity and auth surfaces are the canonical example: `EmailAlreadyExists`, `InvalidPassword`, `PasswordTooShort` are not exceptional, they are part of the API contract. Use this when:
+
 - Every failure has a stable error code the caller maps to a wire-level response.
 - Throwing would force the caller into `try/catch` for normal control flow.
 - The failure is not "the system is broken", it's "the input was rejected".
 
-**Exceptions** — for *exceptional* conditions. Use this when:
+**Exceptions** — for _exceptional_ conditions. Use this when:
+
 - The failure is mapped centrally (`StrgErrorFilter` for GraphQL, RFC 7807 problem-details middleware for REST).
 - Multiple unrelated call sites would otherwise need duplicated `if (result.IsFailure) return ...` plumbing.
 - The condition is genuinely unusual (path traversal attempt, quota exceeded, soft-deleted resource lookup).
 
 Domain exceptions in `Strg.Core/Exceptions/`:
+
 - `StoragePathException`: invalid path
 - `NotFoundException`: resource not found
 - `QuotaExceededException`: quota exceeded
@@ -229,8 +236,9 @@ dotnet ef database update --project src/Strg.Infrastructure --startup-project sr
 ### Provider switching
 
 The database provider is selected via config:
+
 ```json
-{ "Database": { "Provider": "sqlite" } }  // or "postgres"
+{ "Database": { "Provider": "sqlite" } } // or "postgres"
 ```
 
 ---
@@ -238,20 +246,23 @@ The database provider is selected via config:
 ## Running Tests
 
 ```bash
+# Build everything
+dotnet build
+
 # All tests
 dotnet test
 
 # Integration tests only
 dotnet test tests/Strg.Integration.Tests
 
-# Unit tests only
-dotnet test tests/Strg.Core.Tests tests/Strg.Api.Tests
+# Unit + architecture + GraphQL tests (no Docker needed)
+dotnet test tests/Strg.Core.Tests tests/Strg.Api.Tests tests/Strg.GraphQl.Tests tests/Strg.Architecture.Tests
 
 # With test coverage
 dotnet test --collect:"XPlat Code Coverage"
 ```
 
-Integration tests use SQLite in-memory + `InMemoryStorageProvider` — no external services needed.
+Integration tests boot Testcontainers (PostgreSQL + one RabbitMQ per test class). Docker is required. (Storage uses `InMemoryStorageProvider` to avoid filesystem dependencies.)
 
 ### Integration test execution policy
 
@@ -261,11 +272,11 @@ Integration tests boot Testcontainers (PostgreSQL + one RabbitMQ per test class)
 
 While iterating, Claude classifies each touched file into one of three buckets, and **the strictest bucket wins**:
 
-| Bucket | Trigger | Action |
-|---|---|---|
-| **Shared-infra (S1)** | File matches the S1 allowlist below | Run **zero** integration tests. Hand the full suite to the user. |
+| Bucket                            | Trigger                                           | Action                                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shared-infra (S1)**             | File matches the S1 allowlist below               | Run **zero** integration tests. Hand the full suite to the user.                                                                                                          |
 | **Source-with-paired-test (B3a)** | File under `src/` whose stem matches a test class | `dotnet test tests/Strg.Integration.Tests --filter "FullyQualifiedName~<stem>"`. Multiple files OR'd in one filter: `FullyQualifiedName~Stem1\|FullyQualifiedName~Stem2`. |
-| **Test-only change** | File under `tests/Strg.Integration.Tests/**` | Same `~<stem>` filter, derived from the test class name. |
+| **Test-only change**              | File under `tests/Strg.Integration.Tests/**`      | Same `~<stem>` filter, derived from the test class name.                                                                                                                  |
 
 Refinements:
 
@@ -319,11 +330,11 @@ When a `/implement-issue` verification step (especially the multi-agent team's d
 
 **Triage:**
 
-| Finding type | Action |
-|---|---|
-| **In-scope defect** (spec-spirit violation) | Fold the fix into the source issue's commit; mark the source issue's checkbox when verified. |
+| Finding type                                                                                        | Action                                                                                                                                                     |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **In-scope defect** (spec-spirit violation)                                                         | Fold the fix into the source issue's commit; mark the source issue's checkbox when verified.                                                               |
 | **Out-of-scope but real** (design choice, neighboring-phase constraint, latent value-semantics bug) | File a follow-up issue (template below); reference it under the source issue's close comment in a "Known design choices (spec-aligned, not gaps)" section. |
-| **Low-signal nit** (JIT noise, hypothetical edge case nobody is hitting) | Close the source issue with no follow-up; mention briefly in the close comment if the verification team raised it. |
+| **Low-signal nit** (JIT noise, hypothetical edge case nobody is hitting)                            | Close the source issue with no follow-up; mention briefly in the close comment if the verification team raised it.                                         |
 
 **Follow-up issue body template:**
 
@@ -335,7 +346,7 @@ When a `/implement-issue` verification step (especially the multi-agent team's d
 
 **Title convention**: `Follow-up STRG-XXX: <short description>` so a future engineer searching for "follow-up STRG-022" can discover all deferred work from a single source verification pass.
 
-**Why this discipline:** verification findings carry rich context (the audit trail of *why* something was deferred, what alternatives were considered) that is expensive to recreate. A dedicated tracker preserves the analysis instead of letting it die in a session transcript.
+**Why this discipline:** verification findings carry rich context (the audit trail of _why_ something was deferred, what alternatives were considered) that is expensive to recreate. A dedicated tracker preserves the analysis instead of letting it die in a session transcript.
 
 ---
 
@@ -346,19 +357,19 @@ multi-agent workflow: purpose, which roles to spawn, which `subagent_type`
 each role maps to, expected inputs, expected outputs, and a prompt template
 per role.
 
-| Team file                            | When to use                                         |
-|--------------------------------------|-----------------------------------------------------|
-| `.claude/agents/feature-dev-team.md` | Implementing a new STRG-xxx or CC-xxx issue.        |
+| Team file                            | When to use                                                 |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `.claude/agents/feature-dev-team.md` | Implementing a new STRG-xxx or CC-xxx issue.                |
 | `.claude/agents/security-team.md`    | Reviewing sensitive code or threat-modelling a new feature. |
-| `.claude/agents/review-team.md`      | PR review before merge (conventions, tests, types). |
+| `.claude/agents/review-team.md`      | PR review before merge (conventions, tests, types).         |
 
 Slash commands in `.claude/commands/` drive these teams:
 
-| Command                       | Arguments       | What it does                              |
-|-------------------------------|-----------------|-------------------------------------------|
-| `/implement-issue <ISSUE>`    | GitHub issue reference: `123`, `#123`, or `https://github.com/<owner>/<repo>/issues/<n>` (validated with `^(#?\d+\|https://github\.com/[^/]+/[^/]+/issues/\d+)$` — arguments that do not match are rejected before `gh` is invoked; cross-repo URLs are rejected after `gh repo view` resolves the local repo) | Fetches the GitHub issue via `gh`, then runs the feature-dev team end-to-end on its body. |
-| `/review-pr`                  | *(none)*        | Runs the review team on the current diff. |
-| `/next-issue`                 | *(none)*        | Finds the next unblocked issue in the dependency graph. |
+| Command                    | Arguments                                                                                                                                                                                                                                                                                                      | What it does                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `/implement-issue <ISSUE>` | GitHub issue reference: `123`, `#123`, or `https://github.com/<owner>/<repo>/issues/<n>` (validated with `^(#?\d+\|https://github\.com/[^/]+/[^/]+/issues/\d+)$` — arguments that do not match are rejected before `gh` is invoked; cross-repo URLs are rejected after `gh repo view` resolves the local repo) | Fetches the GitHub issue via `gh`, then runs the feature-dev team end-to-end on its body. |
+| `/review-pr`               | _(none)_                                                                                                                                                                                                                                                                                                       | Runs the review team on the current diff.                                                 |
+| `/next-issue`              | _(none)_                                                                                                                                                                                                                                                                                                       | Finds the next unblocked issue in the dependency graph.                                   |
 
 ### Typical workflow
 
@@ -376,7 +387,7 @@ Slash commands in `.claude/commands/` drive these teams:
 
 The team files document roles like `code-explorer`, `code-architect`,
 `code-reviewer`, `pr-test-analyzer`, `threat-modeler`, etc. These are
-*conceptual roles*, not custom `subagent_type` values. Each role maps to one
+_conceptual roles_, not custom `subagent_type` values. Each role maps to one
 of the real Claude Code subagent types (`Explore`, `Plan`, or
 `general-purpose`) — the mapping is declared at the top of every team file.
 Do not pass role names as `subagent_type`; pass the mapped type and the

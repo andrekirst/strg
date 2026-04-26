@@ -20,6 +20,7 @@ using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Core.Storage;
 using Strg.Infrastructure.Auditing;
+using Strg.Infrastructure.BackgroundJobs;
 using Strg.GraphQl.DataLoaders;
 using Strg.GraphQl.Errors;
 using Strg.GraphQl.Mutations;
@@ -226,6 +227,13 @@ builder.Services.AddAuthorization(options =>
 // SuperAdmin exist before any OpenIddict client records reference them.
 builder.Services.AddHostedService<FirstRunInitializationService>();
 builder.Services.AddHostedService<OpenIddictSeedWorker>();
+
+// STRG-035 — periodic sweep of abandoned in-flight TUS uploads. Runs every
+// StrgTusOptions.UploadCleanupInterval (default 5 min). The job creates its own scope per
+// sweep; the scoped HttpTenantContext returns Guid.Empty without an HttpContext, so the job
+// disables ONLY the tenant filter via IgnoreQueryFilters([StrgDbContext.TenantFilterName])
+// — soft-delete stays enforced. See class summary for the no-quota-release rationale.
+builder.Services.AddHostedService<AbandonedUploadCleanupJob>();
 
 // ---- GraphQL (STRG-049) ----
 var graphql = builder.Services

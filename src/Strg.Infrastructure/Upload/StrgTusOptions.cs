@@ -18,4 +18,16 @@ public sealed class StrgTusOptions
     /// 24 hours mirrors common TUS-server defaults.
     /// </summary>
     public TimeSpan UploadAbandonAfter { get; set; } = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// How often <see cref="BackgroundJobs.AbandonedUploadCleanupJob"/> wakes to sweep expired
+    /// <see cref="Strg.Core.Domain.PendingUpload"/> rows. The 5-minute default matches the STRG-035 spec.
+    ///
+    /// <para>The spec text reads "not configurable in v0.1." That is honoured at the
+    /// documentation surface — there is no operator-facing knob, no validation, and no entry
+    /// in deployment docs. The property exists so integration tests can drive the job's body
+    /// (<c>RunOnceAsync</c>) directly without spinning the timer; an operator who reads the
+    /// code can override it via <c>Strg:Upload:UploadCleanupInterval</c> at their own risk.</para>
+    /// </summary>
+    public TimeSpan UploadCleanupInterval { get; set; } = TimeSpan.FromMinutes(5);
 }

@@ -29,7 +29,14 @@ public static class FileListEndpoints
     {
         app.MapGet("/api/v1/drives/{driveId:guid}/files", ListFilesAsync)
             .RequireAuthorization(AuthPolicies.FilesRead)
-            .WithName("ListFiles");
+            .WithName("ListFiles")
+            .WithTags("Files")
+            .WithSummary("List files in a drive with pagination and optional recursive descent.")
+            .WithDescription(
+                "Returns a paginated list of files and folders under the given drive. " +
+                "Use 'path' to scope to a sub-folder (default '/' for the drive root) and " +
+                "'recursive=true' to include nested descendants. The 'pageSize' parameter is " +
+                "capped server-side at 200 regardless of the client value.");
 
         return app;
     }

@@ -65,4 +65,23 @@ public sealed class FileRepository(StrgDbContext db) : IFileRepository
         var file = await db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken).ConfigureAwait(false);
         file?.DeletedAt = DateTimeOffset.UtcNow;
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <see cref="EntityFrameworkQueryableExtensions.AsAsyncEnumerable{TSource}"/> streams the
+    /// resultset row-by-row from the open cursor — recursive-delete callers can mutate
+    /// hundreds of thousands of descendants without buffering the whole set. The global tenant
+    /// + soft-delete filters on <see cref="StrgDbContext"/> still apply, so cross-tenant rows
+    /// and already-deleted rows are excluded automatically; the caller does not need a tenant
+    /// predicate of its own.
+    /// </remarks>
+    public IAsyncEnumerable<FileItem> GetDescendantsAsync(
+        Guid driveId,
+        string pathPrefix,
+        CancellationToken cancellationToken = default)
+    {
+        return db.Files
+            .Where(f => f.DriveId == driveId && f.Path.StartsWith(pathPrefix))
+            .AsAsyncEnumerable();
+    }
 }

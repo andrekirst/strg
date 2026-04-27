@@ -143,12 +143,15 @@ public class FileDownloadFixture : StrgTusUploadFixture
         // pointing at an absent storage key. Mirrors the upload pipeline's two-phase order.
         using var scope = Services.CreateScope();
         var registry = scope.ServiceProvider.GetRequiredService<IStorageProviderRegistry>();
-        var encryptingWriter = scope.ServiceProvider.GetRequiredService<IEncryptingFileWriter>();
+        var encryptingWriterFactory = scope.ServiceProvider.GetRequiredService<IEncryptingFileWriterFactory>();
 
         await using var dbCtx = NewDbContext();
         var drive = await dbCtx.Drives.FirstAsync(d => d.Id == driveId, cancellationToken);
         var providerConfig = DictionaryStorageProviderConfig.FromJson(drive.ProviderConfig);
         var provider = registry.Resolve(drive.ProviderType, providerConfig);
+        // Bind the writer to the per-drive provider — the same pattern FileDownloadResolver
+        // uses, so the test seeds bytes against the same provider the SUT reads from.
+        var encryptingWriter = encryptingWriterFactory.Create(provider);
 
         var fileItemId = Guid.NewGuid();
         var storageKey = StrgUploadKeys.FinalKey(driveId, fileItemId, versionNumber: 1);

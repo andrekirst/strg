@@ -195,6 +195,14 @@ public sealed class FileDownloadTests(FileDownloadFixture fx) : IClassFixture<Fi
         {
             // Also expected — HttpClient surfaces some abort shapes as HttpRequestException.
         }
+        catch (IOException)
+        {
+            // Microsoft.AspNetCore.TestHost.ResponseBodyReaderStream.CheckAborted throws
+            // IOException("The client aborted the request.") when the client cancels mid-read
+            // under TestServer. Real Kestrel surfaces this as one of the two above; TestServer
+            // adds this third shape that only appears in-process. Same "did not complete with
+            // a 200 carrying every byte" contract as the other branches.
+        }
     }
 
     [Fact]

@@ -11,7 +11,7 @@ internal sealed class FileDownloadResolver(
     IFileVersionRepository versionRepository,
     IFileKeyRepository fileKeyRepository,
     IStorageProviderRegistry providerRegistry,
-    IEncryptingFileWriter encryptingWriter)
+    IEncryptingFileWriterFactory encryptingWriterFactory)
     : IFileDownloadResolver
 {
     public async Task<Result<FileDownloadResult, DownloadFailure>> ResolveAsync(
@@ -113,6 +113,12 @@ internal sealed class FileDownloadResolver(
         var key = await fileKeyRepository.GetByFileVersionAsync(version.Id, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"FileKey for version {version.Id} is missing.");
 
+        // Bind the writer to the drive's actual provider — the per-call factory closes the
+        // gap that DI cannot (storage providers are per-drive, not registered as services).
+        // Without this, a singleton-injected writer would read from whatever provider it was
+        // constructed with, silently bypassing the per-drive routing the rest of the resolver
+        // performs.
+        var encryptingWriter = encryptingWriterFactory.Create(provider);
         return await encryptingWriter.ReadAsync(file.StorageKey!, key.EncryptedDek, key.Algorithm, offset, cancellationToken).ConfigureAwait(false);
     }
 

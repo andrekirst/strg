@@ -26,9 +26,18 @@ public sealed class FileDownloadResolverTests
     private readonly IFileKeyRepository _fileKeyRepo = Substitute.For<IFileKeyRepository>();
     private readonly IStorageProviderRegistry _registry = Substitute.For<IStorageProviderRegistry>();
     private readonly IEncryptingFileWriter _encryptingWriter = Substitute.For<IEncryptingFileWriter>();
+    private readonly IEncryptingFileWriterFactory _encryptingWriterFactory = Substitute.For<IEncryptingFileWriterFactory>();
+
+    public FileDownloadResolverTests()
+    {
+        // Default wiring: any provider → the substituted writer. Tests that exercise the
+        // encrypted-read path stub the registry to return a real (substitute) provider; the
+        // factory then bridges from that provider to the writer the assertions inspect.
+        _encryptingWriterFactory.Create(Arg.Any<IStorageProvider>()).Returns(_encryptingWriter);
+    }
 
     private FileDownloadResolver Build() => new(
-        _fileRepo, _driveRepo, _versionRepo, _fileKeyRepo, _registry, _encryptingWriter);
+        _fileRepo, _driveRepo, _versionRepo, _fileKeyRepo, _registry, _encryptingWriterFactory);
 
     // ── failure paths ───────────────────────────────────────────────────────
 

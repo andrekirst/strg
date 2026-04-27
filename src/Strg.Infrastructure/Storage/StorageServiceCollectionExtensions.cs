@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Storage;
+using Strg.Infrastructure.Storage.Encryption;
 
 namespace Strg.Infrastructure.Storage;
 
@@ -20,6 +21,13 @@ public static class StorageServiceCollectionExtensions
             RegisterBuiltIns(registry);
             return registry;
         });
+
+        // Encrypting-writer factory: the writer itself is per-drive (binds to a per-drive
+        // IStorageProvider that can only be resolved at request time from the registry above),
+        // so the factory is the DI-friendly seam. Singleton lifetime — IKeyProvider is the
+        // only stateful dependency and itself is registered as singleton.
+        services.AddSingleton<IEncryptingFileWriterFactory, AesGcmFileWriterFactory>();
+
         return services;
     }
 

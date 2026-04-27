@@ -73,16 +73,7 @@ public static class FileListEndpoints
         return Results.Ok(new FileListResponse(items, result.Page, result.PageSize, result.TotalCount));
     }
 
-    private static FileItemDto ToDto(FileItem f) => new(
-        f.Id,
-        f.Name,
-        f.Path,
-        f.Size,
-        f.MimeType,
-        f.IsDirectory,
-        f.ContentHash,
-        f.CreatedAt,
-        f.UpdatedAt);
+    private static FileItemDto ToDto(FileItem f) => FileItemDto.From(f);
 }
 
 public record FileItemDto(
@@ -94,7 +85,27 @@ public record FileItemDto(
     bool IsDirectory,
     string? ContentHash,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    /// <summary>
+    /// Projects a <see cref="FileItem"/> onto the wire DTO. The same projection is used by every
+    /// REST endpoint that returns a single FileItem (list, copy, future move/rename) so the wire
+    /// shape stays in lockstep — no chance of one endpoint accidentally exposing
+    /// <see cref="FileItem.StorageKey"/>, <see cref="TenantedEntity.TenantId"/>, or
+    /// <see cref="FileItem.ParentId"/> while another correctly omits them. The omissions are the
+    /// security contract documented at <see cref="FileListEndpoints"/>.
+    /// </summary>
+    public static FileItemDto From(FileItem f) => new(
+        f.Id,
+        f.Name,
+        f.Path,
+        f.Size,
+        f.MimeType,
+        f.IsDirectory,
+        f.ContentHash,
+        f.CreatedAt,
+        f.UpdatedAt);
+}
 
 public record FileListResponse(
     IReadOnlyList<FileItemDto> Items,

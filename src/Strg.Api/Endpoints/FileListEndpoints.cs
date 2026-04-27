@@ -69,20 +69,9 @@ public static class FileListEndpoints
             return Results.NotFound();
         }
 
-        var items = result.Items.Select(ToDto).ToArray();
+        var items = result.Items.Select(FileItemDto.From).ToArray();
         return Results.Ok(new FileListResponse(items, result.Page, result.PageSize, result.TotalCount));
     }
-
-    private static FileItemDto ToDto(FileItem f) => new(
-        f.Id,
-        f.Name,
-        f.Path,
-        f.Size,
-        f.MimeType,
-        f.IsDirectory,
-        f.ContentHash,
-        f.CreatedAt,
-        f.UpdatedAt);
 }
 
 public record FileItemDto(
@@ -94,7 +83,25 @@ public record FileItemDto(
     bool IsDirectory,
     string? ContentHash,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    /// <summary>
+    /// Projects a <see cref="FileItem"/> onto its wire-safe DTO. Centralised so non-listing
+    /// endpoints (folder creation in particular — STRG-042) can reuse the same projection
+    /// without re-deriving the field set, which would risk drift on additions like
+    /// <c>StorageKey</c> / <c>TenantId</c> / <c>ParentId</c> that are deliberately stripped here.
+    /// </summary>
+    public static FileItemDto From(FileItem file) => new(
+        file.Id,
+        file.Name,
+        file.Path,
+        file.Size,
+        file.MimeType,
+        file.IsDirectory,
+        file.ContentHash,
+        file.CreatedAt,
+        file.UpdatedAt);
+}
 
 public record FileListResponse(
     IReadOnlyList<FileItemDto> Items,

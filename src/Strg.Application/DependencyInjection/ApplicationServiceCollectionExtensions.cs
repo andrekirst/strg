@@ -3,6 +3,7 @@ using Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Application.Auditing;
 using Strg.Application.Behaviors;
+using Strg.Application.Features.Files.Download;
 
 namespace Strg.Application.DependencyInjection;
 
@@ -37,6 +38,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped(typeof(IPipelineBehavior<,>), typeof(TransactionBehavior<,>));
 
         services.AddScoped<IAuditScope, AuditScope>();
+        services.AddScoped<IFileDownloadResolver, FileDownloadResolver>();
 
         services.AddValidatorsFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
 

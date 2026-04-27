@@ -102,6 +102,25 @@ public sealed class AuditBehavior<TMessage, TResponse>(
             return r => (bool)prop.GetValue(r)!;
         }
 
+        // Result<,> — the typed-error sibling of Result<T> introduced for handlers whose
+        // failures carry payload data the consumer must branch on. Same IsSuccess shape, so
+        // we reflect on the property the same way; without this branch, IsSuccessReader is
+        // null and AuditBehavior.Handle treats every Result<,> response as success — every
+        // failure path would spuriously emit an audit row.
+        if (responseType.IsGenericType && responseType.GetGenericTypeDefinition() == typeof(Result<,>))
+        {
+            var prop = responseType.GetProperty(
+                nameof(Result<object, object>.IsSuccess),
+                BindingFlags.Public | BindingFlags.Instance);
+
+            if (prop is null)
+            {
+                return null;
+            }
+
+            return r => (bool)prop.GetValue(r)!;
+        }
+
         return null;
     }
 }

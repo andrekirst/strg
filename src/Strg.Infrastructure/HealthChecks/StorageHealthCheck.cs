@@ -119,9 +119,9 @@ public sealed class StorageHealthCheck(
     /// v0.1) into a <see cref="DictionaryStorageProviderConfig"/>. Mirrors the JsonDocument-based
     /// approach from <c>FileVersionStore.ResolveProvider</c> (which tolerates non-string values)
     /// rather than the stricter
-    /// <c>JsonSerializer.Deserialize&lt;Dictionary&lt;string,string?&gt;&gt;</c> used in
-    /// <c>StrgWebDavStore.ParseProviderConfig</c> — kept inline because the JSON shape is an
-    /// internal contract that doesn't yet warrant a shared abstraction.
+    /// <see cref="DictionaryStorageProviderConfig.FromJson"/> used by the upload, download,
+    /// WebDAV, and cleanup paths — kept inline because the lenient
+    /// non-string-value behavior is a deliberate divergence from the canonical strict factory.
     /// </summary>
     private static IStorageProviderConfig ParseProviderConfig(string providerConfigJson)
     {

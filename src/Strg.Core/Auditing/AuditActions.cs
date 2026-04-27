@@ -73,6 +73,21 @@ public static class AuditActions
     public const string FileUploaded = "file.uploaded";
 
     /// <summary>
+    /// A file's content was downloaded via the streaming endpoint (STRG-037). ResourceType is
+    /// <c>"FileItem"</c>, ResourceId is the file id, UserId + TenantId carry the
+    /// requester/tenant, and Details is a JSON object <c>{ driveId, size, range }</c> — the
+    /// optional <c>range</c> field is the byte range when the request used a Range header
+    /// (<c>"start-end"</c>), <c>null</c> for full-file downloads.
+    ///
+    /// <para>Emitted directly from the endpoint handler (no outbox event), so
+    /// <see cref="Strg.Core.Domain.AuditEntry.EventId"/> is null. Records the access *intent*
+    /// (post-headers, pre-body-copy) so client-disconnect-mid-stream still leaves a trail —
+    /// the moment the bytes start flowing matters more for forensics than whether they all
+    /// arrived.</para>
+    /// </summary>
+    public const string FileDownloaded = "file.downloaded";
+
+    /// <summary>
     /// A file was soft-deleted. ResourceType is <c>"FileItem"</c>, Details is
     /// <c>{ driveId }</c>. Emitted from <c>FileDeletedEvent</c>.
     /// </summary>

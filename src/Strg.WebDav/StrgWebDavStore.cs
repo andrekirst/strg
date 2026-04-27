@@ -1,7 +1,6 @@
 using System.Net.Mime;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Domain;
@@ -288,25 +287,10 @@ public sealed class StrgWebDavStore(
     /// </summary>
     internal static IStorageProvider ResolveProvider(IStorageProviderRegistry registry, Drive drive)
     {
-        var config = ParseProviderConfig(drive.ProviderConfig);
+        var config = DictionaryStorageProviderConfig.FromJson(drive.ProviderConfig);
         return registry.Resolve(drive.ProviderType, config);
     }
 
-    private static IStorageProviderConfig ParseProviderConfig(string json)
-    {
-        // Mirrors the JSON shape used by the REST/GraphQL drive-creation surfaces — a flat
-        // string-valued map. Empty "{}" is a valid drive config (the built-in "local" provider
-        // requires "rootPath" and will throw on its own if missing, which is where operator
-        // feedback belongs).
-        if (string.IsNullOrWhiteSpace(json) || json == "{}")
-        {
-            return new DictionaryStorageProviderConfig(new Dictionary<string, string?>());
-        }
-
-        var raw = JsonSerializer.Deserialize<Dictionary<string, string?>>(json)
-            ?? new Dictionary<string, string?>();
-        return new DictionaryStorageProviderConfig(raw);
-    }
 }
 
 /// <summary>

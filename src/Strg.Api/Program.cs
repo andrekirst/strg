@@ -406,6 +406,7 @@ app.MapGraphQL();
 app.MapTokenEndpoints();
 app.MapUserInfoEndpoints();
 app.MapDriveEndpoints();
+app.MapFileDownloadEndpoints();
 app.MapUserRegistrationEndpoints();
 
 // STRG-034 — TUS upload endpoint. Mapped after UseAuthentication/UseAuthorization (line 352-353)

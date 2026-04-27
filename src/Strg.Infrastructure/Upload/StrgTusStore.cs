@@ -1,4 +1,3 @@
-using System.Text.Json;
 using MassTransit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -435,19 +434,8 @@ public sealed class StrgTusStore(
             .FirstOrDefaultAsync(d => d.Id == driveId, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Drive {driveId} not found");
-        var config = ParseProviderConfig(drive.ProviderConfig);
+        var config = DictionaryStorageProviderConfig.FromJson(drive.ProviderConfig);
         return providerRegistry.Resolve(drive.ProviderType, config);
-    }
-
-    private static IStorageProviderConfig ParseProviderConfig(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json == "{}")
-        {
-            return new DictionaryStorageProviderConfig(new Dictionary<string, string?>());
-        }
-        var raw = JsonSerializer.Deserialize<Dictionary<string, string?>>(json)
-            ?? new Dictionary<string, string?>();
-        return new DictionaryStorageProviderConfig(raw);
     }
 
     private async Task TryDeleteAsync(IStorageProvider provider, string key)

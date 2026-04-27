@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,12 +50,6 @@ namespace Strg.Infrastructure.BackgroundJobs;
 /// <c>(IsCompleted, ExpiresAt)</c> would be tighter. v0.1 row counts make the cost negligible;
 /// see follow-up issue filed at STRG-035 close.</para>
 ///
-/// <para><b>ParseProviderConfig duplication.</b> The provider-config JSON parser is duplicated
-/// here from <see cref="Strg.Infrastructure.Upload.StrgTusStore"/> /
-/// <c>StrgWebDavStore.ParseProviderConfig</c> /
-/// <see cref="Strg.Infrastructure.HealthChecks.StorageHealthCheck"/>. The HealthCheck's comment
-/// documents the explicit "kept inline" convention; this is the fourth call site. A shared helper
-/// is the obvious refactor and is left for a future change.</para>
 /// </summary>
 public sealed class AbandonedUploadCleanupJob(
     IServiceScopeFactory scopeFactory,
@@ -157,7 +150,7 @@ public sealed class AbandonedUploadCleanupJob(
         IStorageProvider provider;
         try
         {
-            var config = ParseProviderConfig(drive.ProviderConfig);
+            var config = DictionaryStorageProviderConfig.FromJson(drive.ProviderConfig);
             provider = providerRegistry.Resolve(drive.ProviderType, config);
         }
         catch (Exception ex)
@@ -189,14 +182,4 @@ public sealed class AbandonedUploadCleanupJob(
         }
     }
 
-    private static IStorageProviderConfig ParseProviderConfig(string json)
-    {
-        if (string.IsNullOrWhiteSpace(json) || json == "{}")
-        {
-            return new DictionaryStorageProviderConfig(new Dictionary<string, string?>());
-        }
-        var raw = JsonSerializer.Deserialize<Dictionary<string, string?>>(json)
-            ?? new Dictionary<string, string?>();
-        return new DictionaryStorageProviderConfig(raw);
-    }
 }

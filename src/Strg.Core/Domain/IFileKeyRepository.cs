@@ -16,4 +16,17 @@ public interface IFileKeyRepository
     Task<FileKey?> GetByFileVersionAsync(Guid fileVersionId, CancellationToken cancellationToken = default);
 
     Task AddAsync(FileKey fileKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stages <paramref name="fileKey"/> for deletion in the next <c>SaveChangesAsync</c>.
+    /// Used by the cross-drive move handler in the <c>E→P</c> and <c>E→E</c> branches: on an
+    /// E→P move the source FileKey row must be dropped (the target plaintext drive has no
+    /// FileKey), and on an E→E move the source row is dropped and a fresh-DEK row inserted in
+    /// the same <c>SaveChangesAsync</c> so EF Core's DELETE-before-INSERT ordering keeps the
+    /// <c>FileVersionId</c> unique-index satisfied without bouncing through the database.
+    ///
+    /// <para>Repository pattern (CLAUDE.md): this method does NOT call <c>SaveChangesAsync</c>;
+    /// the caller commits.</para>
+    /// </summary>
+    void Remove(FileKey fileKey);
 }

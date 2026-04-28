@@ -24,4 +24,9 @@ public sealed class FileKeyRepository(StrgDbContext db) : IFileKeyRepository
         db.FileKeys.Add(fileKey);
         return Task.CompletedTask;
     }
+
+    public void Remove(FileKey fileKey)
+    {
+        db.FileKeys.Remove(fileKey);
+    }
 }

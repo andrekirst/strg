@@ -75,6 +75,7 @@ public static class FileListEndpoints
 
     private static FileItemDto ToDto(FileItem f) => new(
         f.Id,
+        f.DriveId,
         f.Name,
         f.Path,
         f.Size,
@@ -85,8 +86,17 @@ public static class FileListEndpoints
         f.UpdatedAt);
 }
 
+/// <summary>
+/// Wire-shape projection of <see cref="FileItem"/>. <see cref="DriveId"/> is included so a
+/// cross-drive move response (STRG-040) can communicate the new drive without a second round-trip;
+/// the field is also useful for clients pivoting between drives.
+/// <see cref="FileItem.StorageKey"/>, <see cref="TenantedEntity.TenantId"/>, and
+/// <see cref="FileItem.ParentId"/> are deliberately omitted — see <c>FileListEndpoints</c> docs
+/// for the rationale.
+/// </summary>
 public record FileItemDto(
     Guid Id,
+    Guid DriveId,
     string Name,
     string Path,
     long Size,

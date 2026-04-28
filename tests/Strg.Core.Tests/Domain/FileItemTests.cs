@@ -60,4 +60,171 @@ public sealed class FileItemTests
 
         file.IsDeleted.Should().BeTrue();
     }
+
+    [Fact]
+    public void MoveTo_MutatesDriveId_Path_AndName_Together()
+    {
+        // STRG-040 — MoveTo is the only call site that can flip DriveId after construction;
+        // pin the lockstep mutation so a future refactor that splits the three writes is caught.
+        var originalDriveId = Guid.NewGuid();
+        var newDriveId = Guid.NewGuid();
+        var file = new FileItem
+        {
+            DriveId = originalDriveId,
+            Name = "old.txt",
+            Path = "folder/old.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        file.MoveTo(newDriveId, "archive/2024/new.txt", "new.txt");
+
+        file.DriveId.Should().Be(newDriveId);
+        file.Path.Should().Be("archive/2024/new.txt");
+        file.Name.Should().Be("new.txt");
+    }
+
+    [Fact]
+    public void MoveTo_RejectsEmptyDriveId()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "old.txt",
+            Path = "folder/old.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.MoveTo(Guid.Empty, "new.txt", "new.txt");
+
+        act.Should().Throw<ArgumentException>().WithParameterName("newDriveId");
+    }
+
+    [Fact]
+    public void MoveTo_RejectsEmptyPath()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "old.txt",
+            Path = "folder/old.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.MoveTo(Guid.NewGuid(), "   ", "new.txt");
+
+        act.Should().Throw<ArgumentException>().WithParameterName("newPath");
+    }
+
+    [Fact]
+    public void MoveTo_RejectsEmptyName()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "old.txt",
+            Path = "folder/old.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.MoveTo(Guid.NewGuid(), "new.txt", "");
+
+        act.Should().Throw<ArgumentException>().WithParameterName("newName");
+    }
+
+    [Fact]
+    public void RebaseUnder_RewritesPath_PreservesName_FlipsDriveId()
+    {
+        // STRG-040 Phase 2 — descendant rewrite under a directory move. The leaf segment is
+        // invariant (Name preserved); only the prefix path and the drive id move.
+        var oldDriveId = Guid.NewGuid();
+        var newDriveId = Guid.NewGuid();
+        var file = new FileItem
+        {
+            DriveId = oldDriveId,
+            Name = "file.txt",
+            Path = "dir/sub/file.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        file.RebaseUnder("dir", "renamed", newDriveId);
+
+        file.Path.Should().Be("renamed/sub/file.txt");
+        file.Name.Should().Be("file.txt"); // leaf invariant
+        file.DriveId.Should().Be(newDriveId);
+    }
+
+    [Fact]
+    public void RebaseUnder_NonDescendantPath_Throws()
+    {
+        // Path="unrelated/x.txt" doesn't start with "dir/" — programming error in caller, surfaces
+        // as InvalidOperationException (state error) not ArgumentException (input shape error).
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "x.txt",
+            Path = "unrelated/x.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.RebaseUnder("dir", "renamed", Guid.NewGuid());
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void RebaseUnder_EmptyOldRoot_Throws()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "file.txt",
+            Path = "dir/file.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.RebaseUnder("   ", "renamed", Guid.NewGuid());
+
+        act.Should().Throw<ArgumentException>().WithParameterName("oldRootPath");
+    }
+
+    [Fact]
+    public void RebaseUnder_EmptyNewRoot_Throws()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "file.txt",
+            Path = "dir/file.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.RebaseUnder("dir", "", Guid.NewGuid());
+
+        act.Should().Throw<ArgumentException>().WithParameterName("newRootPath");
+    }
+
+    [Fact]
+    public void RebaseUnder_EmptyDriveId_Throws()
+    {
+        var file = new FileItem
+        {
+            DriveId = Guid.NewGuid(),
+            Name = "file.txt",
+            Path = "dir/file.txt",
+            TenantId = Guid.NewGuid(),
+            CreatedBy = Guid.NewGuid(),
+        };
+
+        var act = () => file.RebaseUnder("dir", "renamed", Guid.Empty);
+
+        act.Should().Throw<ArgumentException>().WithParameterName("newDriveId");
+    }
 }

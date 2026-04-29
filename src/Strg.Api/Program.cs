@@ -411,6 +411,7 @@ app.MapFileListEndpoints();
 app.MapFileDeleteEndpoints();
 app.MapFileMoveEndpoints();
 app.MapFileCopyEndpoints();
+app.MapFileVersionEndpoints();
 app.MapFolderCreateEndpoints();
 app.MapUserRegistrationEndpoints();
 

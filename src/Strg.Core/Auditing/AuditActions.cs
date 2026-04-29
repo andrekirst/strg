@@ -88,6 +88,16 @@ public static class AuditActions
     public const string FileDownloaded = "file.downloaded";
 
     /// <summary>
+    /// A specific historical <see cref="Strg.Core.Domain.FileVersion"/>'s content was downloaded
+    /// via the versions endpoint (STRG-044). ResourceType is <c>"FileItem"</c>, ResourceId is the
+    /// owning file id, UserId + TenantId carry the requester/tenant, and Details is a JSON
+    /// object <c>{ driveId, versionNumber, size, range }</c>. Distinct from <see cref="FileDownloaded"/>
+    /// so an audit reader can tell historical-version reads from current-content reads without
+    /// inferring it from the optional <c>versionNumber</c> field.
+    /// </summary>
+    public const string FileVersionDownloaded = "file_version.downloaded";
+
+    /// <summary>
     /// A file was soft-deleted. ResourceType is <c>"FileItem"</c>, Details is
     /// <c>{ driveId }</c>. Emitted from <c>FileDeletedEvent</c>.
     /// </summary>

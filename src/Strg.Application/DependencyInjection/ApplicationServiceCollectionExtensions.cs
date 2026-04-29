@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Strg.Application.Auditing;
 using Strg.Application.Behaviors;
 using Strg.Application.Features.Files.Download;
+using Strg.Application.Features.Files.DownloadVersion;
 
 namespace Strg.Application.DependencyInjection;
 
@@ -39,6 +40,7 @@ public static class ApplicationServiceCollectionExtensions
 
         services.AddScoped<IAuditScope, AuditScope>();
         services.AddScoped<IFileDownloadResolver, FileDownloadResolver>();
+        services.AddScoped<IFileVersionDownloadResolver, FileVersionDownloadResolver>();
 
         services.AddValidatorsFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
 

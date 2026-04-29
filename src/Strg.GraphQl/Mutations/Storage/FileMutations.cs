@@ -33,12 +33,14 @@ public sealed class FileMutations
         {
             "InvalidPath" => "path",
             "NotFound" => "driveId",
+            "Conflict" => "path",
             _ => null,
         };
         var code = result.ErrorCode switch
         {
             "InvalidPath" => "INVALID_PATH",
             "NotFound" => "NOT_FOUND",
+            "Conflict" => "CONFLICT",
             _ => result.ErrorCode!,
         };
         return new CreateFolderPayload(null, [new UserError(code, result.ErrorMessage!, field)]);

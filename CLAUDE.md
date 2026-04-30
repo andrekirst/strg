@@ -221,6 +221,42 @@ All exceptions are mapped by `StrgErrorFilter` in GraphQL and return RFC 7807 pr
 
 ---
 
+## Codebase & Docs Search Tooling
+
+Two MCP servers augment text search. Reach for them per the tables below; fall back to built-in tools (`Grep`, `Glob`, `Read`) only when neither fits.
+
+### Serena — semantic C# search
+
+| Question shape | Tool |
+|---|---|
+| "Where is `X` defined?" | `find_symbol` |
+| "Who calls `X`?" | `find_referencing_symbols` |
+| "What's in this file/class?" | `get_symbols_overview` |
+| Forbidden-pattern enforcement (e.g., `IgnoreQueryFilters` outside the carve-out) | `search_for_pattern` |
+| Rename a symbol + update all callers atomically | `rename_symbol` |
+
+Fall back to `Grep` only for non-symbol text (string literals, comments, log messages, JSON values).
+
+### Obsidian — docs read-only queries
+
+`docs/` is an Obsidian vault. Use Obsidian MCP for **read-only** queries:
+
+| Question shape | Tool |
+|---|---|
+| "Search docs for term Y" | `obsidian_simple_search` |
+| "All docs with tag `auth`" or other frontmatter queries | `obsidian_complex_search` (JsonLogic, e.g. `{"in": ["auth", {"var": "tags"}]}`) |
+| "Read this specific note" | `obsidian_get_file_contents` |
+| "Read N specific notes in one call" | `obsidian_batch_get_file_contents` |
+| "List vault root contents" / "list a folder" | `obsidian_list_files_in_vault` / `obsidian_list_files_in_dir` |
+
+**Editing markdown** — always `Edit` / `Write`. The MCP exposes `obsidian_append_content`, `obsidian_patch_content`, and `obsidian_delete_file`, but they are NOT allowlisted; require explicit per-call approval.
+
+**Backlinks** — this MCP variant does not expose a backlinks tool. To find references to a doc, use `Grep` for the filename or wikilink syntax.
+
+**Renames** — there is no atomic rename-with-backlink-update. Rename via `Write` (move file) plus `Grep`-and-replace for referrers.
+
+---
+
 ## Database
 
 ### Migrations

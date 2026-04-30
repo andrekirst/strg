@@ -414,6 +414,7 @@ app.MapFileCopyEndpoints();
 app.MapFileVersionEndpoints();
 app.MapFolderCreateEndpoints();
 app.MapUserRegistrationEndpoints();
+app.MapUserEndpoints();
 
 // STRG-034 — TUS upload endpoint. Mapped after UseAuthentication/UseAuthorization (line 352-353)
 // so HttpContext.User is populated before OnAuthorizeAsync runs. .RequireAuthorization() is

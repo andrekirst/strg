@@ -144,7 +144,7 @@ The env-var the MCP reads is **`OBSIDIAN_API_KEY`** (verified by source — `mcp
 1. Install Obsidian Desktop (Linux: AppImage / snap / `.deb`).
 2. Open `docs/` (this repo) as a vault.
 3. Install community plugin **Local REST API** (Settings → Community plugins → Browse).
-4. Enable plugin; copy generated API token. The token is auto-stored by the plugin under `docs/.obsidian/plugins/obsidian-local-rest-api/data.json` (gitignored, see §5.3); copy it manually into `.env.local` so the MCP server can read it.
+4. Enable plugin; copy generated API token. The token is auto-stored by the plugin under `docs/.obsidian/plugins/obsidian-local-rest-api/data.json` (gitignored, see §5.3); copy it manually into `.env` so the MCP server can read it.
 5. Apply Obsidian settings (encoded in committed configs):
    - *Files & Links → Use `[[Wikilinks]]`:* **OFF**.
    - *Files & Links → New link format:* **"Shortest path when possible"**.
@@ -152,13 +152,13 @@ The env-var the MCP reads is **`OBSIDIAN_API_KEY`** (verified by source — `mcp
 
 ### 5.3 Repo-side artifacts
 
-- `.mcp.json` at repo root — registers the `obsidian` server pointing at the `mcp-obsidian` binary, with `${OBSIDIAN_API_KEY}` env reference. **Verify env-var substitution support in `.mcp.json` at install time;** if unsupported, fall back to user-level config (`~/.claude.json`) and amend the spec.
-- `.env.local` — contains `OBSIDIAN_API_KEY=...`. Added to root `.gitignore`.
+- `.mcp.json` at repo root — registers the `obsidian` server pointing at the `mcp-obsidian` binary. No `env` block needed: `mcp-obsidian`'s `server.py:16` calls `load_dotenv()` from python-dotenv, which auto-loads `.env` from the cwd. Claude Code launches MCP servers with `cwd = repo root`, so the key flows in transparently.
+- `.env` — contains `OBSIDIAN_API_KEY=...`. Already covered by the existing `.env` and `.env.*` rules in root `.gitignore`; no new gitignore entry required.
 - `docs/.obsidian/` — split policy via additions to root `.gitignore`:
   - **Commit:** `app.json`, `appearance.json`, `core-plugins.json`, `community-plugins.json`.
   - **Gitignore:** `workspace.json`, `workspace-mobile.json`, `workspaces.json`, `plugins/*/data.json` (the API token lives in plugin data — never commit).
 
-The token therefore exists in two gitignored locations: the plugin's own `data.json` (where Obsidian stores it) and `.env.local` (where the MCP server reads it). Both are excluded from version control.
+The token therefore exists in two gitignored locations: the plugin's own `data.json` (where Obsidian stores it) and `.env` (where the MCP server reads it). Both are excluded from version control.
 
 ### 5.4 Tool routing for docs questions
 
@@ -346,7 +346,7 @@ After install, all of the following should hold:
 Each component is independently reversible:
 
 - **Serena** — delete `.serena/`; no source changes were made.
-- **Obsidian MCP** — drop its entry from `.mcp.json`, remove `.env.local`, optionally uninstall the Local REST API plugin in Obsidian. Vault metadata (frontmatter, links) survives as plain markdown — harmless if the MCP is gone.
+- **Obsidian MCP** — drop its entry from `.mcp.json`, remove `.env`, optionally uninstall the Local REST API plugin in Obsidian. Vault metadata (frontmatter, links) survives as plain markdown — harmless if the MCP is gone.
 - **Phase 1 frontmatter / link retrofit** — `git revert` the retrofit commit.
 - **CLAUDE.md addendum** — `git revert`.
 - **`.claude/settings.json` allowlist** — `git revert`.
@@ -365,5 +365,5 @@ Retrofit content is **strictly additive** — rollback only removes tooling; doc
 Status as of 2026-04-30:
 
 1. **Exact tool names exposed by `mcp-obsidian`** — RESOLVED. The MarkusPfundstein variant v0.2.2 exposes 12 tools (see §5.1); none of `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags` exist. §§5.4, 5.5, 8, 9 updated to match. Env-var name corrected to `OBSIDIAN_API_KEY`.
-2. **Whether `.mcp.json` supports `${ENV_VAR}` substitution.** Open — verifies during plan Step 4.4 after `.mcp.json` is created.
+2. **Whether `.mcp.json` supports `${ENV_VAR}` substitution.** RESOLVED — sidestepped. `mcp-obsidian` itself loads `.env` via python-dotenv (`server.py:16`), so the MCP config has no env block; Claude Code launches the server with cwd=repo-root, the dotenv read happens transparently inside the server process.
 3. **Whether Serena's C# language-server backend handles .NET 10 cleanly.** RESOLVED. `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both succeed against the live codebase; LSP indexes 30+ references across project boundaries.

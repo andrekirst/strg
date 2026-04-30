@@ -190,7 +190,7 @@ Expected: a JSON listing of root vault files (e.g., `architecture/`, `requiremen
 
 **Files:**
 - Create: `.mcp.json` at repo root
-- Create: `.env.local` at repo root (per-user, gitignored in Task 5)
+- Create: `.env` at repo root (per-user, gitignored in Task 5)
 
 - [ ] **Step 4.1: Install `mcp-obsidian` (Python).**
 
@@ -206,9 +206,9 @@ which mcp-obsidian
 
 Expected: a path inside `~/.local/bin/` or `~/.local/pipx/...`.
 
-- [ ] **Step 4.2: Create `.env.local` with the Obsidian API key.**
+- [ ] **Step 4.2: Create `.env` with the Obsidian API key.**
 
-Path: `.env.local`
+Path: `.env`
 
 Content (replace `<TOKEN>` with the value captured in Step 3.4):
 
@@ -229,22 +229,21 @@ Content:
   "mcpServers": {
     "obsidian": {
       "command": "mcp-obsidian",
-      "args": [],
-      "env": {
-        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}"
-      }
+      "args": []
     }
   }
 }
 ```
 
-- [ ] **Step 4.4: Verify `${ENV_VAR}` substitution works in `.mcp.json`.**
+No `env` block needed: `mcp-obsidian` calls `load_dotenv()` (`server.py:16`) which reads `.env` from the cwd. Claude Code launches the MCP with cwd=repo-root, so `OBSIDIAN_API_KEY` flows in transparently.
 
-Restart Claude Code. After restart, the tool list should include `mcp__obsidian__*` tools. If env-var substitution is unsupported, the server will fail to start — fall back to user-level config:
+- [ ] **Step 4.4: Restart Claude Code so the new MCP loads.**
 
-1. Move the `obsidian` server entry from `.mcp.json` to `~/.claude.json` under `mcpServers`, hardcoding the values from `.env.local`.
-2. Delete `.mcp.json` (or leave it empty).
-3. Update spec §5.3 with a note about the fallback.
+Quit and relaunch Claude Code. After restart, the tool list should include 12 `mcp__obsidian__*` tools (see Step 4.5).
+
+If the MCP fails to start: check Claude Code's MCP server logs. Common failure modes:
+- `OBSIDIAN_API_KEY environment variable required` → cwd of the MCP launcher isn't the repo root, so `.env` isn't loaded. Confirm with `find / -path .../mcp-obsidian.log 2>/dev/null` and inspect.
+- `connection refused` to `127.0.0.1:27124` → Obsidian Desktop not running or the Local REST API plugin disabled (Task 3 prerequisite).
 
 - [ ] **Step 4.5: Verify the expected tool surface after MCP restart.**
 
@@ -267,15 +266,15 @@ After Step 4.4's restart, the tool list should include the following 12 tools (a
 
 If any of the six allowlisted tools are missing, stop and reconcile. The spec was already updated for the missing-tool reality (`get_backlinks`, `find_notes_by_tag` as a dedicated tool, `rename_note`, `batch_update_tags` are all absent in v0.2.2 — see spec §5.1). Verified by source inspection of `mcp_obsidian/tools.py` at install time.
 
-- [ ] **Step 4.6: Commit `.mcp.json` only (NOT `.env.local`).**
+- [ ] **Step 4.6: Commit `.mcp.json` only (NOT `.env`).**
 
 ```bash
 git add .mcp.json
-git status   # confirm .env.local is NOT staged
+git status   # confirm .env is NOT staged
 git commit -m "feat(tooling): register obsidian MCP server in .mcp.json
 
 Adds the MarkusPfundstein/mcp-obsidian v0.2.2 REST-API server. The
-single env reference (OBSIDIAN_API_KEY) lives in .env.local
+single env reference (OBSIDIAN_API_KEY) lives in .env
 (gitignored in Task 5). Tool surface (12 tools, 6 allowlisted) is
 documented in the spec §5.1 / §9.
 
@@ -291,7 +290,7 @@ The spec was reconciled in advance of execution after the install-time tool-surf
 ### Task 5: Commit the vault skeleton + extend `.gitignore`
 
 **Files:**
-- Modify: `.gitignore` (add `.obsidian/` patterns + `.env.local`)
+- Modify: `.gitignore` (add `.obsidian/` patterns + `.env`)
 - Add: `docs/.obsidian/app.json`, `appearance.json`, `core-plugins.json`, `community-plugins.json`
 
 - [ ] **Step 5.1: Inspect what Obsidian wrote under `docs/.obsidian/`.**
@@ -303,7 +302,7 @@ ls docs/.obsidian/plugins/ 2>/dev/null
 
 Expected files include `app.json`, `appearance.json`, `core-plugins.json`, `community-plugins.json`, `workspace.json`, and a `plugins/obsidian-local-rest-api/` directory.
 
-- [ ] **Step 5.2: Append the Obsidian + env block to `.gitignore`.**
+- [ ] **Step 5.2: Append the Obsidian block to `.gitignore`.**
 
 Use `Edit` to append at the end of `.gitignore`:
 
@@ -313,17 +312,16 @@ docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
 docs/.obsidian/workspaces.json
 docs/.obsidian/plugins/*/data.json
-
-# Per-user environment (Obsidian REST API token, etc.)
-.env.local
 ```
+
+(Note: `.env` is already covered by the repo's existing `.env` and `.env.*` rules; no new entry needed for it.)
 
 - [ ] **Step 5.3: Verify the gitignore matches both directions.**
 
 ```bash
-git check-ignore -v docs/.obsidian/workspace.json   # should match
+git check-ignore -v docs/.obsidian/workspace.json   # should match the new rule
 git check-ignore -v docs/.obsidian/app.json         # should NOT match
-git check-ignore -v .env.local                      # should match
+git check-ignore -v .env                            # should match (existing rule)
 ```
 
 Expected: first and third return a line, second returns empty exit code 1.
@@ -336,7 +334,7 @@ git add .gitignore
 git status
 ```
 
-Expected `git status`: those 5 files staged, `.env.local` and `workspace*.json` untracked-but-ignored.
+Expected `git status`: those 5 files staged, `.env` and `workspace*.json` untracked-but-ignored.
 
 - [ ] **Step 5.5: Commit.**
 
@@ -345,7 +343,7 @@ git commit -m "feat(tooling): commit Obsidian vault skeleton for docs/
 
 Persists shared editor config (app/appearance/core-plugins/community-
 plugins.json) for the docs/ vault. Per-user state (workspace*.json,
-plugins/*/data.json — including the API token) and .env.local are
+plugins/*/data.json — including the API token) and .env are
 gitignored.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
@@ -783,7 +781,7 @@ Invoke `mcp__plugin_serena_serena__find_symbol("StoragePath")`. Expected: return
 
 `mcp-obsidian` v0.2.2 has no backlinks tool. Substitute reachability check: invoke `mcp__obsidian__obsidian_list_files_in_vault` (no args). Expected: returns vault top-level entries (`architecture/`, `requirements/`, `issues/`, `decisions/`, `superpowers/`).
 
-If the call errors with auth failure → `OBSIDIAN_API_KEY` mismatch between Obsidian's plugin token and `.env.local`. If the call errors with connection-refused → Obsidian Desktop not running or the Local REST API plugin disabled.
+If the call errors with auth failure → `OBSIDIAN_API_KEY` mismatch between Obsidian's plugin token and `.env`. If the call errors with connection-refused → Obsidian Desktop not running or the Local REST API plugin disabled.
 
 - [ ] **Step 9.3: Gate 3 — Allowlist active.**
 
@@ -829,7 +827,7 @@ Add a `**Status: implemented** (verified <date>)` line at the top of this plan f
 Status:
 
 1. **Tool name divergence** — RESOLVED 2026-04-30. `mcp-obsidian` v0.2.2 has no `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags`; the (b) read-write policy fully collapsed to read-only. Spec §§5.1, 5.4, 5.5, 8, 9, 11 reflect actual surface.
-2. **`.mcp.json` env-var substitution** — open. Verified during Task 4.4 (post-restart). Fallback to user-level config if unsupported.
+2. **`.mcp.json` env-var substitution** — RESOLVED 2026-04-30. Sidestepped: `mcp-obsidian`'s own `load_dotenv()` reads `.env` from cwd, so `.mcp.json` needs no `env` block. The `.env.local` → `.env` rename was the key insight that makes this work without env-var-substitution magic in Claude Code's MCP loader.
 3. **Serena C# backend on .NET 10** — RESOLVED 2026-04-30. Verified by Task 2.5: `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both return rich, accurate results across project boundaries.
 
 ---
@@ -839,7 +837,7 @@ Status:
 Per-component, independently reversible. If a Phase fails partway:
 
 - **Phase A failure** — `git revert` Tasks 1-2's commits; delete `.serena/`.
-- **Phase B failure** — `git revert` Tasks 3-5's commits; remove the obsidian entry from `.mcp.json`; delete `.env.local`; uninstall the Local REST API plugin in Obsidian (optional).
+- **Phase B failure** — `git revert` Tasks 3-5's commits; remove the obsidian entry from `.mcp.json`; delete `.env`; uninstall the Local REST API plugin in Obsidian (optional).
 - **Phase C failure** — `git revert` Task 6's commit. Frontmatter is strictly additive; reverting leaves the docs as plain markdown.
 - **Phase D failure** — `git revert` Tasks 7-8's commits.
 

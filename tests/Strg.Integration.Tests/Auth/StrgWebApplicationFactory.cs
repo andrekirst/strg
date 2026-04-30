@@ -348,6 +348,11 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
         //     known admin here, that service sees users and short-circuits.
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        // STRG-048 (cabf4db) added ICurrentUser to the StrgDbContext ctor. The three sibling
+        // throwaway-container helpers in this file already register it — bootstrap was missed.
+        // Without this line every IClassFixture<StrgWebApplicationFactory> aborts at fixture
+        // init with a DI resolution error.
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();

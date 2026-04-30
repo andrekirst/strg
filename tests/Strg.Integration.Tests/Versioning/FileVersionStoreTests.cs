@@ -14,6 +14,7 @@ using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
 using Strg.Infrastructure.Versioning;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -671,8 +672,9 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
 
         var tenantId = Guid.NewGuid();
         var tenantContext = new FixedTenantContext(tenantId);
+        var currentUser = new FixedCurrentUser(Guid.Empty);
 
-        await using (var bootstrap = new StrgDbContext(options, tenantContext))
+        await using (var bootstrap = new StrgDbContext(options, tenantContext, currentUser))
         {
             await bootstrap.Database.EnsureCreatedAsync();
             bootstrap.Tenants.Add(new Tenant { Id = tenantId, Name = $"test-{tenantId:N}" });
@@ -686,7 +688,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         var registry = new StorageProviderRegistry();
         registry.Register("memory", _ => provider);
 
-        return new Fixture(options, tenantContext, tenantId, registry, provider);
+        return new Fixture(options, tenantContext, currentUser, tenantId, registry, provider);
     }
 
     private sealed record Seed(FileItem File, Guid UserId);
@@ -694,6 +696,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
     private sealed class Fixture(
         DbContextOptions<StrgDbContext> options,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         Guid tenantId,
         IStorageProviderRegistry registry,
         InMemoryStorageProvider provider)
@@ -786,10 +789,10 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
         {
             var newTenantId = Guid.NewGuid();
             var newTenantContext = new FixedTenantContext(newTenantId);
-            await using var ctx = new StrgDbContext(options, newTenantContext);
+            await using var ctx = new StrgDbContext(options, newTenantContext, currentUser);
             ctx.Tenants.Add(new Tenant { Id = newTenantId, Name = $"test-{newTenantId:N}" });
             await ctx.SaveChangesAsync();
-            return new Fixture(options, newTenantContext, newTenantId, _registry, _provider);
+            return new Fixture(options, newTenantContext, currentUser, newTenantId, _registry, _provider);
         }
 
         /// <summary>
@@ -813,7 +816,7 @@ public sealed class FileVersionStoreTests : IAsyncLifetime
             return new FileVersionStore(db, versionRepo, fileRepo, driveRepo, customRegistry, quota, audit, NullLogger<FileVersionStore>.Instance);
         }
 
-        private StrgDbContext NewDbContext() => new(options, tenantContext);
+        private StrgDbContext NewDbContext() => new(options, tenantContext, currentUser);
 
         private IFileVersionStore BuildStore()
         {

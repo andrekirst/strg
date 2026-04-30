@@ -223,6 +223,7 @@ public sealed class QuotaNotificationConsumerTests : IAsyncLifetime
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddSingleton<ICurrentUser>(new OutboxCurrentUser());
 
         services.AddDbContext<StrgDbContext>(options =>
         {

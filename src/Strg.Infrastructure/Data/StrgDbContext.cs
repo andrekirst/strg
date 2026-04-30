@@ -7,11 +7,15 @@ using Strg.Core.Domain;
 
 namespace Strg.Infrastructure.Data;
 
-public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tenantContext)
+public class StrgDbContext(
+    DbContextOptions<StrgDbContext> options,
+    ITenantContext tenantContext,
+    ICurrentUser currentUser)
     : DbContext(options), IStrgDbContext
 {
     public const string TenantFilterName = "Tenant";
     public const string SoftDeleteFilterName = "SoftDelete";
+    public const string TagUserFilterName = "TagUser";
 
     private static readonly MethodInfo BuildTenantFilterMethod = typeof(StrgDbContext)
         .GetMethod(nameof(BuildTenantFilter), BindingFlags.NonPublic | BindingFlags.Instance)!;
@@ -64,6 +68,16 @@ public class StrgDbContext(DbContextOptions<StrgDbContext> options, ITenantConte
                 .HasQueryFilter(TenantFilterName, tenantFilter)
                 .HasQueryFilter(SoftDeleteFilterName, softDeleteFilter);
         }
+
+        // Tag rows are user-scoped: tags belong to a single user, even when multiple users tag
+        // the same FileItem. The third named filter ANDs onto the existing tenant + soft-delete
+        // filters above, so a query against db.Tags returns rows where:
+        //   TenantId == tenantContext.TenantId
+        //   AND DeletedAt is null
+        //   AND UserId == currentUser.UserId
+        // The currentUser closure is re-evaluated per query (same shape as BuildTenantFilter).
+        modelBuilder.Entity<Tag>()
+            .HasQueryFilter(TagUserFilterName, (Tag t) => t.UserId == currentUser.UserId);
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

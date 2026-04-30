@@ -70,10 +70,11 @@ public sealed class UnreachableDbHealthCheckTests : IAsyncLifetime
         // real Npgsql socket layer, which is what we want to exercise.
         builder.WebHost.UseTestServer();
 
-        // Stub ITenantContext so DI can resolve StrgDbContext (DbContext ctor takes one). The
-        // health probe runs unauthenticated in production too, where ITenantContext.TenantId is
-        // Guid.Empty — we mirror that here.
+        // Stub ITenantContext + ICurrentUser so DI can resolve StrgDbContext (DbContext ctor
+        // takes both). The health probe runs unauthenticated in production too, where both
+        // identifiers are Guid.Empty — we mirror that here.
         builder.Services.AddSingleton<ITenantContext>(new EmptyTenantContext());
+        builder.Services.AddSingleton<ICurrentUser>(new EmptyCurrentUser());
 
         // Skip UseOpenIddict() — AddDbContextCheck only calls Database.CanConnectAsync, which
         // doesn't need the OpenIddict entity model. Pulling it in would force the test project
@@ -203,6 +204,11 @@ public sealed class UnreachableDbHealthCheckTests : IAsyncLifetime
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         json.GetProperty("status").GetString().Should().Be("Healthy");
+    }
+
+    private sealed class EmptyCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
     }
 
     private sealed class EmptyTenantContext : ITenantContext

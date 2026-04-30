@@ -108,7 +108,7 @@ public sealed class FileVersionRepositoryTests : IAsyncLifetime
             .UseNpgsql(testConnection)
             .Options;
 
-        await using (var ctx = new StrgDbContext(options, new TestTenantContext(tenantId)))
+        await using (var ctx = new StrgDbContext(options, new TestTenantContext(tenantId), new TestCurrentUser()))
         {
             await ctx.Database.EnsureCreatedAsync();
         }
@@ -170,10 +170,15 @@ public sealed class FileVersionRepositoryTests : IAsyncLifetime
     }
 
     private static StrgDbContext NewContext(DbContextOptions<StrgDbContext> options, Guid tenantId)
-        => new(options, new TestTenantContext(tenantId));
+        => new(options, new TestTenantContext(tenantId), new TestCurrentUser());
 
     private sealed class TestTenantContext(Guid id) : ITenantContext
     {
         public Guid TenantId => id;
+    }
+
+    private sealed class TestCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
     }
 }

@@ -14,4 +14,6 @@ public sealed record ListFilesQuery(
     string Path,
     bool Recursive,
     int Page,
-    int PageSize) : IQuery<ListFilesResult?>;
+    int PageSize,
+    string? TagKey = null,
+    string? TagValue = null) : IQuery<ListFilesResult?>;

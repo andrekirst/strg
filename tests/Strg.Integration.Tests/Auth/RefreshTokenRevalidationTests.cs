@@ -145,12 +145,18 @@ public sealed class RefreshTokenRevalidationTests(StrgWebApplicationFactory fact
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new EmptyTenantContext());
+        services.AddSingleton<ICurrentUser>(new EmptyCurrentUser());
         if (includeHasher)
         {
             services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         }
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
+    }
+
+    private sealed class EmptyCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
     }
 
     private async Task<(string AccessToken, string? RefreshToken)> GetTokensAsync(string email, string password)

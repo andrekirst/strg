@@ -18,6 +18,7 @@ using Strg.Core.Storage;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Xunit;
@@ -191,6 +192,7 @@ public class StrgTusUploadFixture : WebApplicationFactory<Program>, IAsyncLifeti
         // tables on first hosted-service startup.
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixedTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser(Guid.Empty));
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
@@ -283,7 +285,8 @@ public class StrgTusUploadFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
     public StrgDbContext NewDbContext() =>
         new(new DbContextOptionsBuilder<StrgDbContext>().UseNpgsql(ConnectionString).Options,
-            new FixedTenantContext(TenantId));
+            new FixedTenantContext(TenantId),
+            new FixedCurrentUser(UserId));
 
     /// <summary>
     /// Builds the standard TUS metadata header from base64-encoded UTF-8 values. Mirrors the

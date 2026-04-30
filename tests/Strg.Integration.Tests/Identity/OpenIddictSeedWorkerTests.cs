@@ -8,6 +8,7 @@ using Strg.Core.Domain;
 using Strg.Core.Constants;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -234,6 +235,7 @@ public sealed class OpenIddictSeedWorkerTests : IAsyncLifetime
 
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixedTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser(Guid.Empty));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(testConnectionString).UseOpenIddict());
         services.AddOpenIddict()
             .AddCore(o => o.UseEntityFrameworkCore().UseDbContext<StrgDbContext>());

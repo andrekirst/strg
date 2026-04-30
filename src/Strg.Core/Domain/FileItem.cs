@@ -44,6 +44,14 @@ public sealed class FileItem : TenantedEntity
     public DateTimeOffset? InboxEnteredAt { get; set; }
 
     /// <summary>
+    /// User-scoped tags attached to this file. EF inverse navigation of <see cref="Tag.FileId"/>.
+    /// The <c>StrgDbContext</c> "TagUser" named query filter scopes this collection to the current
+    /// user — accessing it through EF (LINQ, <c>Include</c>, Hot Chocolate <c>UseFiltering</c>'s
+    /// <c>tags.some</c> traversal) only ever returns rows where <c>t.UserId == ICurrentUser.UserId</c>.
+    /// </summary>
+    public ICollection<Tag> Tags { get; init; } = new List<Tag>();
+
+    /// <summary>
     /// Atomically retargets this file to a new <paramref name="newDriveId"/>, <paramref name="newPath"/>,
     /// and <paramref name="newName"/>. The three fields move in lockstep so a partial mutation can never
     /// leave the entity in a contradictory state (e.g. <c>Path = "archive/x.pdf"</c> with

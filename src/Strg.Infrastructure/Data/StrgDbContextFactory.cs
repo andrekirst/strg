@@ -19,11 +19,16 @@ public sealed class StrgDbContextFactory : IDesignTimeDbContextFactory<StrgDbCon
             .UseOpenIddict()
             .Options;
 
-        return new StrgDbContext(options, new DesignTimeTenantContext());
+        return new StrgDbContext(options, new DesignTimeTenantContext(), new DesignTimeCurrentUser());
     }
 
     private sealed class DesignTimeTenantContext : ITenantContext
     {
         public Guid TenantId => Guid.Empty;
+    }
+
+    private sealed class DesignTimeCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
     }
 }

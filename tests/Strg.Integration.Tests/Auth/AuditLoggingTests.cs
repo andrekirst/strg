@@ -212,6 +212,7 @@ public sealed class AuditLoggingTests(StrgWebApplicationFactory factory) : IClas
         const string password = "integration-audit-password-42";
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new UnusedTenantContext());
+        services.AddSingleton<ICurrentUser>(new UnusedCurrentUser());
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
@@ -243,6 +244,7 @@ public sealed class AuditLoggingTests(StrgWebApplicationFactory factory) : IClas
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new UnusedTenantContext());
+        services.AddSingleton<ICurrentUser>(new UnusedCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         var sp = services.BuildServiceProvider();
         return sp.GetRequiredService<StrgDbContext>();
@@ -253,5 +255,11 @@ public sealed class AuditLoggingTests(StrgWebApplicationFactory factory) : IClas
         // Tests use IgnoreQueryFilters(), so the tenant id is never consulted — match
         // StrgWebApplicationFactory's BootstrapSchemaAndSeedAsync which uses Guid.Empty here.
         public Guid TenantId => Guid.Empty;
+    }
+
+    private sealed class UnusedCurrentUser : ICurrentUser
+    {
+        // Tag rows aren't read in these tests; the user-scope query filter is satisfied trivially.
+        public Guid UserId => Guid.Empty;
     }
 }

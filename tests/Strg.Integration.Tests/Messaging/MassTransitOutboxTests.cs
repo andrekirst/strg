@@ -18,6 +18,11 @@ internal sealed class OutboxTenantContext(Guid id) : ITenantContext
     public Guid TenantId => id;
 }
 
+internal sealed class OutboxCurrentUser : ICurrentUser
+{
+    public Guid UserId => Guid.Empty;
+}
+
 /// <summary>
 /// Minimal test-side consumer used by <see cref="MassTransitOutboxTests"/> to observe events
 /// arriving via the outbox dispatch path. No-op handler: the assertion lives on
@@ -159,6 +164,7 @@ public sealed class MassTransitOutboxTests : IAsyncLifetime
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddSingleton<ICurrentUser>(new OutboxCurrentUser());
 
         services.AddDbContext<StrgDbContext>(options =>
         {

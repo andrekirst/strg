@@ -401,6 +401,7 @@ public sealed class AuditLogConsumerTests(ITestOutputHelper output) : IAsyncLife
         var services = new ServiceCollection();
         services.AddLogging(lb => lb.AddSerilog(serilog, dispose: false));
         services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddSingleton<ICurrentUser>(new OutboxCurrentUser());
         services.AddDbContext<StrgDbContext>(options =>
         {
             options.UseNpgsql(connectionString);
@@ -544,6 +545,7 @@ public sealed class AuditLogConsumerTests(ITestOutputHelper output) : IAsyncLife
         var services = new ServiceCollection();
         services.AddLogging(lb => lb.AddSerilog(serilog, dispose: false));
         services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddSingleton<ICurrentUser>(new OutboxCurrentUser());
         services.AddDbContext<StrgDbContext>(options =>
         {
             options.UseNpgsql(connectionString);
@@ -708,6 +710,7 @@ public sealed class AuditLogConsumerTests(ITestOutputHelper output) : IAsyncLife
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ITenantContext>(new OutboxTenantContext(tenantId));
+        services.AddSingleton<ICurrentUser>(new OutboxCurrentUser());
 
         services.AddDbContext<StrgDbContext>(options =>
         {

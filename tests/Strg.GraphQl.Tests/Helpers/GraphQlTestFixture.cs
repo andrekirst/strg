@@ -24,6 +24,11 @@ public static class GraphQlTestFixture
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IHostEnvironment>(new TestHostEnvironment());
+        // Default ICurrentUser registration. Tests that need a specific user id mutate
+        // TestCurrentUser.Shared.UserId before executing the query (matching the
+        // TestTenantContext.Shared pattern). Tests can also override by re-registering
+        // ICurrentUser inside configureServices.
+        services.AddSingleton<ICurrentUser>(TestCurrentUser.Shared);
         configureServices?.Invoke(services);
 
         var builder = services

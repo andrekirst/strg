@@ -8,6 +8,5 @@ public sealed record FileFilterInput(
     long? MaxSize,
     DateTimeOffset? CreatedAfter,
     DateTimeOffset? CreatedBefore,
-    string? TagKey,
     bool? IsInInbox
 );

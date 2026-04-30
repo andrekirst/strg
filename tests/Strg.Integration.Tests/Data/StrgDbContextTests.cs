@@ -15,8 +15,13 @@ internal sealed class SampleTenantContext(Guid id) : ITenantContext
     public Guid TenantId => id;
 }
 
-internal sealed class TestDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tc)
-    : StrgDbContext(options, tc)
+internal sealed class SampleCurrentUser : ICurrentUser
+{
+    public Guid UserId => Guid.Empty;
+}
+
+internal sealed class TestDbContext(DbContextOptions<StrgDbContext> options, ITenantContext tc, ICurrentUser cu)
+    : StrgDbContext(options, tc, cu)
 {
     public DbSet<SampleTenantedEntity> Samples => Set<SampleTenantedEntity>();
 }
@@ -53,7 +58,7 @@ public sealed class StrgDbContextTests : IAsyncLifetime
             .UseNpgsql(testDbConnectionString)
             .Options;
 
-        await using (var ctx = (TContext)Activator.CreateInstance(typeof(TContext), options, tenantContext)!)
+        await using (var ctx = (TContext)Activator.CreateInstance(typeof(TContext), options, tenantContext, new SampleCurrentUser())!)
         {
             await ctx.Database.EnsureCreatedAsync();
         }
@@ -68,13 +73,13 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         var options = await CreateFreshDatabaseAsync<StrgDbContext>(new SampleTenantContext(tenantId));
         var tenant = new Tenant { Name = "Acme Corp" };
 
-        await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             ctx.Tenants.Add(tenant);
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new StrgDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             var loaded = await ctx.Tenants.FindAsync(tenant.Id);
             loaded.Should().NotBeNull();
@@ -90,7 +95,7 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         var entity = new SampleTenantedEntity { TenantId = tenantId };
         DateTimeOffset originalUpdatedAt;
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             ctx.Samples.Add(entity);
             await ctx.SaveChangesAsync();
@@ -100,7 +105,7 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         await Task.Delay(10);
 
         DateTimeOffset updatedAt;
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             var loaded = await ctx.Samples.IgnoreQueryFilters().FirstAsync(e => e.Id == entity.Id);
             ctx.Entry(loaded).State = EntityState.Modified;
@@ -120,14 +125,14 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         var entityA = new SampleTenantedEntity { TenantId = tenantA };
         var entityB = new SampleTenantedEntity { TenantId = tenantB };
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA), new SampleCurrentUser()))
         {
             ctx.Samples.Add(entityA);
             ctx.Samples.Add(entityB);
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA), new SampleCurrentUser()))
         {
             var results = await ctx.Samples.ToListAsync();
             results.Should().ContainSingle();
@@ -143,21 +148,21 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         var active = new SampleTenantedEntity { TenantId = tenantId };
         var deleted = new SampleTenantedEntity { TenantId = tenantId };
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             ctx.Samples.Add(active);
             ctx.Samples.Add(deleted);
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             var toDelete = await ctx.Samples.FirstAsync(e => e.Id == deleted.Id);
             toDelete.DeletedAt = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantId), new SampleCurrentUser()))
         {
             var results = await ctx.Samples.ToListAsync();
             results.Should().ContainSingle();
@@ -175,7 +180,7 @@ public sealed class StrgDbContextTests : IAsyncLifetime
         var sameTenantDeleted = new SampleTenantedEntity { TenantId = tenantA };
         var otherTenantEntity = new SampleTenantedEntity { TenantId = tenantB };
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA), new SampleCurrentUser()))
         {
             ctx.Samples.Add(sameTenantActive);
             ctx.Samples.Add(sameTenantDeleted);
@@ -183,14 +188,14 @@ public sealed class StrgDbContextTests : IAsyncLifetime
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA), new SampleCurrentUser()))
         {
             var toDelete = await ctx.Samples.FirstAsync(e => e.Id == sameTenantDeleted.Id);
             toDelete.DeletedAt = DateTimeOffset.UtcNow;
             await ctx.SaveChangesAsync();
         }
 
-        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA)))
+        await using (var ctx = new TestDbContext(options, new SampleTenantContext(tenantA), new SampleCurrentUser()))
         {
             var allEntities = await ctx.Samples.IgnoreQueryFilters().ToListAsync();
 

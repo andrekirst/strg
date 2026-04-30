@@ -21,7 +21,8 @@ namespace Strg.Application.Features.Files.List;
 /// defence-in-depth so a programmatic Mediator caller (a future internal feature, a GraphQL
 /// adapter, etc.) can't blow the ceiling either.</para>
 /// </summary>
-internal sealed class ListFilesHandler(IStrgDbContext db) : IQueryHandler<ListFilesQuery, ListFilesResult?>
+internal sealed class ListFilesHandler(IStrgDbContext db, ICurrentUser currentUser)
+    : IQueryHandler<ListFilesQuery, ListFilesResult?>
 {
     private const int MaxPageSize = 200;
 
@@ -40,6 +41,21 @@ internal sealed class ListFilesHandler(IStrgDbContext db) : IQueryHandler<ListFi
 
         var prefix = NormalizePrefix(query.Path);
         var filtered = ApplyPathFilter(db.Files.Where(f => f.DriveId == query.DriveId), prefix, query.Recursive);
+
+        if (query.TagKey is not null)
+        {
+            // Lowercase the input to match Tag.Key's init-time normalization (Strg.Core.Domain.Tag).
+            // The inline `t.UserId == userId` predicate is defence-in-depth on top of the Tag
+            // user-scope global query filter — survives a hypothetical filter-bypass carve-out
+            // without leaking another user's tagged files. Tag.Value matches case-sensitively.
+            var tagKey = query.TagKey.ToLowerInvariant();
+            var tagValue = query.TagValue;
+            var userId = currentUser.UserId;
+            filtered = filtered.Where(f => f.Tags.Any(t =>
+                t.UserId == userId
+                && t.Key == tagKey
+                && (tagValue == null || t.Value == tagValue)));
+        }
 
         var totalCount = await filtered.CountAsync(cancellationToken).ConfigureAwait(false);
 

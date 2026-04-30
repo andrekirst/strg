@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Npgsql;
 using Strg.Core.Domain;
 using Strg.Infrastructure.Data;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -445,7 +446,7 @@ public sealed class MigrationTests : IAsyncLifetime
             .UseOpenIddict()
             .Options;
 
-        return new StrgDbContext(options, new FixedTenantContext(tenantId ?? Guid.NewGuid()));
+        return new StrgDbContext(options, new FixedTenantContext(tenantId ?? Guid.NewGuid()), new FixedCurrentUser(Guid.Empty));
     }
 
     private static async Task<HashSet<string>> QueryTableNamesAsync(DbContext ctx)

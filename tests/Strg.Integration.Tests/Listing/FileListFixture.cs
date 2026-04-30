@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Domain;
+using Strg.Core.Services;
 using Strg.Integration.Tests.Upload;
 
 namespace Strg.Integration.Tests.Listing;
@@ -67,6 +69,81 @@ public sealed class FileListFixture : StrgTusUploadFixture
             ?? throw new InvalidOperationException($"FileItem {fileId} not seeded.");
         file.DeletedAt = DateTimeOffset.UtcNow;
         await ctx.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Directly seeds a Tag row. The caller supplies the user the tag belongs to so two-user
+    /// isolation tests (STRG-048 TC-001) can populate both sides on the same FileItem. Tag.Key
+    /// is normalized to lowercase by the entity's init-setter; case-insensitive uniqueness is
+    /// enforced by the unique index on (FileId, UserId, Key).
+    /// </summary>
+    public async Task<Guid> SeedTagAsync(
+        Guid fileId,
+        Guid userId,
+        string key,
+        string value,
+        TagValueType valueType = TagValueType.String,
+        CancellationToken cancellationToken = default)
+    {
+        await using var ctx = NewDbContext();
+        var tag = new Tag
+        {
+            TenantId = TenantId,
+            FileId = fileId,
+            UserId = userId,
+            Key = key,
+            Value = value,
+            ValueType = valueType,
+        };
+        ctx.Tags.Add(tag);
+        await ctx.SaveChangesAsync(cancellationToken);
+        return tag.Id;
+    }
+
+    /// <summary>
+    /// Seeds a second User row in the same tenant and authenticates them, returning the new
+    /// user id and a JWT bearing the seeded scopes. Used by STRG-048 TC-001 to verify that one
+    /// user's tags do not leak into another user's file-listing or GraphQL response.
+    /// </summary>
+    public async Task<(Guid UserId, string Token)> CreateSecondUserAsync(
+        string scopes = TestScopes,
+        CancellationToken cancellationToken = default)
+    {
+        var email = $"second-tester-{Guid.NewGuid():N}@strg.test";
+        const string password = "second-tester-password-42";
+
+        Guid newUserId;
+        await using (var ctx = NewDbContext())
+        {
+            var hasher = Services.GetRequiredService<IPasswordHasher>();
+            var user = new User
+            {
+                TenantId = TenantId,
+                Email = email,
+                DisplayName = "Second Tester",
+                PasswordHash = hasher.Hash(password),
+                Role = UserRole.User,
+                QuotaBytes = QuotaBytes,
+                UsedBytes = 0,
+            };
+            ctx.Users.Add(user);
+            await ctx.SaveChangesAsync(cancellationToken);
+            newUserId = user.Id;
+        }
+
+        using var client = CreateClient();
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "password",
+            ["username"] = email,
+            ["password"] = password,
+            ["client_id"] = "strg-default",
+            ["scope"] = scopes,
+        });
+        using var response = await client.PostAsync("/connect/token", form, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        return (newUserId, json.GetProperty("access_token").GetString()!);
     }
 
     /// <summary>

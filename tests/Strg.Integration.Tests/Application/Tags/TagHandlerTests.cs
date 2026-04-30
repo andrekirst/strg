@@ -394,7 +394,8 @@ public sealed class TagHandlerTests : IAsyncLifetime
             .UseNpgsql(testDbConnectionString)
             .Options;
 
-        await using (var bootstrap = new StrgDbContext(options, tenantContext))
+        var bootstrapCurrentUser = new MutableCurrentUser { UserId = Guid.Empty };
+        await using (var bootstrap = new StrgDbContext(options, tenantContext, bootstrapCurrentUser))
         {
             await bootstrap.Database.EnsureCreatedAsync();
             bootstrap.Tenants.Add(new Tenant { Id = tenantId, Name = $"test-{tenantId:N}" });
@@ -413,7 +414,8 @@ public sealed class TagHandlerTests : IAsyncLifetime
 
         public StrgDbContext NewDbContext() => new(
             new DbContextOptionsBuilder<StrgDbContext>().UseNpgsql(connectionString).Options,
-            tenantContext);
+            tenantContext,
+            new MutableCurrentUser { UserId = Guid.Empty });
 
         public IMediator BuildMediator(Guid currentUserId)
         {
@@ -493,7 +495,7 @@ public sealed class TagHandlerTests : IAsyncLifetime
             var newTenantId = Guid.NewGuid();
             var newTenantContext = new FixedTenantContext(newTenantId);
             var options = new DbContextOptionsBuilder<StrgDbContext>().UseNpgsql(connectionString).Options;
-            await using var ctx = new StrgDbContext(options, newTenantContext);
+            await using var ctx = new StrgDbContext(options, newTenantContext, new MutableCurrentUser { UserId = Guid.Empty });
             ctx.Tenants.Add(new Tenant { Id = newTenantId, Name = $"test-{newTenantId:N}" });
             await ctx.SaveChangesAsync();
             return new Fixture(connectionString, newTenantContext, newTenantId);

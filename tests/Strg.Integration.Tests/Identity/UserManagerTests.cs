@@ -10,6 +10,7 @@ using Strg.Core.Services;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Identity;
 using Strg.Infrastructure.Services;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -389,7 +390,7 @@ public sealed class UserManagerTests : IAsyncLifetime
             Console.SetOut(originalOut);
         }
 
-        await using var ctx = new StrgDbContext(options, new FixedTenantContext(Guid.Empty));
+        await using var ctx = new StrgDbContext(options, new FixedTenantContext(Guid.Empty), new FixedCurrentUser(Guid.Empty));
         var tenants = await ctx.Tenants.IgnoreQueryFilters().ToListAsync();
         tenants.Should().ContainSingle().Which.Name.Should().Be("default");
 
@@ -415,7 +416,7 @@ public sealed class UserManagerTests : IAsyncLifetime
     {
         var (options, connectionString) = await CreateFreshDatabaseWithConnectionStringAsync();
         var preexistingTenantId = Guid.NewGuid();
-        await using (var ctx = new StrgDbContext(options, new FixedTenantContext(preexistingTenantId)))
+        await using (var ctx = new StrgDbContext(options, new FixedTenantContext(preexistingTenantId), new FixedCurrentUser(Guid.Empty)))
         {
             ctx.Tenants.Add(new Tenant { Id = preexistingTenantId, Name = "preexisting" });
             ctx.Users.Add(new User
@@ -445,7 +446,7 @@ public sealed class UserManagerTests : IAsyncLifetime
             Console.SetOut(originalOut);
         }
 
-        await using var verifyDb = new StrgDbContext(options, new FixedTenantContext(preexistingTenantId));
+        await using var verifyDb = new StrgDbContext(options, new FixedTenantContext(preexistingTenantId), new FixedCurrentUser(Guid.Empty));
         var users = await verifyDb.Users.IgnoreQueryFilters().ToListAsync();
         users.Should().ContainSingle();
         users[0].Email.Should().Be("existing@example.com");
@@ -481,7 +482,7 @@ public sealed class UserManagerTests : IAsyncLifetime
             .UseNpgsql(testDbConnectionString)
             .Options;
 
-        await using (var bootstrap = new StrgDbContext(options, new FixedTenantContext(Guid.Empty)))
+        await using (var bootstrap = new StrgDbContext(options, new FixedTenantContext(Guid.Empty), new FixedCurrentUser(Guid.Empty)))
         {
             await bootstrap.Database.EnsureCreatedAsync();
         }
@@ -495,13 +496,14 @@ public sealed class UserManagerTests : IAsyncLifetime
         var tenantId = Guid.NewGuid();
         var tenantContext = new FixedTenantContext(tenantId);
 
-        await using (var bootstrap = new StrgDbContext(options, tenantContext))
+        var currentUser = new FixedCurrentUser(Guid.Empty);
+        await using (var bootstrap = new StrgDbContext(options, tenantContext, currentUser))
         {
             bootstrap.Tenants.Add(new Tenant { Id = tenantId, Name = $"test-{tenantId:N}" });
             await bootstrap.SaveChangesAsync();
         }
 
-        return new Fixture(options, tenantContext, tenantId);
+        return new Fixture(options, tenantContext, currentUser, tenantId);
     }
 
     private static async Task<User> CreateUserOrThrowAsync(Fixture fx, string email)
@@ -516,6 +518,7 @@ public sealed class UserManagerTests : IAsyncLifetime
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixedTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser(Guid.Empty));
         services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(connectionString));
         return services.BuildServiceProvider();
@@ -536,6 +539,7 @@ public sealed class UserManagerTests : IAsyncLifetime
     private sealed class Fixture(
         DbContextOptions<StrgDbContext> options,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         Guid tenantId)
     {
         private readonly IPasswordHasher _hasher = new Pbkdf2PasswordHasher();
@@ -549,7 +553,7 @@ public sealed class UserManagerTests : IAsyncLifetime
         // later UserManager calls. Building per-access keeps reads authoritative.
         public UserManager Manager => Build(NewDbContext());
 
-        public StrgDbContext NewDbContext() => new(options, tenantContext);
+        public StrgDbContext NewDbContext() => new(options, tenantContext, currentUser);
 
         public UserManager NewManager() => Build(NewDbContext());
 

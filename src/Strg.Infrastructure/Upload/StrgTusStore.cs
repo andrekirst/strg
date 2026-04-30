@@ -47,6 +47,7 @@ public sealed class StrgTusStore(
     IKeyProvider keyProvider,
     IPublishEndpoint publishEndpoint,
     ITenantContext tenantContext,
+    ICurrentUser currentUser,
     IHttpContextAccessor httpContextAccessor,
     TimeProvider timeProvider,
     IOptions<StrgTusOptions> options,
@@ -58,7 +59,7 @@ public sealed class StrgTusStore(
     internal const string ItemKeyFilename = "Strg.Tus.Filename";
     internal const string ItemKeyMimeType = "Strg.Tus.MimeType";
 
-    private StrgDbContext NewDb() => new(dbOptions, tenantContext);
+    private StrgDbContext NewDb() => new(dbOptions, tenantContext, currentUser);
 
     // ── ITusStore ─────────────────────────────────────────────────────────────
 

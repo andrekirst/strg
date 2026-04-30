@@ -15,6 +15,11 @@ internal sealed class FixedTenantContext(Guid id) : ITenantContext
     public Guid TenantId => id;
 }
 
+internal sealed class FixedCurrentUser : ICurrentUser
+{
+    public Guid UserId => Guid.Empty;
+}
+
 /// <summary>
 /// STRG-086 HTTP contract: <c>POST /api/v1/users/register</c> returns
 /// <see cref="HttpStatusCode.NoContent"/> regardless of outcome. The anti-enumeration guarantee
@@ -132,6 +137,7 @@ public sealed class RegistrationTests(StrgWebApplicationFactory factory) : IClas
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixedTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
     }
@@ -163,6 +169,7 @@ public sealed class RegistrationWithoutDefaultTenantTests(StrgWebApplicationFact
 
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixedTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new FixedCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();

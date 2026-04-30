@@ -48,7 +48,9 @@ public static class FileListEndpoints
         string? path = "/",
         bool recursive = false,
         int page = 1,
-        int pageSize = DefaultPageSize)
+        int pageSize = DefaultPageSize,
+        string? tagKey = null,
+        string? tagValue = null)
     {
         // Cap pageSize first so a 999-item request returns 200 even on the routing layer's
         // log surface. Math.Clamp guards both upper (200) and lower (1) bounds. The handler
@@ -61,7 +63,9 @@ public static class FileListEndpoints
             path ?? string.Empty,
             recursive,
             clampedPage,
-            cappedPageSize);
+            cappedPageSize,
+            tagKey,
+            tagValue);
 
         var result = await mediator.Send(query, cancellationToken).ConfigureAwait(false);
         if (result is null)

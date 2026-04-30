@@ -12,6 +12,7 @@ using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
 using Strg.Infrastructure.Storage.Encryption;
 using Strg.Infrastructure.Versioning;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -197,8 +198,9 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
 
         var tenantId = Guid.NewGuid();
         var tenantContext = new FixedTenantContext(tenantId);
+        var currentUser = new FixedCurrentUser(Guid.Empty);
 
-        await using (var bootstrap = new StrgDbContext(options, tenantContext))
+        await using (var bootstrap = new StrgDbContext(options, tenantContext, currentUser))
         {
             await bootstrap.Database.EnsureCreatedAsync();
             bootstrap.Tenants.Add(new Tenant { Id = tenantId, Name = $"test-{tenantId:N}" });
@@ -216,7 +218,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
         var keyProvider = new EnvVarKeyProvider(ValidKekBase64);
         var encryptingWriter = new AesGcmFileWriter(provider, keyProvider);
 
-        return new Fixture(options, tenantContext, tenantId, registry, provider, encryptingWriter);
+        return new Fixture(options, tenantContext, currentUser, tenantId, registry, provider, encryptingWriter);
     }
 
     private sealed record Seed(FileItem File, Guid UserId);
@@ -224,6 +226,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
     private sealed class Fixture(
         DbContextOptions<StrgDbContext> options,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         Guid tenantId,
         IStorageProviderRegistry registry,
         InMemoryStorageProvider provider,
@@ -302,7 +305,7 @@ public sealed class EncryptedUploadServiceTests : IAsyncLifetime
             await ctx.SaveChangesAsync();
         }
 
-        private StrgDbContext NewDbContext() => new(options, tenantContext);
+        private StrgDbContext NewDbContext() => new(options, tenantContext, currentUser);
 
         private IFileVersionStore BuildStore()
         {

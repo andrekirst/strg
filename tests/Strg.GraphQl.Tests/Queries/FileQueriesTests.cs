@@ -35,6 +35,7 @@ public class FileQueriesTests
             configureSchema: b =>
             {
                 b.AddAuthorization()
+                 .AddFiltering()
                  .AddType<RootQueryExtension>()
                  .AddType<StorageQueries>()
                  .AddType<FileQueries>()
@@ -84,6 +85,7 @@ public class FileQueriesTests
             configureSchema: b =>
             {
                 b.AddAuthorization()
+                 .AddFiltering()
                  .AddType<RootQueryExtension>()
                  .AddType<StorageQueries>()
                  .AddType<FileQueries>()

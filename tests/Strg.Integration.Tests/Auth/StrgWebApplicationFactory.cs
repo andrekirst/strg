@@ -281,6 +281,7 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();
@@ -300,6 +301,7 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();
@@ -324,6 +326,7 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new TestTenantContext(Guid.Empty));
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser());
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();
@@ -383,5 +386,10 @@ public sealed class StrgWebApplicationFactory : WebApplicationFactory<Program>, 
     private sealed class TestTenantContext(Guid id) : ITenantContext
     {
         public Guid TenantId => id;
+    }
+
+    private sealed class TestCurrentUser : ICurrentUser
+    {
+        public Guid UserId => Guid.Empty;
     }
 }

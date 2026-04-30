@@ -10,6 +10,7 @@ namespace Strg.GraphQl.Queries.Storage;
 public sealed class FileQueries
 {
     [UsePaging(IncludeTotalCount = true, DefaultPageSize = 50, MaxPageSize = 200)]
+    [UseFiltering<FileItemFilterInputType>]
     [Authorize(Policy = "FilesRead")]
     public IQueryable<FileItem> GetFiles(
         Guid driveId,

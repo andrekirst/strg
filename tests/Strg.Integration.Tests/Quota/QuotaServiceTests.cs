@@ -9,6 +9,7 @@ using Strg.Core.Exceptions;
 using Strg.Core.Services;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Services;
+using Strg.Integration.Tests.Common;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -698,25 +699,27 @@ public sealed class QuotaServiceTests : IAsyncLifetime
 
         var tenantId = Guid.NewGuid();
         var tenantContext = new FixedTenantContext(tenantId);
+        var currentUser = new FixedCurrentUser(Guid.Empty);
 
-        await using (var bootstrap = new StrgDbContext(options, tenantContext))
+        await using (var bootstrap = new StrgDbContext(options, tenantContext, currentUser))
         {
             await bootstrap.Database.EnsureCreatedAsync();
             bootstrap.Tenants.Add(new Tenant { Id = tenantId, Name = $"test-{tenantId:N}" });
             await bootstrap.SaveChangesAsync();
         }
 
-        return new Fixture(options, tenantContext, tenantId);
+        return new Fixture(options, tenantContext, currentUser, tenantId);
     }
 
     private sealed class Fixture(
         DbContextOptions<StrgDbContext> options,
         ITenantContext tenantContext,
+        ICurrentUser currentUser,
         Guid tenantId)
     {
         public Guid TenantId { get; } = tenantId;
 
-        public StrgDbContext NewDbContext() => new(options, tenantContext);
+        public StrgDbContext NewDbContext() => new(options, tenantContext, currentUser);
 
         public IQuotaService BuildService(IPublishEndpoint? publishEndpoint = null) =>
             new QuotaService(NewDbContext(), tenantContext, publishEndpoint ?? new CapturingPublishEndpoint(), NullLogger<QuotaService>.Instance);
@@ -765,10 +768,10 @@ public sealed class QuotaServiceTests : IAsyncLifetime
         {
             var newTenantId = Guid.NewGuid();
             var newTenantContext = new FixedTenantContext(newTenantId);
-            await using var ctx = new StrgDbContext(options, newTenantContext);
+            await using var ctx = new StrgDbContext(options, newTenantContext, currentUser);
             ctx.Tenants.Add(new Tenant { Id = newTenantId, Name = $"test-{newTenantId:N}" });
             await ctx.SaveChangesAsync();
-            return new Fixture(options, newTenantContext, newTenantId);
+            return new Fixture(options, newTenantContext, currentUser, newTenantId);
         }
     }
 }

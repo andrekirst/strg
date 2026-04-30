@@ -441,3 +441,10 @@ FodyWeavers.xsd
 
 # Serena MCP project state
 .serena/cache/
+
+# Obsidian per-user state (shared editor configs in docs/.obsidian/ are committed)
+docs/.obsidian/workspace.json
+docs/.obsidian/workspace-mobile.json
+docs/.obsidian/workspaces.json
+docs/.obsidian/graph.json
+docs/.obsidian/plugins/

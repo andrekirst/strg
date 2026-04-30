@@ -126,12 +126,18 @@ Fall back to `Grep` only for non-symbol text — string literals, comments, log 
 
 ### 5.1 MCP variant
 
-`MarkusPfundstein/mcp-obsidian` (Python, REST-API based). At install time, verify that the MCP exposes:
+`MarkusPfundstein/mcp-obsidian` v0.2.2 (Python, REST-API based). Installed via `pipx install mcp-obsidian`.
 
-- A rename-with-backlink-update tool (provisional name: `rename_note`).
-- A batch-tag-update tool (provisional name: `batch_update_tags`).
+**Install-time verification (resolved 2026-04-30):** the MCP exposes 12 tools — `obsidian_list_files_in_vault`, `obsidian_list_files_in_dir`, `obsidian_get_file_contents`, `obsidian_batch_get_file_contents`, `obsidian_simple_search`, `obsidian_complex_search`, `obsidian_append_content`, `obsidian_patch_content`, `obsidian_delete_file`, `obsidian_get_periodic_note`, `obsidian_get_recent_periodic_notes`, `obsidian_get_recent_changes`. **Notably absent:** `get_backlinks`, `find_notes_by_tag` (as a dedicated tool), `rename_note`, `batch_update_tags`.
 
-If either is missing, the read-write policy in §5.5 collapses to read-only and §5.4 / §9 are amended accordingly.
+Consequences:
+
+- Tag-based queries are recovered via `obsidian_complex_search` (JsonLogic — e.g., `{"in": ["auth", {"var": "tags"}]}`).
+- Backlink queries cannot be done via this MCP — fall back to `Grep` over markdown.
+- Atomic rename-with-backlink-update is not available — rename via `Write` + `Grep` sweep for referrers.
+- The §5.5 read-write policy fully collapses to read-only: MCP write tools (`obsidian_append_content`, `obsidian_patch_content`, `obsidian_delete_file`) remain not allowlisted.
+
+The env-var the MCP reads is **`OBSIDIAN_API_KEY`** (verified by source — `mcp_obsidian/tools.py:12-14`), not `OBSIDIAN_API_TOKEN` as earlier draft assumed.
 
 ### 5.2 One-time host setup (per-user, not in repo)
 
@@ -146,8 +152,8 @@ If either is missing, the read-write policy in §5.5 collapses to read-only and 
 
 ### 5.3 Repo-side artifacts
 
-- `.mcp.json` at repo root — registers the `obsidian-mcp` server with `${OBSIDIAN_API_TOKEN}` env reference. **Verify env-var substitution support in `.mcp.json` at install time;** if unsupported, fall back to user-level config (`~/.claude.json`) and amend the spec.
-- `.env.local` — contains `OBSIDIAN_API_TOKEN=...`. Added to root `.gitignore`.
+- `.mcp.json` at repo root — registers the `obsidian` server pointing at the `mcp-obsidian` binary, with `${OBSIDIAN_API_KEY}` env reference. **Verify env-var substitution support in `.mcp.json` at install time;** if unsupported, fall back to user-level config (`~/.claude.json`) and amend the spec.
+- `.env.local` — contains `OBSIDIAN_API_KEY=...`. Added to root `.gitignore`.
 - `docs/.obsidian/` — split policy via additions to root `.gitignore`:
   - **Commit:** `app.json`, `appearance.json`, `core-plugins.json`, `community-plugins.json`.
   - **Gitignore:** `workspace.json`, `workspace-mobile.json`, `workspaces.json`, `plugins/*/data.json` (the API token lives in plugin data — never commit).
@@ -158,20 +164,23 @@ The token therefore exists in two gitignored locations: the plugin's own `data.j
 
 | Question shape | Tool |
 |---|---|
-| "Which docs reference X?" | `get_backlinks` |
-| "All docs tagged `auth`" | `find_notes_by_tag` |
-| "Search docs for term Y" | `search_notes` |
-| Rename a note + update backlinks atomically | `rename_note` |
-| Add tag X to many notes | `batch_update_tags` |
+| "Search docs for term Y" | `obsidian_simple_search` |
+| "All docs with tag `auth`" or other frontmatter queries | `obsidian_complex_search` (JsonLogic) |
+| "Read this specific note" | `obsidian_get_file_contents` |
+| "Read N specific notes in one call" | `obsidian_batch_get_file_contents` |
+| "List vault root contents" / "list a folder" | `obsidian_list_files_in_vault` / `obsidian_list_files_in_dir` |
+| **"Which docs reference X?" (backlinks)** | **`Grep`** — this MCP variant has no backlinks tool |
+| **Rename a note** | **`Write` move + `Grep` sweep for referrers** — no atomic rename available |
 
 Editing markdown content (text, frontmatter values, code blocks) → `Edit` / `Write`. Single write path for content.
 
 ### 5.5 Write-path policy
 
+The (b) write-path policy from earlier drafts has fully collapsed to read-only because the MCP variant exposes no atomic rename or batch-tag tools (see §5.1).
+
 - Content edits → `Edit` / `Write`.
-- Rename + backlink update → Obsidian MCP `rename_note` (allowlisted).
-- Mass tag operations → Obsidian MCP `batch_update_tags` (allowlisted).
-- All other Obsidian write tools (create-note, delete-note, content-replace, etc.) — **not allowlisted**; require explicit per-call user approval.
+- All Obsidian MCP write tools (`obsidian_append_content`, `obsidian_patch_content`, `obsidian_delete_file`) — **not allowlisted**; require explicit per-call user approval.
+- Single write path for content; no MCP-mediated mutations to `docs/`.
 
 ## 6. Frontmatter schema
 
@@ -192,7 +201,7 @@ updated: 2026-04-30
 | Field | Where used | Purpose |
 |---|---|---|
 | `supersedes: [old-doc.md]` | architecture, decisions | this doc replaces others |
-| `related-issues: [STRG-022, STRG-074]` | any | GitHub issue IDs (string-only — no auto-link, but searchable via `search_notes`) |
+| `related-issues: [STRG-022, STRG-074]` | any | GitHub issue IDs (string-only — no auto-link, but searchable via `obsidian_simple_search`) |
 | `phase: 3` | architecture, requirements | matches MEMORY.md Phase 1-13 entries |
 | `priority: must-have` | requirements | one of `must-have | nice-to-have | future` |
 | `decision-date: 2026-04-15` | decisions | ADR ratification date |
@@ -242,19 +251,23 @@ Two MCP servers augment text search. Reach for them per the tables below; fall b
 
 Fall back to `Grep` only for non-symbol text (string literals, comments, log messages, JSON values).
 
-### Obsidian — docs graph
+### Obsidian — docs read-only queries
 
-`docs/` is an Obsidian vault. Use Obsidian MCP for graph queries:
+`docs/` is an Obsidian vault. Use Obsidian MCP for **read-only** queries:
 
 | Question shape | Tool |
 |---|---|
-| "Which docs reference X?" | `get_backlinks` |
-| "All docs tagged `auth`" | `find_notes_by_tag` |
-| "Search docs for term Y" | `search_notes` |
-| Rename a note + update backlinks atomically | `rename_note` |
-| Add tag X to many notes | `batch_update_tags` |
+| "Search docs for term Y" | `obsidian_simple_search` |
+| "All docs with tag `auth`" or other frontmatter queries | `obsidian_complex_search` (JsonLogic) |
+| "Read this specific note" | `obsidian_get_file_contents` |
+| "Read N specific notes in one call" | `obsidian_batch_get_file_contents` |
+| "List vault root contents" / "list a folder" | `obsidian_list_files_in_vault` / `obsidian_list_files_in_dir` |
 
-Editing markdown *content* (text, frontmatter values, code blocks): always use `Edit` / `Write`. Single write path for content.
+**Editing markdown** — always `Edit` / `Write`. The MCP variant exposes `obsidian_append_content`, `obsidian_patch_content`, and `obsidian_delete_file`, but they are NOT allowlisted; require explicit per-call user approval.
+
+**Backlinks** — this MCP variant does not expose a backlinks tool. To find references to a doc, use `Grep` for the filename or wikilink syntax.
+
+**Renames** — there is no atomic rename-with-backlink-update. Rename via `Write` (move file) plus `Grep`-and-replace for referrers.
 ```
 
 ## 9. `.claude/settings.json` allowlist
@@ -272,19 +285,19 @@ Adds a `permissions.allow` array. The existing `hooks.PostToolUse` block (the `d
       "mcp__plugin_serena_serena__list_dir",
       "mcp__plugin_serena_serena__find_file",
       "mcp__plugin_serena_serena__rename_symbol",
-      "mcp__obsidian__get_note",
-      "mcp__obsidian__search_notes",
-      "mcp__obsidian__get_backlinks",
-      "mcp__obsidian__find_notes_by_tag",
-      "mcp__obsidian__rename_note",
-      "mcp__obsidian__batch_update_tags"
+      "mcp__obsidian__obsidian_simple_search",
+      "mcp__obsidian__obsidian_complex_search",
+      "mcp__obsidian__obsidian_get_file_contents",
+      "mcp__obsidian__obsidian_batch_get_file_contents",
+      "mcp__obsidian__obsidian_list_files_in_vault",
+      "mcp__obsidian__obsidian_list_files_in_dir"
     ]
   },
   "hooks": { /* existing dotnet format hook unchanged */ }
 }
 ```
 
-Tools NOT on the list (`replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `safe_delete_symbol`, generic create-note, delete-note, content-replace, etc.) require explicit per-call approval. Obsidian tool names are best-guess for the MarkusPfundstein variant; verify and adjust during install.
+Tools NOT on the list (`replace_symbol_body`, `insert_after_symbol`, `insert_before_symbol`, `safe_delete_symbol`, `obsidian_append_content`, `obsidian_patch_content`, `obsidian_delete_file`, periodic-notes tools) require explicit per-call approval. Tool names are verified against the installed `mcp-obsidian` v0.2.2 surface (see §5.1).
 
 ## 10. Phase 1 retrofit checklist
 
@@ -323,10 +336,10 @@ Phase mapping is provisional and refined per-file as content is read during impl
 After install, all of the following should hold:
 
 1. **Serena onboarding succeeded** — `find_symbol("StoragePath")` returns `src/Strg.Core/Storage/StoragePath.cs`.
-2. **Obsidian MCP reachable** — `get_backlinks("issues/README.md")` returns expected referrers (post-retrofit).
+2. **Obsidian MCP reachable** — `obsidian_list_files_in_vault()` returns the vault top-level (`architecture/`, `requirements/`, etc.). (Original "backlinks" gate dropped — see §5.1.)
 3. **Allowlist active** — `find_symbol` runs without a permission prompt.
 4. **Existing format hook intact** — edit any `.cs` file; `dotnet format` hook fires.
-5. **Frontmatter parse-clean** — Obsidian's tag pane lists every type/domain/phase tag from the 15 retrofitted files (no parse errors); `find_notes_by_tag("architecture")` returns the 5 files in `docs/architecture/`.
+5. **Frontmatter parse-clean** — Obsidian's tag pane lists every type/domain/phase tag from the 15 retrofitted files; `obsidian_complex_search` with JsonLogic `{"in": ["architecture", {"var": "tags"}]}` returns the 5 files in `docs/architecture/`. (Exact JsonLogic shape verified at install.)
 
 ## 12. Rollback
 
@@ -349,8 +362,8 @@ Retrofit content is **strictly additive** — rollback only removes tooling; doc
 
 ## 14. Open questions / install-time verification
 
-These resolve during implementation, not now:
+Status as of 2026-04-30:
 
-1. Exact tool names exposed by `mcp-obsidian` (the MarkusPfundstein variant) — may differ from the placeholders used in §5.4 and §9. Will update both sections to match.
-2. Whether `.mcp.json` supports `${ENV_VAR}` substitution. If not, the MCP registration moves to `~/.claude.json` (user-level) and §5.3 is amended.
-3. Whether Serena's C# language-server backend handles .NET 10 cleanly. First-run onboarding (§4.2) is the verification.
+1. **Exact tool names exposed by `mcp-obsidian`** — RESOLVED. The MarkusPfundstein variant v0.2.2 exposes 12 tools (see §5.1); none of `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags` exist. §§5.4, 5.5, 8, 9 updated to match. Env-var name corrected to `OBSIDIAN_API_KEY`.
+2. **Whether `.mcp.json` supports `${ENV_VAR}` substitution.** Open — verifies during plan Step 4.4 after `.mcp.json` is created.
+3. **Whether Serena's C# language-server backend handles .NET 10 cleanly.** RESOLVED. `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both succeed against the live codebase; LSP indexes 30+ references across project boundaries.

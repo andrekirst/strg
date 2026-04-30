@@ -206,19 +206,17 @@ which mcp-obsidian
 
 Expected: a path inside `~/.local/bin/` or `~/.local/pipx/...`.
 
-- [ ] **Step 4.2: Create `.env.local` with the Obsidian token.**
+- [ ] **Step 4.2: Create `.env.local` with the Obsidian API key.**
 
 Path: `.env.local`
 
 Content (replace `<TOKEN>` with the value captured in Step 3.4):
 
 ```
-OBSIDIAN_API_TOKEN=<TOKEN>
-OBSIDIAN_HOST=127.0.0.1
-OBSIDIAN_PORT=27124
+OBSIDIAN_API_KEY=<TOKEN>
 ```
 
-(Verify the official `mcp-obsidian` env-var names against its README before commit; the variable spellings above are best-guess and should be reconciled now. Update this step inline if they differ.)
+The env-var name `OBSIDIAN_API_KEY` is verified by source inspection of `mcp_obsidian/tools.py:12` and `server.py:26`. Host (127.0.0.1) and port (27124) are hardcoded defaults in `mcp_obsidian/obsidian.py:10-11` and not configurable via env-var; they match the Local REST API plugin's default listening address.
 
 - [ ] **Step 4.3: Create `.mcp.json` registering the MCP server.**
 
@@ -233,9 +231,7 @@ Content:
       "command": "mcp-obsidian",
       "args": [],
       "env": {
-        "OBSIDIAN_API_TOKEN": "${OBSIDIAN_API_TOKEN}",
-        "OBSIDIAN_HOST": "${OBSIDIAN_HOST}",
-        "OBSIDIAN_PORT": "${OBSIDIAN_PORT}"
+        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}"
       }
     }
   }
@@ -250,20 +246,26 @@ Restart Claude Code. After restart, the tool list should include `mcp__obsidian_
 2. Delete `.mcp.json` (or leave it empty).
 3. Update spec §5.3 with a note about the fallback.
 
-- [ ] **Step 4.5: Inventory the actual Obsidian MCP tool names.**
+- [ ] **Step 4.5: Verify the expected tool surface after MCP restart.**
 
-In a Claude Code session, list every tool whose name starts with `mcp__obsidian__`. Compare against the spec's placeholders (§5.4, §9):
+After Step 4.4's restart, the tool list should include the following 12 tools (all prefixed `mcp__obsidian__`):
 
-| Spec name | Actual name | Notes |
+| Tool | Read/Write | Allowlisted? |
 |---|---|---|
-| `get_note` | ? | |
-| `search_notes` | ? | |
-| `get_backlinks` | ? | |
-| `find_notes_by_tag` | ? | |
-| `rename_note` | ? | |
-| `batch_update_tags` | ? | |
+| `obsidian_list_files_in_vault` | R | yes |
+| `obsidian_list_files_in_dir` | R | yes |
+| `obsidian_get_file_contents` | R | yes |
+| `obsidian_batch_get_file_contents` | R | yes |
+| `obsidian_simple_search` | R | yes |
+| `obsidian_complex_search` | R | yes |
+| `obsidian_append_content` | W | no — explicit per-call approval |
+| `obsidian_patch_content` | W | no — explicit per-call approval |
+| `obsidian_delete_file` | W | no — explicit per-call approval |
+| `obsidian_get_periodic_note` | R | no — periodic-notes workflow not used here |
+| `obsidian_get_recent_periodic_notes` | R | no — same |
+| `obsidian_get_recent_changes` | R | no — rare query, prompt-on-call is fine |
 
-Fill the actual-name column. If `rename_note` (or its equivalent) is **missing**, the read-write policy from spec §5.5 collapses to read-only — note this and skip Task 8's `rename_note` allowlist entry. If `batch_update_tags` is **missing**, do the same for that entry. Document any deviations in this checklist before proceeding.
+If any of the six allowlisted tools are missing, stop and reconcile. The spec was already updated for the missing-tool reality (`get_backlinks`, `find_notes_by_tag` as a dedicated tool, `rename_note`, `batch_update_tags` are all absent in v0.2.2 — see spec §5.1). Verified by source inspection of `mcp_obsidian/tools.py` at install time.
 
 - [ ] **Step 4.6: Commit `.mcp.json` only (NOT `.env.local`).**
 
@@ -272,26 +274,17 @@ git add .mcp.json
 git status   # confirm .env.local is NOT staged
 git commit -m "feat(tooling): register obsidian MCP server in .mcp.json
 
-Adds the MarkusPfundstein/mcp-obsidian REST-API server. Token + host
-config live in .env.local (gitignored in next commit). Tool surface
-verified post-restart; spec sections 5.4 and 9 updated to match
-real tool names if they diverged from placeholders.
+Adds the MarkusPfundstein/mcp-obsidian v0.2.2 REST-API server. The
+single env reference (OBSIDIAN_API_KEY) lives in .env.local
+(gitignored in Task 5). Tool surface (12 tools, 6 allowlisted) is
+documented in the spec §5.1 / §9.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 4.7: If tool names diverged from spec, update the spec inline.**
+- [ ] **Step 4.7: Spec reconciliation.**
 
-If Step 4.5 showed differences, update §5.4 and §9 of `docs/superpowers/specs/2026-04-30-codebase-search-tooling-design.md` with the real names. Commit:
-
-```bash
-git add docs/superpowers/specs/2026-04-30-codebase-search-tooling-design.md
-git commit -m "docs(superpowers): reconcile obsidian MCP tool names with installed variant
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
-```
-
-If names matched, skip this step.
+The spec was reconciled in advance of execution after the install-time tool-surface inspection revealed `get_backlinks`, `find_notes_by_tag`, `rename_note`, and `batch_update_tags` are absent from `mcp-obsidian` v0.2.2. The (b) read-write policy fully collapsed to read-only. Spec §§5.1, 5.3, 5.4, 5.5, 6.2, 8, 9, 11, 14 already reflect the real surface. No additional spec edits expected here unless Step 4.5 surfaces new divergences.
 
 ---
 
@@ -565,13 +558,19 @@ done
 
 Expected: all 15 print `yaml ok`. Fix any errors before continuing.
 
-- [ ] **Step 6.6: Verify against Obsidian via tag-search.**
+- [ ] **Step 6.6: Verify against Obsidian via complex_search (tag query).**
 
-Invoke `mcp__obsidian__find_notes_by_tag` (or its real name from Task 4.5) with tag `architecture`. Expected: returns exactly the 5 files in `docs/architecture/`.
+Invoke `mcp__obsidian__obsidian_complex_search` with a JsonLogic query that filters notes whose `tags` array contains `architecture`:
+
+```json
+{"in": ["architecture", {"var": "tags"}]}
+```
+
+Expected: returns exactly the 5 files in `docs/architecture/`.
 
 Then with `requirement`: expect exactly the 8 files in `docs/requirements/`.
 
-If counts disagree, inspect file frontmatter for typos.
+If counts disagree, inspect file frontmatter for typos. If the JsonLogic shape rejects (e.g., `tags` not exposed at top level — may need `frontmatter.tags`), adjust the query path and retry. Document the working query shape inline so subsequent verifications use the same form.
 
 - [ ] **Step 6.7: Commit the retrofit.**
 
@@ -586,9 +585,9 @@ optional priority/decision-date/phase per spec §6) to:
 - docs/requirements/*.md (8)
 - docs/decisions/001-adr-hybrid-api.md (1)
 
-Verified by find_notes_by_tag(architecture) → 5 files,
-find_notes_by_tag(requirement) → 8 files. Phase 2 (rolling) handles
-new docs going forward.
+Verified by obsidian_complex_search with tag-containment JsonLogic
+query: architecture → 5 files, requirement → 8 files. Phase 2
+(rolling) handles new docs going forward.
 
 Spec: docs/superpowers/specs/2026-04-30-codebase-search-tooling-design.md
 
@@ -637,23 +636,27 @@ Two MCP servers augment text search. Reach for them per the tables below; fall b
 
 Fall back to `Grep` only for non-symbol text (string literals, comments, log messages, JSON values).
 
-### Obsidian — docs graph
+### Obsidian — docs read-only queries
 
-`docs/` is an Obsidian vault. Use Obsidian MCP for graph queries:
+`docs/` is an Obsidian vault. Use Obsidian MCP for **read-only** queries:
 
 | Question shape | Tool |
 |---|---|
-| "Which docs reference X?" | `get_backlinks` |
-| "All docs tagged `auth`" | `find_notes_by_tag` |
-| "Search docs for term Y" | `search_notes` |
-| Rename a note + update backlinks atomically | `rename_note` |
-| Add tag X to many notes | `batch_update_tags` |
+| "Search docs for term Y" | `obsidian_simple_search` |
+| "All docs with tag `auth`" or other frontmatter queries | `obsidian_complex_search` (JsonLogic) |
+| "Read this specific note" | `obsidian_get_file_contents` |
+| "Read N specific notes in one call" | `obsidian_batch_get_file_contents` |
+| "List vault root contents" / "list a folder" | `obsidian_list_files_in_vault` / `obsidian_list_files_in_dir` |
 
-Editing markdown *content* (text, frontmatter values, code blocks): always use `Edit` / `Write`. Single write path for content.
+**Editing markdown** — always `Edit` / `Write`. The MCP exposes `obsidian_append_content`, `obsidian_patch_content`, and `obsidian_delete_file`, but they are NOT allowlisted; require explicit per-call approval.
+
+**Backlinks** — this MCP variant does not expose a backlinks tool. To find references to a doc, use `Grep` for the filename or wikilink syntax.
+
+**Renames** — there is no atomic rename-with-backlink-update. Rename via `Write` (move file) plus `Grep`-and-replace for referrers.
 
 ```
 
-If Task 4.5 found different real tool names, replace the placeholder names in the Obsidian table to match.
+The Obsidian table reflects `mcp-obsidian` v0.2.2's actual surface (verified during install).
 
 - [ ] **Step 7.3: Verify the addendum is in place.**
 
@@ -670,9 +673,9 @@ git add CLAUDE.md
 git commit -m "docs(claude): add codebase & docs search tooling addendum
 
 Codifies the tool-routing convention: Serena for C# symbols, Obsidian
-MCP for docs graph queries, Edit/Write for content edits. Single
-write path for content; MCP-mediated writes only for graph-aware
-operations (rename_symbol, rename_note, batch_update_tags).
+MCP (read-only, v0.2.2) for docs queries, Edit/Write for content
+edits. Single write path for content; Serena rename_symbol is the
+only graph-aware MCP write allowlisted.
 
 Spec: docs/superpowers/specs/2026-04-30-codebase-search-tooling-design.md §8
 
@@ -716,18 +719,18 @@ Expected: a JSON object with one key, `hooks`, containing the existing `dotnet f
       "mcp__plugin_serena_serena__list_dir",
       "mcp__plugin_serena_serena__find_file",
       "mcp__plugin_serena_serena__rename_symbol",
-      "mcp__obsidian__get_note",
-      "mcp__obsidian__search_notes",
-      "mcp__obsidian__get_backlinks",
-      "mcp__obsidian__find_notes_by_tag",
-      "mcp__obsidian__rename_note",
-      "mcp__obsidian__batch_update_tags"
+      "mcp__obsidian__obsidian_simple_search",
+      "mcp__obsidian__obsidian_complex_search",
+      "mcp__obsidian__obsidian_get_file_contents",
+      "mcp__obsidian__obsidian_batch_get_file_contents",
+      "mcp__obsidian__obsidian_list_files_in_vault",
+      "mcp__obsidian__obsidian_list_files_in_dir"
     ]
   },
   "hooks": {
 ```
 
-If Task 4.5 found different real tool names, substitute the actual names for the `mcp__obsidian__*` placeholders. If `rename_note` or `batch_update_tags` weren't exposed by the MCP, drop those entries (do not allowlist a non-existent tool — it's harmless but confusing in PR review).
+The Obsidian entries match `mcp-obsidian` v0.2.2's actual tool names (verified during install). The 6 Obsidian write/periodic tools (`obsidian_append_content`, `obsidian_patch_content`, `obsidian_delete_file`, `obsidian_get_periodic_note`, `obsidian_get_recent_periodic_notes`, `obsidian_get_recent_changes`) are intentionally NOT allowlisted; they require explicit per-call approval.
 
 - [ ] **Step 8.3: Verify the JSON is well-formed.**
 
@@ -776,11 +779,11 @@ This task runs no edits — only verifies. If any gate fails, drop back into the
 
 Invoke `mcp__plugin_serena_serena__find_symbol("StoragePath")`. Expected: returns `src/Strg.Core/Storage/StoragePath.cs`.
 
-- [ ] **Step 9.2: Gate 2 — Obsidian backlinks.**
+- [ ] **Step 9.2: Gate 2 — Obsidian MCP reachable.**
 
-Invoke the Obsidian MCP backlinks tool (real name from Task 4.5) for `issues/README.md`. Expected: returns the docs that link to it.
+`mcp-obsidian` v0.2.2 has no backlinks tool. Substitute reachability check: invoke `mcp__obsidian__obsidian_list_files_in_vault` (no args). Expected: returns vault top-level entries (`architecture/`, `requirements/`, `issues/`, `decisions/`, `superpowers/`).
 
-If `docs/issues/README.md` has no inbound links yet (likely true — we didn't add inter-doc links during retrofit), the result is an empty list, which is also acceptable. Verify the tool itself responds without error.
+If the call errors with auth failure → `OBSIDIAN_API_KEY` mismatch between Obsidian's plugin token and `.env.local`. If the call errors with connection-refused → Obsidian Desktop not running or the Local REST API plugin disabled.
 
 - [ ] **Step 9.3: Gate 3 — Allowlist active.**
 
@@ -792,9 +795,11 @@ Touch any `.cs` file via `Edit`, confirm the `dotnet format` hook output appears
 
 - [ ] **Step 9.5: Gate 5 — Frontmatter parse-clean.**
 
-Invoke `mcp__obsidian__find_notes_by_tag("architecture")`. Expected: 5 files (the ones in `docs/architecture/`).
+Invoke `mcp__obsidian__obsidian_complex_search` with the JsonLogic query `{"in": ["architecture", {"var": "tags"}]}`. Expected: 5 files (the ones in `docs/architecture/`).
 
-Then `mcp__obsidian__find_notes_by_tag("requirement")`. Expected: 8 files.
+Then with `{"in": ["requirement", {"var": "tags"}]}`. Expected: 8 files.
+
+(If the JsonLogic shape rejects, refer to Step 6.6's adjusted query — same shape used here.)
 
 - [ ] **Step 9.6: Final summary.**
 
@@ -804,11 +809,11 @@ Write a short verification report into the close-out commit message — not a ne
 verification: all 5 gates pass
 
 - Serena find_symbol(StoragePath) → src/Strg.Core/Storage/StoragePath.cs
-- Obsidian get_backlinks(issues/README.md) → empty (expected — no
-  inter-doc links retrofitted yet)
+- Obsidian list_files_in_vault → architecture/ requirements/ issues/
+  decisions/ superpowers/
 - Allowlist active: find_symbol prompted? no
 - dotnet format hook fires on .cs edit? yes
-- find_notes_by_tag(architecture) → 5 files; (requirement) → 8 files
+- complex_search tag=architecture → 5; tag=requirement → 8
 ```
 
 There's no commit here — verification doesn't change any file. If you want a marker, the optional Step 9.7 covers it.
@@ -821,11 +826,11 @@ Add a `**Status: implemented** (verified <date>)` line at the top of this plan f
 
 ## Open install-time questions (carry forward from spec §14)
 
-Resolve during execution; update spec inline if the answers change the design:
+Status:
 
-1. **Tool name divergence** — handled in Task 4.5 + 4.7.
-2. **`.mcp.json` env-var substitution** — handled in Task 4.4 (with fallback path).
-3. **Serena C# backend on .NET 10** — handled in Task 2.3.
+1. **Tool name divergence** — RESOLVED 2026-04-30. `mcp-obsidian` v0.2.2 has no `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags`; the (b) read-write policy fully collapsed to read-only. Spec §§5.1, 5.4, 5.5, 8, 9, 11 reflect actual surface.
+2. **`.mcp.json` env-var substitution** — open. Verified during Task 4.4 (post-restart). Fallback to user-level config if unsupported.
+3. **Serena C# backend on .NET 10** — RESOLVED 2026-04-30. Verified by Task 2.5: `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both return rich, accurate results across project boundaries.
 
 ---
 

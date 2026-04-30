@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "obsidian": {
-      "command": "mcp-obsidian",
-      "args": []
+      "command": "bash",
+      "args": ["-c", "set -a && source .env && set +a && exec mcp-obsidian"]
     }
   }
 }

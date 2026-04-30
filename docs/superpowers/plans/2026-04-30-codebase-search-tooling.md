@@ -228,14 +228,16 @@ Content:
 {
   "mcpServers": {
     "obsidian": {
-      "command": "mcp-obsidian",
-      "args": []
+      "command": "bash",
+      "args": ["-c", "set -a && source .env && set +a && exec mcp-obsidian"]
     }
   }
 }
 ```
 
-No `env` block needed: `mcp-obsidian` calls `load_dotenv()` (`server.py:16`) which reads `.env` from the cwd. Claude Code launches the MCP with cwd=repo-root, so `OBSIDIAN_API_KEY` flows in transparently.
+The bash wrapper sources `.env` from cwd (Claude Code launches the MCP with cwd=repo-root) and `exec`s `mcp-obsidian`, which then inherits `OBSIDIAN_API_KEY` from the just-loaded shell env.
+
+**Why a wrapper instead of relying on `mcp-obsidian`'s `load_dotenv()` call:** python-dotenv's `find_dotenv()` (called by `load_dotenv()` with no args) walks up from the *caller's `__file__` location* (which lives under `~/.local/share/pipx/venvs/...`), NOT from cwd. Without a `.env` between pipx's venv and home directory, `load_dotenv()` is a silent no-op. The bash wrapper makes the env-load explicit and cwd-relative, sidestepping the gotcha. Verified: `bash -c 'set -a && source .env && set +a && exec mcp-obsidian'` starts the MCP cleanly (blocks on stdio); `mcp-obsidian` direct invocation crashes with `OBSIDIAN_API_KEY environment variable required`.
 
 - [ ] **Step 4.4: Restart Claude Code so the new MCP loads.**
 
@@ -827,7 +829,7 @@ Add a `**Status: implemented** (verified <date>)` line at the top of this plan f
 Status:
 
 1. **Tool name divergence** — RESOLVED 2026-04-30. `mcp-obsidian` v0.2.2 has no `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags`; the (b) read-write policy fully collapsed to read-only. Spec §§5.1, 5.4, 5.5, 8, 9, 11 reflect actual surface.
-2. **`.mcp.json` env-var substitution** — RESOLVED 2026-04-30. Sidestepped: `mcp-obsidian`'s own `load_dotenv()` reads `.env` from cwd, so `.mcp.json` needs no `env` block. The `.env.local` → `.env` rename was the key insight that makes this work without env-var-substitution magic in Claude Code's MCP loader.
+2. **`.mcp.json` env-var substitution** — RESOLVED 2026-04-30. Moot: we don't use it. The `.mcp.json` `command` is a bash wrapper that sources `.env` from cwd and `exec`s mcp-obsidian. Initial belief that mcp-obsidian's built-in `load_dotenv()` would read `.env` from cwd was wrong (python-dotenv's `find_dotenv()` walks from caller's `__file__`, not cwd); the wrapper makes the env-load explicit and cwd-relative.
 3. **Serena C# backend on .NET 10** — RESOLVED 2026-04-30. Verified by Task 2.5: `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both return rich, accurate results across project boundaries.
 
 ---

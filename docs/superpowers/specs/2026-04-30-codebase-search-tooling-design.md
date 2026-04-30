@@ -152,7 +152,7 @@ The env-var the MCP reads is **`OBSIDIAN_API_KEY`** (verified by source — `mcp
 
 ### 5.3 Repo-side artifacts
 
-- `.mcp.json` at repo root — registers the `obsidian` server pointing at the `mcp-obsidian` binary. No `env` block needed: `mcp-obsidian`'s `server.py:16` calls `load_dotenv()` from python-dotenv, which auto-loads `.env` from the cwd. Claude Code launches MCP servers with `cwd = repo root`, so the key flows in transparently.
+- `.mcp.json` at repo root — uses a bash wrapper as `command` to source `.env` before exec'ing `mcp-obsidian`. Concretely: `command: "bash", args: ["-c", "set -a && source .env && set +a && exec mcp-obsidian"]`. The wrapper inherits Claude Code's cwd (repo root), sources `.env` from there, then `exec` replaces the bash process with the MCP — env-var inheritance is straightforward shell semantics, no MCP-loader env-var-substitution magic involved. (We initially assumed `mcp-obsidian`'s built-in `load_dotenv()` would read `.env` from cwd; it doesn't — python-dotenv's `find_dotenv()` searches from the caller's `__file__` path under pipx's venv, not from cwd. The wrapper sidesteps this gotcha.)
 - `.env` — contains `OBSIDIAN_API_KEY=...`. Already covered by the existing `.env` and `.env.*` rules in root `.gitignore`; no new gitignore entry required.
 - `docs/.obsidian/` — split policy via additions to root `.gitignore`:
   - **Commit:** `app.json`, `appearance.json`, `core-plugins.json`, `community-plugins.json`.
@@ -365,5 +365,5 @@ Retrofit content is **strictly additive** — rollback only removes tooling; doc
 Status as of 2026-04-30:
 
 1. **Exact tool names exposed by `mcp-obsidian`** — RESOLVED. The MarkusPfundstein variant v0.2.2 exposes 12 tools (see §5.1); none of `get_backlinks`, `find_notes_by_tag`, `rename_note`, or `batch_update_tags` exist. §§5.4, 5.5, 8, 9 updated to match. Env-var name corrected to `OBSIDIAN_API_KEY`.
-2. **Whether `.mcp.json` supports `${ENV_VAR}` substitution.** RESOLVED — sidestepped. `mcp-obsidian` itself loads `.env` via python-dotenv (`server.py:16`), so the MCP config has no env block; Claude Code launches the server with cwd=repo-root, the dotenv read happens transparently inside the server process.
+2. **Whether `.mcp.json` supports `${ENV_VAR}` substitution.** RESOLVED — moot. We don't rely on Claude Code substitution at all. The `.mcp.json` `command` is a bash wrapper that sources `.env` from cwd and exec's `mcp-obsidian`. (Initial assumption that `mcp-obsidian`'s own `load_dotenv()` would read `.env` from cwd turned out wrong — python-dotenv's `find_dotenv()` walks up from `__file__`, not cwd. The wrapper makes the env load explicit and cwd-relative.)
 3. **Whether Serena's C# language-server backend handles .NET 10 cleanly.** RESOLVED. `find_symbol(StoragePath)` and `find_referencing_symbols(StoragePath.Parse)` both succeed against the live codebase; LSP indexes 30+ references across project boundaries.

@@ -1,3 +1,12 @@
+---
+title: "Non-Functional Requirements"
+tags: [requirement]
+status: active
+priority: must-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Non-Functional Requirements
 
 ## NFR-01: Performance

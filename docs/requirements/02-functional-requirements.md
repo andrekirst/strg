@@ -1,3 +1,12 @@
+---
+title: "Functional Requirements"
+tags: [requirement]
+status: active
+priority: must-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Functional Requirements
 
 ## FR-01: Named Drives (Storage Volumes)

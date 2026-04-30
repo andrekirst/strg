@@ -1,3 +1,11 @@
+---
+title: "Storage Abstraction"
+tags: [architecture, storage, path, encryption, phase-4]
+status: active
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Storage Abstraction
 
 ## Design

@@ -1,3 +1,12 @@
+---
+title: "Data Model"
+tags: [requirement, tenancy, outbox, phase-1]
+status: active
+priority: must-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Data Model
 
 ## Design Principles

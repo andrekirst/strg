@@ -1,3 +1,12 @@
+---
+title: "Plugin System"
+tags: [requirement, plugins, phase-11]
+status: active
+priority: nice-to-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Plugin System
 
 ## Design Goals

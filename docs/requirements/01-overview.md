@@ -1,3 +1,12 @@
+---
+title: "strg — Platform Overview"
+tags: [requirement]
+status: active
+priority: must-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # strg — Platform Overview
 
 ## Vision

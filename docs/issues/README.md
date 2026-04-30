@@ -1,3 +1,11 @@
+---
+title: "strg Issue Tracker"
+tags: [reference, claude-code-workflow]
+status: active
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # strg Issue Tracker
 
 All issues are defined in Markdown files in this directory. Each issue is designed as an atomic task for a Claude Code agent.

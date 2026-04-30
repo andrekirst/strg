@@ -1,3 +1,12 @@
+---
+title: "Innovative Features"
+tags: [requirement, plugins]
+status: active
+priority: future
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Innovative Features
 
 These are future capabilities that differentiate strg from existing self-hosted storage platforms. Each is designed as a plugin implementing a well-defined core interface.

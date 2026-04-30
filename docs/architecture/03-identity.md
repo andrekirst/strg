@@ -1,3 +1,11 @@
+---
+title: "Identity & Authentication"
+tags: [architecture, auth, identity, phase-3]
+status: active
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Identity & Authentication
 
 ## Overview

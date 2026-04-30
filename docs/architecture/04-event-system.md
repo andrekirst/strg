@@ -1,3 +1,11 @@
+---
+title: "Event System (Outbox Pattern)"
+tags: [architecture, outbox, events, audit, phase-8]
+status: active
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Event System (Outbox Pattern)
 
 ## Design

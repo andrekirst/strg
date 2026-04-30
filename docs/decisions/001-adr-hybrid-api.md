@@ -1,3 +1,12 @@
+---
+title: "ADR-001: Hybrid REST + GraphQL API"
+tags: [decision, graphql, phase-7]
+status: active
+decision-date: 2026-04-19
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # ADR-001: Hybrid REST + GraphQL API
 
 **Date**: 2026-04-19

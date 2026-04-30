@@ -1,3 +1,11 @@
+---
+title: "System Architecture Overview"
+tags: [architecture, phase-1]
+status: active
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # System Architecture Overview
 
 ## High-Level Architecture

@@ -1,3 +1,12 @@
+---
+title: "Security Requirements"
+tags: [requirement, auth, encryption, audit, rate-limit, csp, validation, phase-10]
+status: active
+priority: must-have
+created: 2026-04-20
+updated: 2026-04-30
+---
+
 # Security Requirements
 
 ## Threat Model

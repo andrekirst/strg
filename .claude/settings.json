@@ -1,4 +1,21 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena__find_symbol",
+      "mcp__plugin_serena_serena__find_referencing_symbols",
+      "mcp__plugin_serena_serena__get_symbols_overview",
+      "mcp__plugin_serena_serena__search_for_pattern",
+      "mcp__plugin_serena_serena__list_dir",
+      "mcp__plugin_serena_serena__find_file",
+      "mcp__plugin_serena_serena__rename_symbol",
+      "mcp__obsidian__obsidian_simple_search",
+      "mcp__obsidian__obsidian_complex_search",
+      "mcp__obsidian__obsidian_get_file_contents",
+      "mcp__obsidian__obsidian_batch_get_file_contents",
+      "mcp__obsidian__obsidian_list_files_in_vault",
+      "mcp__obsidian__obsidian_list_files_in_dir"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

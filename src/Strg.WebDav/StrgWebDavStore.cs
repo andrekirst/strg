@@ -305,8 +305,11 @@ public sealed class StrgWebDavCollection(
     IStorageProviderRegistry registry,
     StrgWebDavStore store) : IStrgWebDavStoreCollection
 {
-    // Null parent ⇒ drive-root collection. Name/Path are drawn from the drive itself so the
-    // PROPFIND XML renders the drive name as the root href rather than an empty string.
+    // Null parent ⇒ drive-root collection. Id is Guid.Empty for the drive-root synthetic collection
+    // (no backing FileItem); STRG-071 middleware short-circuits drive-root mutations on this value.
+    public Guid Id => parent?.Id ?? Guid.Empty;
+    // Name/Path are drawn from the drive itself so the PROPFIND XML renders the drive name as the
+    // root href rather than an empty string.
     public string Name => parent?.Name ?? drive.Name;
     public string Path => parent?.Path ?? string.Empty;
     public DateTimeOffset CreatedAt => parent?.CreatedAt ?? drive.CreatedAt;
@@ -394,6 +397,7 @@ public sealed class StrgWebDavDocument(
     FileItem file,
     IStorageProviderRegistry registry) : IStrgWebDavStoreDocument
 {
+    public Guid Id => file.Id;
     public string Name => file.Name;
     public string Path => file.Path;
     public DateTimeOffset CreatedAt => file.CreatedAt;

@@ -80,6 +80,9 @@ public sealed class DriveResolverTests(StrgWebApplicationFactory factory)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
+        // StrgDbContext ctor depends on ICurrentUser; throw-away DI
+        // containers must register it explicitly.
+        services.AddSingleton<ICurrentUser>(new FixtureCurrentUser(factory.AdminUserId));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();
@@ -112,6 +115,10 @@ public sealed class DriveResolverTests(StrgWebApplicationFactory factory)
         // TenantId == Guid.Empty would return nothing regardless of what's in the table.
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixtureTenantContext(Guid.Empty));
+        // StrgDbContext ctor depends on ICurrentUser; throw-away DI
+        // containers must register it explicitly. Guid.Empty mirrors the pre-auth shape — no
+        // user has been bound yet at the time DriveResolver runs.
+        services.AddSingleton<ICurrentUser>(new FixtureCurrentUser(Guid.Empty));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
     }
@@ -119,5 +126,10 @@ public sealed class DriveResolverTests(StrgWebApplicationFactory factory)
     private sealed class FixtureTenantContext(Guid tenantId) : ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
+    }
+
+    private sealed class FixtureCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId { get; } = userId;
     }
 }

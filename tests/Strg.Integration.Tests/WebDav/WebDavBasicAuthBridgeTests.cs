@@ -252,6 +252,9 @@ public sealed class WebDavBasicAuthBridgeTests(StrgWebApplicationFactory factory
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
+        // StrgDbContext ctor depends on ICurrentUser; throw-away DI
+        // containers must register it explicitly.
+        services.AddSingleton<ICurrentUser>(new FixtureCurrentUser(factory.AdminUserId));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
     }
@@ -259,5 +262,10 @@ public sealed class WebDavBasicAuthBridgeTests(StrgWebApplicationFactory factory
     private sealed class FixtureTenantContext(Guid tenantId) : ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
+    }
+
+    private sealed class FixtureCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId { get; } = userId;
     }
 }

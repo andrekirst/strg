@@ -21,6 +21,11 @@ internal sealed class CacheTenantContext(Guid id) : ITenantContext
     public Guid TenantId => id;
 }
 
+internal sealed class CacheCurrentUser : ICurrentUser
+{
+    public Guid UserId => Guid.Empty;
+}
+
 /// <summary>
 /// STRG-073 Commit 3 — proves the event-driven cache invalidation contract end-to-end: a
 /// <see cref="UserPasswordChangedEvent"/> written to the outbox on the password-change transaction
@@ -135,6 +140,10 @@ public sealed class WebDavJwtCacheInvalidationConsumerTests : IAsyncLifetime
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddFilter((_, _) => false));
         services.AddSingleton<ITenantContext>(new CacheTenantContext(tenantId));
+        // StrgDbContext ctor depends on ICurrentUser; throw-away DI
+        // containers must register it explicitly. Guid.Empty matches the test's intent — the
+        // JWT cache invalidation consumer doesn't depend on an authenticated user.
+        services.AddSingleton<ICurrentUser>(new CacheCurrentUser());
 
         services.AddDbContext<StrgDbContext>(options =>
         {

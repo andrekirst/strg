@@ -107,6 +107,9 @@ public sealed class WebDavMiddlewareTests(StrgWebApplicationFactory factory) : I
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
+        // StrgDbContext ctor depends on ICurrentUser; throw-away DI
+        // containers must register it explicitly.
+        services.AddSingleton<ICurrentUser>(new FixtureCurrentUser(factory.AdminUserId));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         await using var sp = services.BuildServiceProvider();
         using var scope = sp.CreateScope();
@@ -130,5 +133,10 @@ public sealed class WebDavMiddlewareTests(StrgWebApplicationFactory factory) : I
     private sealed class FixtureTenantContext(Guid tenantId) : ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
+    }
+
+    private sealed class FixtureCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId { get; } = userId;
     }
 }

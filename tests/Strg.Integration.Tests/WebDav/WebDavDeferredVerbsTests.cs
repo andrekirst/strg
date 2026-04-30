@@ -12,44 +12,15 @@ using Xunit;
 namespace Strg.Integration.Tests.WebDav;
 
 /// <summary>
-/// STRG-074 gap-fill — pins the 501 Not Implemented response on WebDAV write verbs deliberately
-/// deferred to STRG-071 (DELETE, COPY, MOVE, PROPPATCH). The STRG-067 middleware comment at
-/// <c>StrgWebDavMiddleware.cs:270</c> and the <c>OPTIONS</c> <c>Allow</c> header both advertise
-/// these verbs, but the dispatch tail intentionally short-circuits with 501 until each handler
-/// ships under STRG-071.
+/// Status pin for the WebDAV write verb that still returns 501 Not Implemented — PROPPATCH.
+/// The middleware's OPTIONS <c>Allow</c> header advertises PROPPATCH, but the dispatch tail
+/// short-circuits with 501 until a handler is wired.
 ///
-/// <para><b>Why a dedicated pin.</b> Three drift shapes this test defends against:
-/// <list type="bullet">
-///   <item><description><b>Silent flip to 200/201/204.</b> When STRG-071 lands a real DELETE/COPY/
-///     MOVE handler, this test fails loudly — forcing an explicit decision to delete the pin
-///     alongside the new handler, rather than the pin silently turning vacuous as the status code
-///     changes. That's the signal the v0.1 → v0.1+ boundary needs.</description></item>
-///   <item><description><b>Silent flip to 405 Method Not Allowed.</b> A well-meaning refactor that
-///     "cleans up the unhandled-verb tail" by switching 501 → 405 would be wrong:
-///     <c>Allow: … DELETE, COPY, MOVE, PROPPATCH …</c> still advertises these methods, so a 405
-///     contradicts the OPTIONS surface. 501 is the honest "server understands the verb but hasn't
-///     implemented it" status per RFC 7231 §6.6.2.</description></item>
-///   <item><description><b>Silent flip to 500.</b> If a future dispatch reorder lets one of these
-///     verbs reach a handler that throws before completing (e.g., <c>NotImplementedException</c>
-///     bubbling through a generic exception filter), the status would flip to 500 and the
-///     middleware's explicit deferral would be bypassed — operators would see "broken" instead of
-///     "not yet implemented."</description></item>
-/// </list></para>
-///
-/// <para><b>Dispatch-order artefact — MKCOL is intentionally omitted.</b> The middleware's
-/// <c>store.GetItemAsync</c> null-check at line 234 short-circuits with 404 <i>before</i> the
-/// deferral tail at line 272. MKCOL inherently targets a non-existing URL (RFC 4918 §9.3 is
-/// exactly "create a new collection at this URL"), so in the current dispatch ordering MKCOL
-/// always returns 404, never 501. That's a known artefact tracked separately for STRG-071 —
-/// pinning it here would embed the 404 behaviour as if it were intentional, and a future dispatch
-/// reorder that moves MKCOL before the GetItem check would make this test fail for the wrong
-/// reason. Each verb covered below DOES reach the 501 tail because we pre-seed a file via PUT so
-/// GetItemAsync returns non-null.</para>
-///
-/// <para><b>Why this suite, not an extension of <see cref="WebDavMiddlewareTests"/>.</b> The
-/// existing middleware suite pins drive resolution + auth (TC-001..TC-005). Conflating those with
-/// the deferred-verb shape means a regression in either direction produces a single confusing
-/// "something in WebDavMiddlewareTests broke" signal. Separate classes → separate diagnosis.</para>
+/// <para>The pin defends against three silent regressions: (a) a flip to 200/201/204/207 when a
+/// real handler ships without removing this test, (b) a flip to 405 from a "cleanup" of the
+/// unhandled-verb tail (would contradict the OPTIONS Allow header — 501 is the honest "verb
+/// understood, not implemented" status per RFC 7231 §6.6.2), (c) a flip to 500 from a dispatch
+/// reorder that lets PROPPATCH reach a throwing handler.</para>
 /// </summary>
 public sealed class WebDavDeferredVerbsTests(StrgWebApplicationFactory factory)
     : IClassFixture<StrgWebApplicationFactory>, IAsyncLifetime
@@ -77,54 +48,7 @@ public sealed class WebDavDeferredVerbsTests(StrgWebApplicationFactory factory)
     }
 
     [Fact]
-    public async Task DELETE_on_existing_file_returns_501_NotImplemented_until_STRG071_lands()
-    {
-        var client = await CreateAuthenticatedClientAsync();
-
-        using var request = new HttpRequestMessage(HttpMethod.Delete, $"/dav/{DriveName}/{SeededFilePath}");
-        var response = await client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            because: "STRG-067 middleware line ~272 explicitly defers DELETE to STRG-071 — a silent " +
-                     "flip to 200/204/405/500 would mean the handler shipped (or regressed) without " +
-                     "the operator-visible deferral signal this pin enforces");
-    }
-
-    [Fact]
-    public async Task COPY_on_existing_file_returns_501_NotImplemented_until_STRG071_lands()
-    {
-        var client = await CreateAuthenticatedClientAsync();
-
-        using var request = new HttpRequestMessage(new HttpMethod("COPY"), $"/dav/{DriveName}/{SeededFilePath}");
-        // RFC 4918 §9.8 requires a Destination header on COPY; we include it so a future handler
-        // that validates shape-before-dispatch doesn't 400 out before reaching the deferral tail.
-        // Under the current middleware the header is ignored — the 501 pin holds regardless — but
-        // the defensive shape keeps this test meaningful after STRG-071 lands partial validation.
-        request.Headers.Add("Destination", $"/dav/{DriveName}/{SeededFilePath}.copy");
-        var response = await client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            because: "COPY dispatch is deferred to STRG-071; 501 is the honest status while the verb " +
-                     "is advertised in OPTIONS Allow but has no handler wired");
-    }
-
-    [Fact]
-    public async Task MOVE_on_existing_file_returns_501_NotImplemented_until_STRG071_lands()
-    {
-        var client = await CreateAuthenticatedClientAsync();
-
-        using var request = new HttpRequestMessage(new HttpMethod("MOVE"), $"/dav/{DriveName}/{SeededFilePath}");
-        request.Headers.Add("Destination", $"/dav/{DriveName}/{SeededFilePath}.moved");
-        var response = await client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            because: "MOVE dispatch is deferred to STRG-071; pinning 501 here catches a silent " +
-                     "partial-implementation slip (e.g., a PR that wires MOVE but forgets to remove " +
-                     "this pin — the failing test is the enforcement signal)");
-    }
-
-    [Fact]
-    public async Task PROPPATCH_on_existing_file_returns_501_NotImplemented_until_STRG071_lands()
+    public async Task PROPPATCH_on_existing_file_returns_501_NotImplemented_until_handler_lands()
     {
         var client = await CreateAuthenticatedClientAsync();
 
@@ -145,9 +69,9 @@ public sealed class WebDavDeferredVerbsTests(StrgWebApplicationFactory factory)
         var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotImplemented,
-            because: "PROPPATCH is also deferred to STRG-071; the watch-tracker task #135 separately " +
-                     "pins future auth + scope + strg:* allowlist invariants on the real handler, " +
-                     "but today the honest status is 501");
+            because: "PROPPATCH has no handler wired yet; 501 is the honest 'verb understood, " +
+                     "not implemented' status. A real handler will pin its own auth + scope + " +
+                     "strg:* allowlist invariants when it ships.");
     }
 
     // ---- helpers ----
@@ -218,6 +142,10 @@ public sealed class WebDavDeferredVerbsTests(StrgWebApplicationFactory factory)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ITenantContext>(new FixtureTenantContext(factory.AdminTenantId));
+        // StrgDbContext ctor depends on ICurrentUser; this throw-away DI
+        // container needs an explicit registration since it doesn't share the factory's
+        // ServiceProvider. Mirrors StrgWebApplicationFactory.BootstrapSchemaAndSeedAsync.
+        services.AddSingleton<ICurrentUser>(new FixtureCurrentUser(factory.AdminUserId));
         services.AddDbContext<StrgDbContext>(opts => opts.UseNpgsql(factory.ConnectionString).UseOpenIddict());
         return services.BuildServiceProvider();
     }
@@ -225,5 +153,10 @@ public sealed class WebDavDeferredVerbsTests(StrgWebApplicationFactory factory)
     private sealed class FixtureTenantContext(Guid tenantId) : ITenantContext
     {
         public Guid TenantId { get; } = tenantId;
+    }
+
+    private sealed class FixtureCurrentUser(Guid userId) : ICurrentUser
+    {
+        public Guid UserId { get; } = userId;
     }
 }

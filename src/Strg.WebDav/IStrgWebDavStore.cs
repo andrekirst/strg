@@ -3,18 +3,17 @@ using Strg.Core.Domain;
 namespace Strg.WebDav;
 
 /// <summary>
-/// STRG-068 — bridge from a resolved <see cref="Drive"/> + request path to an <see cref="IStrgWebDavStoreItem"/>
-/// backed by <see cref="Core.Storage.IStorageProvider"/>. The contract intentionally keeps NWebDav
-/// out of the signature surface: NWebDav 0.1.x ships an abandoned <c>IHttpContext</c> abstraction
-/// and a transitively vulnerable ASP.NET Core adapter (GHSA-hxrm-9w7p-39cc on the
-/// <c>NWebDav.Server.AspNetCore</c> side), so STRG-068 takes only the <c>NWebDav.Server</c> core
-/// package as a forward-looking dependency and exposes its own interfaces to the middleware.
+/// Bridge from a resolved <see cref="Drive"/> + request path to an
+/// <see cref="IStrgWebDavStoreItem"/> backed by <see cref="Core.Storage.IStorageProvider"/>. The
+/// contract intentionally keeps NWebDav out of the signature surface: NWebDav 0.1.x ships an
+/// abandoned <c>IHttpContext</c> abstraction and a transitively vulnerable ASP.NET Core adapter,
+/// so this layer takes only the <c>NWebDav.Server</c> core package and exposes its own
+/// interfaces to the middleware.
 ///
-/// <para><b>Path contract.</b> <paramref name="path"/> is the in-drive resource path — everything
-/// after <c>/dav/{driveName}</c> — and MUST have been validated through
+/// <para><b>Path contract.</b> The in-drive resource path — everything after
+/// <c>/dav/{driveName}</c> — MUST have been validated through
 /// <see cref="Core.Storage.StoragePath.Parse"/> before reaching an implementation. The
-/// path-traversal defence is the caller's job; the store treats <paramref name="path"/> as trusted.
-/// </para>
+/// path-traversal defence is the caller's job; the store treats the path as trusted.</para>
 /// </summary>
 public interface IStrgWebDavStore
 {
@@ -72,6 +71,15 @@ public interface IStrgWebDavStore
 /// </summary>
 public interface IStrgWebDavStoreItem
 {
+    /// <summary>
+    /// Underlying <c>FileItem.Id</c>. Returns <see cref="Guid.Empty"/> for the synthetic
+    /// drive-root collection (which has no backing FileItem). The middleware's mutation
+    /// dispatch (DELETE/COPY/MOVE) uses this to address the Mediator command — and
+    /// special-cases <see cref="Guid.Empty"/> with a 403, since deleting/copying/moving the
+    /// drive itself is an admin operation, not a WebDAV operation.
+    /// </summary>
+    Guid Id { get; }
+
     /// <summary>Leaf name (no path separators).</summary>
     string Name { get; }
 

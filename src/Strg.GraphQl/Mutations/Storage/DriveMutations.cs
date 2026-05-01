@@ -2,6 +2,7 @@ using HotChocolate.Authorization;
 using Mediator;
 using Strg.Application.Features.Drives.Create;
 using Strg.Application.Features.Drives.Delete;
+using Strg.Application.Features.Drives.SetDefault;
 using Strg.Application.Features.Drives.Update;
 using Strg.GraphQl.Inputs.Drive;
 using Strg.GraphQl.Payloads;
@@ -45,6 +46,23 @@ public sealed class DriveMutations
         return result.IsSuccess
             ? new UpdateDrivePayload(result.Value, null)
             : new UpdateDrivePayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
+    }
+
+    // Picking the calling user's per-user default is a user-level action, NOT admin-only.
+    // Cross-tenant DriveId lookups throw NotFoundException in the handler, which the global
+    // StrgErrorFilter maps to a top-level NOT_FOUND error — distinct from validation failures
+    // which surface in the payload's errors[] field.
+    [Authorize]
+    public async Task<SetDefaultDrivePayload> SetDefaultDriveAsync(
+        SetDefaultDriveInput input,
+        [Service] IMediator mediator,
+        CancellationToken cancellationToken)
+    {
+        var result = await mediator.Send(new SetDefaultDriveCommand(input.DriveId), cancellationToken);
+
+        return result.IsSuccess
+            ? new SetDefaultDrivePayload(result.Value, null)
+            : new SetDefaultDrivePayload(null, [new UserError(MapCode(result.ErrorCode!), result.ErrorMessage!, FieldFor(result))]);
     }
 
     [Authorize(Policy = "Admin")]

@@ -24,6 +24,7 @@ public interface IStrgDbContext
     DbSet<InboxRule> InboxRules { get; }
     DbSet<FileLock> FileLocks { get; }
     DbSet<PendingUpload> PendingUploads { get; }
+    DbSet<UserDriveDefault> UserDriveDefaults { get; }
 
     DatabaseFacade Database { get; }
 

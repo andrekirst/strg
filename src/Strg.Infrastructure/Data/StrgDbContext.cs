@@ -35,6 +35,7 @@ public class StrgDbContext(
     public DbSet<InboxRule> InboxRules => Set<InboxRule>();
     public DbSet<FileLock> FileLocks => Set<FileLock>();
     public DbSet<PendingUpload> PendingUploads => Set<PendingUpload>();
+    public DbSet<UserDriveDefault> UserDriveDefaults => Set<UserDriveDefault>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

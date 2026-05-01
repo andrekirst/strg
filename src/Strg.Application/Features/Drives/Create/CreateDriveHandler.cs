@@ -41,6 +41,25 @@ internal sealed class CreateDriveHandler(
             return Result<Drive>.Failure("DuplicateName", $"Drive '{command.Name}' already exists.");
         }
 
+        // First non-soft-deleted drive in the tenant becomes the tenant-wide default. The
+        // AnyAsync probe runs through both the tenant filter (scopes to current tenant) and the
+        // soft-delete filter (hides DeletedAt-set rows), so a tenant that soft-deleted all of its
+        // drives "restarts" — the next create is treated as a first drive again. An admin who
+        // wants explicit control passes IsDefault=true|false on the command and bypasses the
+        // heuristic entirely.
+        bool isDefault;
+        if (command.IsDefault.HasValue)
+        {
+            isDefault = command.IsDefault.Value;
+        }
+        else
+        {
+            var tenantHasAnyDrive = await db.Drives
+                .AnyAsync(_ => true, cancellationToken)
+                .ConfigureAwait(false);
+            isDefault = !tenantHasAnyDrive;
+        }
+
         var drive = new Drive
         {
             TenantId = tenantId,
@@ -48,7 +67,7 @@ internal sealed class CreateDriveHandler(
             ProviderType = command.ProviderType,
             ProviderConfig = command.ProviderConfigJson ?? "{}",
             EncryptionEnabled = command.EncryptionEnabled,
-            IsDefault = command.IsDefault ?? false,
+            IsDefault = isDefault,
         };
 
         db.Drives.Add(drive);

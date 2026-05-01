@@ -138,4 +138,14 @@ public static class AuditActions
     /// <c>"FileItem"</c>, ResourceId is the folder id, Details carries <c>driveId=...; path=...</c>.
     /// </summary>
     public const string FolderCreated = "folder.created";
+
+    /// <summary>
+    /// A user picked (or changed) their per-user default drive within a tenant. ResourceType is
+    /// <c>"Drive"</c>, ResourceId is the newly-selected drive id, Details carries the previous
+    /// drive id when one existed (<c>previous=&lt;guid&gt;</c>) or <c>previous=none</c> on the first
+    /// pick. Distinct from <see cref="DriveUpdated"/>, which records mutations to the tenant-wide
+    /// <c>Drive.IsDefault</c> flag — this action records mutations to the per-user override
+    /// stored in <c>UserDriveDefault</c>.
+    /// </summary>
+    public const string DriveDefaultChanged = "drive.default_changed";
 }

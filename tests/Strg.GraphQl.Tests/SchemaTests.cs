@@ -30,6 +30,29 @@ public class SchemaTests
         Assert.DoesNotContain("tenantId", fields);
     }
 
+    /// <summary>
+    /// STRG-300 — pins that the new <c>isDefault</c> field is exposed on the GraphQL Drive type.
+    /// A future change that adds <c>.Ignore()</c> to <c>DriveType</c> would silently hide it from
+    /// the wire and break the inbox-feature consumer; this test catches that regression.
+    /// </summary>
+    [Fact]
+    public async Task DriveType_IsDefault_InSchema()
+    {
+        var executor = await GraphQlTestFixture.CreateExecutorAsync(
+            configureSchema: b => b.AddType<GraphQLDriveType>());
+
+        var result = (IOperationResult)await executor.ExecuteAsync("""
+            {
+              __type(name: "Drive") {
+                fields { name }
+              }
+            }
+            """);
+
+        var fields = GetFieldNames(result, "__type");
+        Assert.Contains("isDefault", fields);
+    }
+
     [Fact]
     public async Task FileItemType_HasIsFolder_NotIsDirectory()
     {

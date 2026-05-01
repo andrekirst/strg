@@ -132,15 +132,25 @@ builder.Services.AddStrgOpenApi();
 builder.Services.AddStrgCors(builder.Configuration);
 builder.Services.AddStrgRateLimiting(builder.Configuration);
 
-// HSTS values per STRG-010 AC2: max-age=31536000 (1 year), includeSubDomains, preload NOT set
-// (security-review checklist: "HSTS preload is NOT set (risky for new domains)"). The default
-// MaxAge is 30 days — too low for the issue's "(max-age=31536000; includeSubDomains)" pin —
-// so this override is load-bearing. UseHsts itself remains env-gated below.
+// HSTS values per STRG-010 AC2 + STRG-084: max-age=31536000 (1 year), includeSubDomains,
+// preload NOT set (security-review checklist: "HSTS preload is NOT set (risky for new
+// domains)"). The framework default MaxAge is 30 days — too low for the issue's
+// "(max-age=31536000; includeSubDomains)" pin — so the override below is load-bearing.
+// UseHsts itself remains env-gated further down.
+//
+// STRG-084 binds the values from the `Hsts` configuration section so operators can tune
+// MaxAge/IncludeSubDomains/Preload without rebuilds — the same pattern CORS uses for its
+// allow-list. `MaxAge` is read as integer DAYS (the wire-level max-age directive is
+// seconds, but the config surface uses days because operators reason in calendar units —
+// "1 year" is 365, not 31_536_000) and converted to TimeSpan because HstsOptions.MaxAge
+// is a TimeSpan. When a key is absent the default matches the v0.1 security baseline so
+// a missing or empty `Hsts` section is correct-by-omission.
 builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HstsOptions>(options =>
 {
-    options.MaxAge = TimeSpan.FromDays(365);
-    options.IncludeSubDomains = true;
-    options.Preload = false;
+    var hsts = builder.Configuration.GetSection("Hsts");
+    options.MaxAge = TimeSpan.FromDays(hsts.GetValue<int>("MaxAge", 365));
+    options.IncludeSubDomains = hsts.GetValue<bool>("IncludeSubDomains", true);
+    options.Preload = hsts.GetValue<bool>("Preload", false);
 });
 
 // Storage providers (STRG-021/023/024). AddStrgStorageProviders registers the singleton registry

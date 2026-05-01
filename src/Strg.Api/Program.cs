@@ -140,14 +140,15 @@ builder.Services.AddStrgRateLimiting(builder.Configuration);
 //
 // STRG-084 binds the values from the `Hsts` configuration section so operators can tune
 // MaxAge/IncludeSubDomains/Preload without rebuilds — the same pattern CORS uses for its
-// allow-list. `MaxAge` is read as integer seconds (matching RFC 6797's max-age directive
-// and the literal shape in the STRG-084 issue body) and converted to TimeSpan because
-// HstsOptions.MaxAge is a TimeSpan. When a key is absent the default matches the v0.1
-// security baseline so a missing or empty `Hsts` section is correct-by-omission.
+// allow-list. `MaxAge` is read as integer DAYS (the wire-level max-age directive is
+// seconds, but the config surface uses days because operators reason in calendar units —
+// "1 year" is 365, not 31_536_000) and converted to TimeSpan because HstsOptions.MaxAge
+// is a TimeSpan. When a key is absent the default matches the v0.1 security baseline so
+// a missing or empty `Hsts` section is correct-by-omission.
 builder.Services.Configure<Microsoft.AspNetCore.HttpsPolicy.HstsOptions>(options =>
 {
     var hsts = builder.Configuration.GetSection("Hsts");
-    options.MaxAge = TimeSpan.FromSeconds(hsts.GetValue<int>("MaxAge", 31_536_000));
+    options.MaxAge = TimeSpan.FromDays(hsts.GetValue<int>("MaxAge", 365));
     options.IncludeSubDomains = hsts.GetValue<bool>("IncludeSubDomains", true);
     options.Preload = hsts.GetValue<bool>("Preload", false);
 });

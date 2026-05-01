@@ -161,6 +161,42 @@ public sealed class FileVersionStore(
         {
             await provider.DeleteAsync(version.StorageKey, cancellationToken).ConfigureAwait(false);
 
+            // STRG-332: best-effort thumbnail blob delete. The ThumbnailEntry rows themselves
+            // cascade away when db.FileVersions.Remove(version) commits inside the per-version
+            // transaction (OnDelete(Cascade) configured in ThumbnailEntryConfiguration). The
+            // blobs do NOT cascade, so we enumerate them here and call IStorageProvider.DeleteAsync
+            // — load-bearing on the provider's idempotency contract: a missing blob from a prior
+            // partial-prune retry MUST NOT throw and stall the loop at iteration k.
+            //
+            // Stays OUTSIDE the per-version transaction (matches the existing pattern for
+            // version.StorageKey — blob deletion is best-effort even when the DB tx commits).
+            // A failure here logs a warning via the storage provider's own logging path and the
+            // orphan is reclaimable on a future re-prune.
+            var thumbnailKeys = await db.ThumbnailEntries
+                .Where(t => t.FileVersionId == version.Id
+                            && t.Status == Strg.Core.Domain.ThumbnailStatus.Ready)
+                .Select(t => t.StorageKey)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var thumbnailKey in thumbnailKeys)
+            {
+                if (string.IsNullOrEmpty(thumbnailKey))
+                {
+                    continue;
+                }
+                try
+                {
+                    await provider.DeleteAsync(thumbnailKey, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex,
+                        "FileVersionStore: best-effort thumbnail blob delete failed for {Key} (version {VersionId})",
+                        thumbnailKey, version.Id);
+                }
+            }
+
             await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             db.FileVersions.Remove(version);
             await quotaService.ReleaseAsync(file.CreatedBy, version.Size, cancellationToken).ConfigureAwait(false);

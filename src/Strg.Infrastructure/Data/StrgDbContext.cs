@@ -36,6 +36,7 @@ public class StrgDbContext(
     public DbSet<FileLock> FileLocks => Set<FileLock>();
     public DbSet<PendingUpload> PendingUploads => Set<PendingUpload>();
     public DbSet<UserDriveDefault> UserDriveDefaults => Set<UserDriveDefault>();
+    public DbSet<ThumbnailEntry> ThumbnailEntries => Set<ThumbnailEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

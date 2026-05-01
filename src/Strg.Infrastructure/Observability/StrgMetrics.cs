@@ -35,6 +35,18 @@ public sealed class StrgMetrics : IDisposable
     /// <summary>Tracks currently active WebDAV/WebSocket connections.</summary>
     public UpDownCounter<long> ActiveConnections { get; }
 
+    /// <summary>Counts thumbnail generation outcomes — labelled <c>format</c> / <c>variant</c> / <c>status</c>.</summary>
+    public Counter<long> ThumbnailsGeneratedTotal { get; }
+
+    /// <summary>Counts skipped generations — labelled <c>reason</c> (encrypted-drive, too-large, pixel-cap, unknown-mime, no-generator).</summary>
+    public Counter<long> ThumbnailsSkippedTotal { get; }
+
+    /// <summary>Histogram of generation wall time in seconds, labelled <c>format</c>.</summary>
+    public Histogram<double> ThumbnailsGenerationDurationSeconds { get; }
+
+    /// <summary>Concurrent thumbnail generations in flight (UpDownCounter, no labels).</summary>
+    public UpDownCounter<long> ThumbnailsInflight { get; }
+
     public StrgMetrics()
     {
         _meter = new Meter(MeterName);
@@ -50,7 +62,43 @@ public sealed class StrgMetrics : IDisposable
         ActiveConnections = _meter.CreateUpDownCounter<long>(
             "strg_active_connections",
             description: "Active WebDAV/WebSocket connections");
+
+        ThumbnailsGeneratedTotal = _meter.CreateCounter<long>(
+            "strg_thumbnails_generated_total",
+            unit: null,
+            description: "Thumbnail generation outcomes per format / variant / status");
+        ThumbnailsSkippedTotal = _meter.CreateCounter<long>(
+            "strg_thumbnails_skipped_total",
+            unit: null,
+            description: "Thumbnail generation skipped (encrypted-drive, too-large, pixel-cap, unknown-mime, no-generator)");
+        ThumbnailsGenerationDurationSeconds = _meter.CreateHistogram<double>(
+            "strg_thumbnails_generation_duration_seconds",
+            unit: "s",
+            description: "Thumbnail generation wall time per format");
+        ThumbnailsInflight = _meter.CreateUpDownCounter<long>(
+            "strg_thumbnails_inflight",
+            unit: null,
+            description: "Concurrent thumbnail generations in progress");
     }
+
+    /// <summary>Records one thumbnail generation outcome. <paramref name="status"/> is <c>"ready"</c> or <c>"timed-out"</c>.</summary>
+    public void IncrementThumbnailGenerated(string format, string variant, string status) =>
+        ThumbnailsGeneratedTotal.Add(1,
+            new KeyValuePair<string, object?>("format", format),
+            new KeyValuePair<string, object?>("variant", variant),
+            new KeyValuePair<string, object?>("status", status));
+
+    /// <summary>
+    /// Records one skipped generation. <paramref name="reason"/> MUST be from the bounded set
+    /// <c>encrypted-drive | too-large | pixel-cap | unknown-mime | no-generator</c>.
+    /// </summary>
+    public void IncrementThumbnailSkipped(string reason) =>
+        ThumbnailsSkippedTotal.Add(1, new KeyValuePair<string, object?>("reason", reason));
+
+    /// <summary>Records the wall time of one generation, labelled by output format.</summary>
+    public void RecordThumbnailDuration(string format, double seconds) =>
+        ThumbnailsGenerationDurationSeconds.Record(seconds,
+            new KeyValuePair<string, object?>("format", format));
 
     /// <summary>Records one successful upload and the bytes transferred.</summary>
     public void IncrementUploads(long bytes)

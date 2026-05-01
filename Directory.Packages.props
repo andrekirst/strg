@@ -25,6 +25,9 @@
     <PackageVersion Include="MassTransit.EntityFrameworkCore" Version="8.5.9" />
     <!-- TUS upload -->
     <PackageVersion Include="tusdotnet" Version="2.11.1" />
+    <!-- Image processing (STRG-336/337) — Magick.NET-Q8-x64 ships with native ImageMagick + libwebp;
+         libheif is a SYSTEM dependency (libheif1 + plugins) installed in the Docker base image. -->
+    <PackageVersion Include="Magick.NET-Q8-x64" Version="14.4.0" />
     <!-- WebDAV -->
     <PackageVersion Include="WebDav.Server" Version="15.4.16086" />
     <!-- Logging -->

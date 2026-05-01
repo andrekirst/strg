@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using Serilog;
 using StackExchange.Redis;
 using Strg.Api.Auth;
@@ -36,6 +37,8 @@ using Strg.Infrastructure.Messaging;
 using Strg.Infrastructure.Observability;
 using Strg.Infrastructure.Services;
 using Strg.Infrastructure.Storage;
+using Strg.Infrastructure.Thumbnails;
+using Strg.Infrastructure.Thumbnails.Generators;
 using Strg.Infrastructure.Upload;
 using Strg.Infrastructure.Versioning;
 using Strg.WebDav;
@@ -99,6 +102,21 @@ builder.Services.AddScoped<IQuotaService>(sp => sp.GetRequiredService<QuotaServi
 builder.Services.AddScoped<IQuotaAdminService>(sp => sp.GetRequiredService<QuotaService>());
 builder.Services.AddScoped<IFileVersionStore, FileVersionStore>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
+
+// ---- Thumbnails (STRG-329..STRG-344) ----
+// Generators registered as singletons (Magick.NET image instances are short-lived inside
+// GenerateAsync; the generator itself is stateless). Service + repository scoped so the
+// per-consume DbContext flows through. Options validated at startup — invalid config crashes
+// the host instead of failing on first generation.
+builder.Services
+    .AddOptions<ThumbnailOptions>()
+    .Bind(builder.Configuration.GetSection(ThumbnailOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<ThumbnailOptions>, ThumbnailOptionsValidator>();
+builder.Services.AddSingleton<IThumbnailGenerator, MagickNetImageThumbnailer>();
+builder.Services.AddSingleton<IThumbnailGeneratorRegistry, ThumbnailGeneratorRegistry>();
+builder.Services.AddScoped<IThumbnailRepository, ThumbnailRepository>();
+builder.Services.AddScoped<IThumbnailService, ThumbnailService>();
 
 // STRG-034 — TUS upload pipeline. StrgTusStore creates a fresh StrgDbContext per method (via
 // injected DbContextOptions) because tusdotnet's validation pipeline can interleave read calls
@@ -224,6 +242,11 @@ builder.Services.AddStrgMassTransit(
     {
         bus.AddConsumer<Strg.GraphQl.Consumers.GraphQlSubscriptionPublisher>();
         bus.AddConsumer<Strg.WebDav.Consumers.WebDavJwtCacheInvalidationConsumer>();
+        // STRG-331/332/341 — thumbnail consumers + dead-letter observer. Tenant is read from
+        // event payload, not ambient context (consumer scope has empty ITenantContext).
+        bus.AddConsumer<Strg.Infrastructure.Messaging.Consumers.ThumbnailGenerationConsumer>();
+        bus.AddConsumer<Strg.Infrastructure.Messaging.Consumers.ThumbnailGenerationFaultObserver>();
+        bus.AddConsumer<Strg.Infrastructure.Messaging.Consumers.ThumbnailCleanupConsumer>();
     });
 
 // ---- Authorization policies (STRG-013) ----
@@ -282,6 +305,10 @@ var graphql = builder.Services
     .AddType<DriveByIdDataLoader>()
     .AddType<UserByIdDataLoader>()
     .AddType<InboxRuleByIdDataLoader>()
+    .AddType<Strg.GraphQl.DataLoaders.ThumbnailDataLoader>()
+    .AddType<Strg.GraphQl.Types.ThumbnailType>()
+    .AddType<Strg.GraphQl.Subscriptions.ThumbnailSubscriptions>()
+    .AddType<Strg.GraphQl.Mutations.Admin.RegenerateThumbnailsMutationHandlers>()
     .AddGlobalObjectIdentification()
     .AddFiltering()
     .AddSorting()
@@ -442,6 +469,9 @@ app.MapFileVersionEndpoints();
 app.MapFolderCreateEndpoints();
 app.MapUserRegistrationEndpoints();
 app.MapUserEndpoints();
+// STRG-339 — thumbnail GET endpoint with ETag/304/202-pending. Same FilesRead policy as the
+// download endpoint: a reader of a file owns access to its thumbnail.
+app.MapThumbnailEndpoints();
 
 // STRG-034 — TUS upload endpoint. Mapped after UseAuthentication/UseAuthorization (line 352-353)
 // so HttpContext.User is populated before OnAuthorizeAsync runs. .RequireAuthorization() is

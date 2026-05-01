@@ -14,8 +14,18 @@ public sealed class GraphQlSubscriptionPublisher(ITopicEventSender sender, ILogg
         IConsumer<FileMovedEvent>,
         IConsumer<FileCopiedEvent>,
         IConsumer<FileRenamedEvent>,
-        IConsumer<QuotaWarningEvent>
+        IConsumer<QuotaWarningEvent>,
+        IConsumer<ThumbnailReadyEvent>
 {
+    public async Task Consume(ConsumeContext<ThumbnailReadyEvent> ctx)
+    {
+        var msg = ctx.Message;
+        var topic = Topics.ThumbnailReady(msg.TenantId, msg.FileId);
+        await sender.SendAsync(topic, msg, ctx.CancellationToken);
+        logger.LogDebug("Published ThumbnailReady ({Variant}/{Format}) for file {FileId} to topic {Topic}",
+            msg.Variant, msg.Format, msg.FileId, topic);
+    }
+
     public Task Consume(ConsumeContext<FileUploadedEvent> ctx)
         => SendAsync(FileEventType.Uploaded, ctx.Message.FileId, ctx.Message.DriveId,
             ctx.Message.UserId, ctx.Message.TenantId, null, null, ctx.CancellationToken);

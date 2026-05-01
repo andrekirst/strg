@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Domain;
+using Strg.GraphQl.DataLoaders;
 using Strg.Infrastructure.Data;
 using DomainTag = Strg.Core.Domain.Tag;
 
@@ -20,6 +21,22 @@ public sealed class FileItemType : ObjectType<FileItem>
         descriptor.Field(f => f.TenantId).Ignore();
         descriptor.Field(f => f.StorageKey).Ignore();
         descriptor.Field(f => f.IsDirectory).Ignore();
+
+        // STRG-340 — DataLoader-batched thumbnail field. Returns null when the consumer hasn't
+        // yet produced a row for the (file, variant) pair; clients re-query when the
+        // `thumbnailReady` subscription fires (or just retry after the REST 202's Retry-After).
+        descriptor.Field("thumbnail")
+            .Argument("variant", a => a.Type<NonNullType<EnumType<ThumbnailVariantGraphQl>>>())
+            .Type<ThumbnailType>()
+            .Resolve(async ctx =>
+            {
+                var file = ctx.Parent<FileItem>();
+                var variant = ctx.ArgumentValue<ThumbnailVariantGraphQl>("variant");
+                var loader = ctx.Service<ThumbnailDataLoader>();
+                return await loader.LoadAsync(
+                    new ThumbnailKey(file.Id, variant.ToVariantString()),
+                    ctx.RequestAborted);
+            });
 
         descriptor.Field("children")
             .UsePaging<ObjectType<FileItem>>(options: new() { DefaultPageSize = 50, MaxPageSize = 200 })

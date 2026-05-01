@@ -38,6 +38,13 @@ public static class Topics
 
     public static string InboxFileProcessed(Guid tenantId) => $"inbox-file-processed:{tenantId}";
 
+    /// <summary>
+    /// Per-(tenant, file) topic for thumbnail-ready notifications. Tenant-prefixed for the same
+    /// reason as <see cref="FileEvents"/> — fileId leaks via shared URLs. Keying on the tuple
+    /// makes a cross-tenant subscriber's channel structurally empty.
+    /// </summary>
+    public static string ThumbnailReady(Guid tenantId, Guid fileId) => $"thumbnail-ready:{tenantId}:{fileId}";
+
     // Per-(tenant, user) topic: only the owner of the quota receives the warning. The tenant
     // prefix prevents a cross-tenant userId collision (theoretical under Guid.NewGuid but pinned
     // at the topic level for defence-in-depth) from leaking a warning to another tenant.

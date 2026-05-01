@@ -13,4 +13,13 @@ internal static class RateLimitPolicies
     /// Bound from <c>RateLimiting:Auth</c>.
     /// </summary>
     public const string Auth = "auth";
+
+    /// <summary>
+    /// Per-user upload policy. Partitioned on the JWT <c>sub</c> claim with an IP fallback so
+    /// unauthenticated probes can't pool a user's budget. v0.1 does NOT attach this policy to
+    /// TUS — chunk uploads are explicitly exempted (STRG-082) because they are high-volume by
+    /// nature and not a brute-force target. Registered for future chunked-upload endpoints
+    /// that opt in via <c>RequireRateLimiting</c>. Bound from <c>RateLimiting:Upload</c>.
+    /// </summary>
+    public const string Upload = "upload";
 }

@@ -10,6 +10,7 @@ using Strg.Api.Auth;
 using Strg.Api.Cors;
 using Strg.Api.Endpoints;
 using Strg.Api.OpenApi;
+using Strg.Api.Plugins;
 using Strg.Api.RateLimiting;
 using Strg.Api.Security;
 using Strg.Application.Abstractions;
@@ -107,6 +108,13 @@ builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<StrgTusStore>();
 builder.Services.Configure<StrgTusOptions>(builder.Configuration.GetSection("Strg:Upload"));
 builder.Services.TryAddSingleton(TimeProvider.System);
+
+// ---- Plugin allowlist (STRG-089) ----
+// Binds the "Plugins" config array (operator-supplied {Id, Path} entries) and validates each
+// entry's id as reverse-DNS. Registers the resulting catalogue as IReadOnlyList<PluginConfig>
+// so the v0.2 AssemblyLoadContext loader has a single, validated source of truth. No directory
+// scan: a stray DLL on disk does not run unless its id appears here.
+builder.Services.AddStrgPluginConfiguration(builder.Configuration);
 
 // ---- WebDAV (STRG-067/069) ----
 // Pass IConfiguration so WebDavOptions (PropfindInfinityMaxItems etc.) binds against the live

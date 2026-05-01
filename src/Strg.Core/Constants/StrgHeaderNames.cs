@@ -28,4 +28,15 @@ public static class StrgHeaderNames
     /// document may invoke. Not exposed by <c>Microsoft.Net.Http.Headers.HeaderNames</c>.
     /// </summary>
     public const string PermissionsPolicy = "Permissions-Policy";
+
+    /// <summary>
+    /// <c>X-Permitted-Cross-Domain-Policies</c> response header (STRG-084). Legacy Adobe
+    /// Flash/Acrobat directive; the value <c>none</c> bars cross-domain policy files
+    /// (<c>crossdomain.xml</c>, <c>clientaccesspolicy.xml</c>) from being honoured by any
+    /// runtime that consults them. Even though Flash and the Acrobat browser plug-in are
+    /// long-deprecated, the header remains a defence-in-depth signal because PDF readers and
+    /// older corporate plug-ins still parse it. Absent from
+    /// <c>Microsoft.Net.Http.Headers.HeaderNames</c>.
+    /// </summary>
+    public const string XPermittedCrossDomainPolicies = "X-Permitted-Cross-Domain-Policies";
 }

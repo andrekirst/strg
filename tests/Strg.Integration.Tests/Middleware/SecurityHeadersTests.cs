@@ -8,19 +8,28 @@ using Xunit;
 namespace Strg.Integration.Tests.Middleware;
 
 /// <summary>
-/// STRG-010 TC-002 + AC3/AC4 + Security Review Checklist pins. Drives the real ASP.NET Core
-/// pipeline through <see cref="StrgWebApplicationFactory"/> so the assertions cover the
-/// production middleware wiring (<c>UseStrgSecurityHeaders</c> before <c>UseStrgOpenApi</c>
-/// and the <c>/dav</c> map, <c>ConfigureKestrel(AddServerHeader=false)</c>) — NOT a hand-rolled
-/// minimal host.
+/// STRG-010 TC-002 + AC3/AC4 + STRG-084 TC-001 + Security Review Checklist pins. Drives the
+/// real ASP.NET Core pipeline through <see cref="StrgWebApplicationFactory"/> so the
+/// assertions cover the production middleware wiring (<c>UseStrgSecurityHeaders</c> before
+/// <c>UseStrgOpenApi</c> and the <c>/dav</c> map, <c>ConfigureKestrel(AddServerHeader=false)</c>)
+/// — NOT a hand-rolled minimal host.
 /// </summary>
 public sealed class SecurityHeadersTests(StrgWebApplicationFactory factory) : IClassFixture<StrgWebApplicationFactory>
 {
     /// <summary>
-    /// TC-002 + AC3 — <c>X-Content-Type-Options: nosniff</c> is present on every response,
-    /// including short-circuiting ones (Swagger spec, health probes, the anonymous token
-    /// endpoint failure path). The theory probes multiple surfaces so a regression that
-    /// narrows the middleware's reach to only one branch fails here.
+    /// STRG-010 TC-002 + STRG-084 TC-001 + STRG-084 AC1/AC2 — every API response carries the
+    /// strg security-header set, including short-circuiting ones (Swagger spec, health probes,
+    /// the anonymous token endpoint failure path). The theory probes multiple surfaces so a
+    /// regression that narrows the middleware's reach to only one branch fails here.
+    ///
+    /// <para>
+    /// The assertion set covers BOTH the STRG-010 baseline (X-Content-Type-Options,
+    /// X-Frame-Options, Referrer-Policy, Permissions-Policy) AND the STRG-084 additions
+    /// (Content-Security-Policy with <c>default-src 'none'; frame-ancestors 'none';</c> and
+    /// <c>X-Permitted-Cross-Domain-Policies: none</c>). Permissions-Policy is checked for
+    /// BOTH <c>camera=()</c> (STRG-010 baseline) and <c>interest-cohort=()</c> (STRG-084
+    /// FLoC/Topics opt-out) so a regression that drops either token surfaces here.
+    /// </para>
     /// </summary>
     [Theory]
     [InlineData("/health/live")]
@@ -37,11 +46,11 @@ public sealed class SecurityHeadersTests(StrgWebApplicationFactory factory) : IC
         // contract is the same regardless of status; OnStarting fires before the response
         // body flushes.
         response.Headers.TryGetValues(HeaderNames.XContentTypeOptions, out var nosniff).Should().BeTrue(
-            $"'{path}' response must carry X-Content-Type-Options per STRG-010 AC3");
+            $"'{path}' response must carry X-Content-Type-Options per STRG-010 AC3 / STRG-084 AC1");
         nosniff!.Single().Should().Be("nosniff");
 
         response.Headers.TryGetValues(HeaderNames.XFrameOptions, out var frameOptions).Should().BeTrue(
-            $"'{path}' response must carry X-Frame-Options per STRG-010 AC4");
+            $"'{path}' response must carry X-Frame-Options per STRG-010 AC4 / STRG-084 AC2");
         frameOptions!.Single().Should().Be("DENY");
 
         response.Headers.TryGetValues(StrgHeaderNames.ReferrerPolicy, out var referrer).Should().BeTrue(
@@ -50,8 +59,27 @@ public sealed class SecurityHeadersTests(StrgWebApplicationFactory factory) : IC
 
         response.Headers.TryGetValues(StrgHeaderNames.PermissionsPolicy, out var permissions).Should().BeTrue(
             $"'{path}' response must carry Permissions-Policy");
-        permissions!.Single().Should().Contain("camera=()",
+        var permissionsValue = permissions!.Single();
+        permissionsValue.Should().Contain("camera=()",
             "the Permissions-Policy value locks down camera/microphone/geolocation per STRG-010");
+        permissionsValue.Should().Contain("interest-cohort=()",
+            "STRG-084 adds the FLoC/Topics opt-out token to Permissions-Policy");
+
+        // STRG-084 — strict CSP applied to every response. The pin checks for the literal
+        // value because both directives are load-bearing: default-src 'none' blocks every
+        // resource fetch, frame-ancestors 'none' duplicates X-Frame-Options for browsers
+        // that honour CSP but not the legacy header. A relaxed default-src would silently
+        // pass a startsWith check, hence the full-string assertion.
+        response.Headers.TryGetValues(HeaderNames.ContentSecurityPolicy, out var csp).Should().BeTrue(
+            $"'{path}' response must carry Content-Security-Policy per STRG-084 spec");
+        csp!.Single().Should().Be("default-src 'none'; frame-ancestors 'none';",
+            "STRG-084 fixes the API-host CSP to default-src 'none' + frame-ancestors 'none'");
+
+        // STRG-084 — defence-in-depth against legacy Flash/Acrobat plug-ins that consult
+        // crossdomain.xml.
+        response.Headers.TryGetValues(StrgHeaderNames.XPermittedCrossDomainPolicies, out var crossDomain).Should().BeTrue(
+            $"'{path}' response must carry X-Permitted-Cross-Domain-Policies per STRG-084 spec");
+        crossDomain!.Single().Should().Be("none");
     }
 
     /// <summary>
@@ -98,6 +126,9 @@ public sealed class SecurityHeadersTests(StrgWebApplicationFactory factory) : IC
     /// <c>UseStrgOpenApi</c> so the Swashbuckle short-circuit response (spec JSON) still
     /// carries the full header set. Swashbuckle writes the response synchronously and the
     /// <c>OnStarting</c>-based middleware is the only placement that survives that pattern.
+    /// STRG-084 widens this pin to the CSP + X-Permitted-Cross-Domain-Policies additions so a
+    /// future contributor who moves the security-headers middleware AFTER the OpenAPI
+    /// middleware would surface that regression specifically on this short-circuit path.
     /// </summary>
     [Fact]
     public async Task Openapi_spec_response_carries_security_headers()
@@ -109,5 +140,9 @@ public sealed class SecurityHeadersTests(StrgWebApplicationFactory factory) : IC
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.GetValues(HeaderNames.XContentTypeOptions).Single().Should().Be("nosniff");
         response.Headers.GetValues(HeaderNames.XFrameOptions).Single().Should().Be("DENY");
+        response.Headers.GetValues(HeaderNames.ContentSecurityPolicy).Single()
+            .Should().Be("default-src 'none'; frame-ancestors 'none';");
+        response.Headers.GetValues(StrgHeaderNames.XPermittedCrossDomainPolicies).Single()
+            .Should().Be("none");
     }
 }

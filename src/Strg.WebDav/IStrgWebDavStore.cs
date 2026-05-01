@@ -156,7 +156,7 @@ public interface IStrgWebDavStoreDocument : IStrgWebDavStoreItem
     /// <summary>
     /// Current version number for the <c>strg:version</c> custom property. Mirrors
     /// <see cref="Core.Domain.FileItem.VersionCount"/>, which is incremented by
-    /// <see cref="Plugin.Abstractions.Storage.IFileVersionStore"/> on each write. Exposed so clients that support
+    /// <see cref="Core.Services.IFileVersionStore"/> on each write. Exposed so clients that support
     /// versioned conflict resolution can see the live version without a separate GraphQL query.
     /// </summary>
     int Version { get; }

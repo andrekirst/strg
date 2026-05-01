@@ -22,7 +22,7 @@ public interface IFederationProvider : IStrgPlugin
 
     /// <summary>
     /// Handles an inbound federated request. The plugin owns end-to-end response writing; the
-    /// host has already routed the request to the plugin's <see cref="IEndpointModule.MountPath"/>
+    /// host has already routed the request to the plugin's <see cref="Endpoints.IEndpointModule.MountPath"/>
     /// — typically <c>/plugins/{name}/inbox</c> — and intentionally performs no protocol
     /// validation.
     /// </summary>

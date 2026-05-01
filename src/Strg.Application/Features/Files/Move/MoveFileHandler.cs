@@ -7,7 +7,7 @@ using Strg.Core.Constants;
 using Strg.Core.Domain;
 using Strg.Core.Events;
 using Strg.Plugin.Abstractions.Storage;
-using Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 
 namespace Strg.Application.Features.Files.Move;
 

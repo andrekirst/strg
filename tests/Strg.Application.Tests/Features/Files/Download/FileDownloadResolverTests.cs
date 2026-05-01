@@ -3,7 +3,7 @@ using NSubstitute;
 using Strg.Application.Features.Files.Download;
 using Strg.Core.Domain;
 using Strg.Plugin.Abstractions.Storage;
-using Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 using Xunit;
 
 namespace Strg.Application.Tests.Features.Files.Download;

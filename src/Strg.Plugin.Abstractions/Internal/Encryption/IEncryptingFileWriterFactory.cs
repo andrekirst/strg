@@ -1,4 +1,6 @@
-namespace Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Storage;
+
+namespace Strg.Plugin.Abstractions.Internal.Encryption;
 
 /// <summary>
 /// Builds an <see cref="IEncryptingFileWriter"/> bound to a specific

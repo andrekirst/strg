@@ -11,7 +11,7 @@ namespace Strg.Core.Domain;
 /// — only a DB row supports a sub-second sweep query.</para>
 ///
 /// <para><b>v0.1 encryption-at-finalize.</b> Per the writer's whole-stream contract
-/// (<see cref="Strg.Plugin.Abstractions.Storage.Encryption.IEncryptingFileWriter"/> wraps <c>AesGcmFileWriter</c> which cannot
+/// (<c>IEncryptingFileWriter</c> wraps <c>AesGcmFileWriter</c> which cannot
 /// resume across PATCH boundaries), chunks are appended raw to <see cref="TempStorageKey"/> + a
 /// <c>.part</c> sidecar, and the encrypting writer runs ONCE at the moment the upload reaches
 /// <see cref="DeclaredSize"/>. <see cref="WrappedDek"/> + <see cref="Algorithm"/> are populated at
@@ -47,13 +47,13 @@ public sealed class PendingUpload : TenantedEntity
     public long UploadOffset { get; set; }
 
     /// <summary>
-    /// KEK-wrapped DEK from <see cref="Strg.Plugin.Abstractions.Storage.Encryption.EncryptedWriteResult.WrappedDek"/>. Null until the
+    /// KEK-wrapped DEK from <c>EncryptedWriteResult.WrappedDek</c>. Null until the
     /// final chunk drives the encrypting-writer pass — see class summary.
     /// </summary>
     public byte[]? WrappedDek { get; set; }
 
     /// <summary>
-    /// Algorithm name from <see cref="Strg.Plugin.Abstractions.Storage.Encryption.EncryptedWriteResult.Algorithm"/>. Persisted to
+    /// Algorithm name from <c>EncryptedWriteResult.Algorithm</c>. Persisted to
     /// <see cref="FileKey.Algorithm"/> at finalize. Null until encryption has run.
     /// </summary>
     public string? Algorithm { get; set; }
@@ -79,7 +79,7 @@ public sealed class PendingUpload : TenantedEntity
 
     /// <summary>
     /// Flips to <c>true</c> after the finalize DB transaction commits but BEFORE
-    /// <see cref="Strg.Plugin.Abstractions.Storage.IStorageProvider.MoveAsync"/> runs. STRG-036's sweep skips
+    /// <c>IStorageProvider.MoveAsync</c> runs. STRG-036's sweep skips
     /// <c>IsCompleted = true</c> rows within a configurable safety window so an in-flight
     /// MoveAsync does not race the reaper.
     /// </summary>

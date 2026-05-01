@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using Strg.Plugin.Abstractions.Storage;
-using Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 
 namespace Strg.Infrastructure.Storage.Encryption;
 

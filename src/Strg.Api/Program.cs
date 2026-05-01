@@ -19,7 +19,7 @@ using Strg.Core.Domain;
 using Strg.Core.Identity;
 using Strg.Core.Services;
 using Strg.Plugin.Abstractions.Storage;
-using Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 using Strg.Infrastructure.Auditing;
 using Strg.Infrastructure.BackgroundJobs;
 using Strg.GraphQl.DataLoaders;

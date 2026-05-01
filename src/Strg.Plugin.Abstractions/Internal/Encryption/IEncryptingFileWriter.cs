@@ -1,4 +1,6 @@
-namespace Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Storage;
+
+namespace Strg.Plugin.Abstractions.Internal.Encryption;
 
 /// <summary>
 /// Explicit collaborator — NOT an <see cref="IStorageProvider"/> decorator — that encrypts file

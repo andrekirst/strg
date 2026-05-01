@@ -1,4 +1,4 @@
-namespace Strg.Plugin.Abstractions.Storage.Encryption;
+namespace Strg.Plugin.Abstractions.Internal.Encryption;
 
 /// <summary>
 /// Abstraction over the Key Encryption Key (KEK) — the long-lived master key that wraps the

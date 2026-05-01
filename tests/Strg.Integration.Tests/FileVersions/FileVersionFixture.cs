@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Constants;
 using Strg.Core.Domain;
 using Strg.Plugin.Abstractions.Storage;
-using Strg.Plugin.Abstractions.Storage.Encryption;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 using Strg.Infrastructure.Storage.Encryption;
 using Strg.Integration.Tests.Upload;
 

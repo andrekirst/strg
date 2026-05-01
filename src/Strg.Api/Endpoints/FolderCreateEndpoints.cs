@@ -1,5 +1,6 @@
 using Mediator;
 using Strg.Api.Auth;
+using Strg.Api.Validators;
 using Strg.Application.Features.Folders.Create;
 using Strg.Core;
 using Strg.Core.Domain;
@@ -38,6 +39,7 @@ public static class FolderCreateEndpoints
     {
         app.MapPost("/api/v1/drives/{driveId:guid}/folders", CreateFolderAsync)
             .RequireAuthorization(AuthPolicies.FilesWrite)
+            .AddEndpointFilter<ValidationProblemDetailsFilter<CreateFolderRequest>>()
             .WithName("CreateFolder")
             .WithTags("Files")
             .WithSummary("Create a directory FileItem at a virtual path; auto-creates missing parent segments.")
@@ -46,10 +48,13 @@ public static class FolderCreateEndpoints
                 "yet are auto-created in order, with ParentId chained to the previous segment, " +
                 "so a single call materializes the entire path. The call is idempotent: re-POSTing " +
                 "the same path returns the existing folder row with no duplicate. A path segment " +
-                "that already exists as a non-directory FILE returns 409 Conflict. Path traversal, " +
-                "reserved names, or other malformed input return 400 InvalidPath. A missing target " +
-                "drive returns 404. No physical directory is created in the storage backend — " +
-                "strg uses virtual paths and a flat blob store.");
+                "that already exists as a non-directory FILE returns 409 Conflict. Empty path or " +
+                "path containing '..' is rejected by the request-body validator with 400 and an " +
+                "RFC 7807 ValidationProblemDetails envelope. Other malformed input the validator " +
+                "doesn't catch (reserved names, null bytes) is rejected by the handler with 400 " +
+                "and a {code:'InvalidPath',message} envelope. A missing target drive returns 404. " +
+                "No physical directory is created in the storage backend — strg uses virtual " +
+                "paths and a flat blob store.");
 
         return app;
     }

@@ -118,6 +118,14 @@ builder.Services.AddStrgWebDav(builder.Configuration);
 // validated endpoints) can resolve IValidator<T> from DI without hand-wiring each.
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
+// AddFluentValidationAutoValidation hooks into MVC's IModelBinder pipeline; the API surface here
+// is minimal-API only (RequestDelegateFactory binds bodies, MVC never runs), so this call is a
+// no-op for current routes. Registered for forward compatibility — if MVC controllers are ever
+// added, validators auto-trigger without an extra wiring step. The load-bearing surface for
+// minimal-API endpoints is the per-route ValidationProblemDetailsFilter<TRequest> filter wired
+// in MapFolderCreateEndpoints / MapFileMoveEndpoints / MapFileCopyEndpoints.
+builder.Services.AddFluentValidationAutoValidation();
+
 // ---- OpenAPI / Swagger (STRG-009) ----
 // Spec + UI wiring. The UI is gated by environment in UseStrgOpenApi below; registration of
 // the generator itself is always on so the JSON/YAML endpoints work in production.

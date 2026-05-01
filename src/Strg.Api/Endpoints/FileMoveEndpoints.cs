@@ -38,11 +38,14 @@ public static class FileMoveEndpoints
                 "on 200 OK. Within-drive moves (file or directory) are pure metadata mutations — " +
                 "the bytes never relocate. Cross-drive single-file moves copy the bytes onto the " +
                 "target drive and delete the source (best-effort). Cross-drive directory moves " +
-                "return 400 CrossDriveDirectoryUnsupported in v1.5 — see follow-up issue. Path " +
-                "traversal or other malformed TargetPath returns 400 InvalidPath; an existing " +
-                "file at the target path or descendant within the target directory prefix " +
-                "returns 409 Conflict; files in another drive collapse to 404 (deliberately, to " +
-                "prevent cross-drive enumeration).");
+                "return 400 CrossDriveDirectoryUnsupported in v1.5 — see follow-up issue. Empty " +
+                "TargetPath or one containing '..' is rejected by the request-body validator " +
+                "with 400 and an RFC 7807 ValidationProblemDetails envelope. Other malformed " +
+                "TargetPath the validator doesn't catch (reserved names, null bytes) is rejected " +
+                "by the handler with 400 and a {code:'InvalidPath',message} envelope. An " +
+                "existing file at the target path or descendant within the target directory " +
+                "prefix returns 409 Conflict; files in another drive collapse to 404 " +
+                "(deliberately, to prevent cross-drive enumeration).");
 
         return app;
     }

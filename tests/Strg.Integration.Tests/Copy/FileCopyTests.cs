@@ -206,6 +206,31 @@ public sealed class FileCopyTests(FileCopyFixture fx) : IClassFixture<FileCopyFi
     }
 
     [Fact]
+    public async Task EmptyTargetPath_Returns400_AsValidationProblemDetails()
+    {
+        // Pins the NotEmpty rule on CopyFileRequestValidator at the wire level. Without this,
+        // a regression that drops the rule would still pass unit tests in isolation but ship
+        // a contract violation to clients. Folder has parity (TC001_EmptyPath_…); this is the
+        // copy-endpoint analogue.
+        var folder = $"empty-tp-{Guid.NewGuid():N}";
+        var sourceId = await fx.SeedFileAsync($"{folder}/source.txt");
+
+        var token = await fx.AuthenticateAsync();
+        using var client = fx.CreateAuthenticatedClient(token);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/drives/{fx.DriveId}/files/{sourceId}/copy",
+            new { targetPath = "", targetDriveId = (Guid?)null });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDocument>();
+        problem.Should().NotBeNull();
+        problem!.Errors.Should().ContainKey("targetPath");
+        problem.Errors!["targetPath"].Should().ContainMatch("*required*");
+    }
+
+    [Fact]
     public async Task TC006_CopyFile_FromWrongDrive_Returns404()
     {
         // Cross-drive id mismatch on SOURCE collapses to 404 (enumeration-oracle protection).

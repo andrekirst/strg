@@ -146,6 +146,31 @@ public sealed class FileMoveTests(FileMoveFixture fx) : IClassFixture<FileMoveFi
     }
 
     [Fact]
+    public async Task EmptyTargetPath_Returns400_AsValidationProblemDetails()
+    {
+        // Pins the NotEmpty rule on MoveFileRequestValidator at the wire level. Without this,
+        // a regression that drops the rule would still pass unit tests in isolation but ship
+        // a contract violation to clients. Folder has parity (TC001_EmptyPath_…); this is the
+        // move-endpoint analogue.
+        var folder = $"empty-tp-{Guid.NewGuid():N}";
+        var fileId = await fx.SeedFileAsync($"{folder}/source.txt");
+
+        var token = await fx.AuthenticateAsync();
+        using var client = fx.CreateAuthenticatedClient(token);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/drives/{fx.DriveId}/files/{fileId}/move",
+            new { targetPath = "", targetDriveId = (Guid?)null });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDocument>();
+        problem.Should().NotBeNull();
+        problem!.Errors.Should().ContainKey("targetPath");
+        problem.Errors!["targetPath"].Should().ContainMatch("*required*");
+    }
+
+    [Fact]
     public async Task TC005_DirectoryMove_WithinDrive_Returns200_RootAndDescendantsRewritten()
     {
         // Phase 2 — flipped from rejection-pin to happy-path. Single descendant; the N-descendant

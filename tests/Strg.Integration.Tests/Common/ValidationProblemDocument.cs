@@ -19,7 +19,7 @@ internal sealed record ValidationProblemDocument
     public string? Title { get; init; }
 
     [JsonPropertyName("status")]
-    public int Status { get; init; }
+    public int? Status { get; init; }
 
     [JsonPropertyName("errors")]
     public Dictionary<string, string[]>? Errors { get; init; }

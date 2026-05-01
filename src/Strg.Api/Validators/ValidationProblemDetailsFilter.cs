@@ -29,9 +29,17 @@ namespace Strg.Api.Validators;
 /// non-HTTP caller (e.g. internal CLI, GraphQL mutation that bypasses this filter) still goes
 /// through <c>Parse</c>; the filter is the front-door enforcement, <c>Parse</c> is the
 /// last-line-of-defence guard.</para>
+///
+/// <para><b>Missing-validator policy.</b> A missing <see cref="IValidator{TRequest}"/>
+/// registration is treated as a configuration bug: the filter is wired explicitly per route, so
+/// a forgotten DI registration would otherwise ship to production with zero shape-level
+/// enforcement. The filter throws <see cref="InvalidOperationException"/> on the first request
+/// instead — surfacing the misconfig loudly via the global problem-details middleware rather
+/// than silently relying on <c>StoragePath.Parse</c> to catch what a deleted validator would
+/// have rejected.</para>
 /// </summary>
 public sealed class ValidationProblemDetailsFilter<TRequest> : IEndpointFilter
-    where TRequest : notnull
+    where TRequest : class
 {
     public async ValueTask<object?> InvokeAsync(
         EndpointFilterInvocationContext context,
@@ -40,22 +48,20 @@ public sealed class ValidationProblemDetailsFilter<TRequest> : IEndpointFilter
         // Locate the request body in the bound argument list. Minimal API parameter binding
         // produces the body as one of the arguments at a position the framework picks; OfType
         // avoids a brittle index assumption and tolerates additional arguments (route values,
-        // injected services).
+        // injected services). A null result means the route does not bind a TRequest body
+        // (e.g. only route values / query parameters) — pass through.
         var request = context.Arguments.OfType<TRequest>().FirstOrDefault();
         if (request is null)
         {
             return await next(context);
         }
 
-        var validator = context.HttpContext.RequestServices.GetService<IValidator<TRequest>>();
-        if (validator is null)
-        {
-            // No validator registered for TRequest → behave as a no-op, NOT a failure. Matches
-            // FluentValidation.AspNetCore's "validators are optional" semantics so adding the
-            // filter to a route whose request type has no validator yet does not produce a
-            // surprise 500.
-            return await next(context);
-        }
+        var validator = context.HttpContext.RequestServices.GetService<IValidator<TRequest>>()
+            ?? throw new InvalidOperationException(
+                $"No IValidator<{typeof(TRequest).Name}> is registered. " +
+                $"ValidationProblemDetailsFilter<{typeof(TRequest).Name}> requires a corresponding validator " +
+                "to be registered via AddValidatorsFromAssemblyContaining<>(). Remove the filter " +
+                "from the endpoint or add the missing validator.");
 
         var result = await validator.ValidateAsync(request, context.HttpContext.RequestAborted);
         if (result.IsValid)

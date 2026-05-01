@@ -46,10 +46,13 @@ public static class FileCopyEndpoints
                 "FileItem on 201 Created with a Location header pointing at the new file. The " +
                 "source file is never touched. A new FileVersion (version 1) is always created " +
                 "for the copy. Quota is reserved against the caller's user before bytes are " +
-                "relocated; insufficient storage returns 507. Path traversal or other malformed " +
-                "TargetPath returns 400 InvalidPath; an existing file at the target path returns " +
-                "409 Conflict; files in another drive collapse to 404. Directory copy returns 400 " +
-                "DirectoryCopyUnsupported in v1.5 — see follow-up issue.");
+                "relocated; insufficient storage returns 507. Empty TargetPath or one containing " +
+                "'..' is rejected by the request-body validator with 400 and an RFC 7807 " +
+                "ValidationProblemDetails envelope. Other malformed TargetPath the validator " +
+                "doesn't catch (reserved names, null bytes) is rejected by the handler with 400 " +
+                "and a {code:'InvalidPath',message} envelope. An existing file at the target " +
+                "path returns 409 Conflict; files in another drive collapse to 404. Directory " +
+                "copy returns 400 DirectoryCopyUnsupported in v1.5 — see follow-up issue.");
 
         return app;
     }

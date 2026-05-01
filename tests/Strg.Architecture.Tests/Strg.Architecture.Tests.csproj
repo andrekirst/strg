@@ -32,6 +32,7 @@
     <ProjectReference Include="..\..\src\Strg.Application\Strg.Application.csproj" />
     <ProjectReference Include="..\..\src\Strg.GraphQl\Strg.GraphQl.csproj" />
     <ProjectReference Include="..\..\src\Strg.Infrastructure\Strg.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Strg.Plugin.Abstractions\Strg.Plugin.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Strg.WebDav\Strg.WebDav.csproj" />
   </ItemGroup>
 

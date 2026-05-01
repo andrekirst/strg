@@ -1,4 +1,4 @@
-namespace Strg.Core.Storage;
+namespace Strg.Plugin.Abstractions.Storage;
 
 /// <summary>
 /// Common metadata for any item (file or directory) returned by an <see cref="IStorageProvider"/>.

@@ -5,7 +5,7 @@ namespace Strg.WebDav;
 /// <summary>
 /// STRG-070 — read-side stream wrapper that feeds every byte it yields through an
 /// <see cref="IncrementalHash"/> while tracking the total byte count. Designed for the WebDAV PUT
-/// path: the HTTP request body is the source, <see cref="Core.Storage.IStorageProvider.WriteAsync"/>
+/// path: the HTTP request body is the source, <see cref="Plugin.Abstractions.Storage.IStorageProvider.WriteAsync"/>
 /// is the sink, and the hash/bytes fall out as a side-effect of the <c>CopyToAsync</c> pump.
 ///
 /// <para><b>Why incremental, not a post-write pass.</b> A second read pass to compute SHA-256

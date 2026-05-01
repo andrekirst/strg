@@ -5,7 +5,7 @@ using Strg.Application.Auditing;
 using Strg.Core;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 
 namespace Strg.Application.Features.Folders.Create;
 

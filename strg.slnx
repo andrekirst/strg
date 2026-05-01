@@ -10,6 +10,7 @@
     <Project Path="src/Strg.Core/Strg.Core.csproj" />
     <Project Path="src/Strg.GraphQl/Strg.GraphQl.csproj" />
     <Project Path="src/Strg.Infrastructure/Strg.Infrastructure.csproj" />
+    <Project Path="src/Strg.Plugin.Abstractions/Strg.Plugin.Abstractions.csproj" />
     <Project Path="src/Strg.WebDav/Strg.WebDav.csproj" />
   </Folder>
   <Folder Name="/tests/">

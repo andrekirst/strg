@@ -29,7 +29,7 @@ public static class StrgUploadKeys
     /// <summary>
     /// Builds the temp-namespaced storage key where the encrypting writer lands the ciphertext
     /// envelope before promotion to the final key. Both Guids are formatted with <c>N</c> (32
-    /// lowercase hex chars, no dashes) so the resulting path passes <see cref="Storage.StoragePath.Parse"/>
+    /// lowercase hex chars, no dashes) so the resulting path passes <c>StoragePath.Parse</c>
     /// and stays free of dash-separator quirks on opinionated storage backends.
     /// </summary>
     public static string TempKey(Guid driveId, Guid uploadId)

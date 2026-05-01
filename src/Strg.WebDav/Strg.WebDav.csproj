@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Strg.Core\Strg.Core.csproj" />
     <ProjectReference Include="..\Strg.Infrastructure\Strg.Infrastructure.csproj" />
+    <ProjectReference Include="..\Strg.Plugin.Abstractions\Strg.Plugin.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

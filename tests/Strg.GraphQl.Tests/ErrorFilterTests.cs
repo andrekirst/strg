@@ -1,6 +1,6 @@
 using HotChocolate.Execution;
 using Microsoft.Extensions.DependencyInjection;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.GraphQl.Tests.Helpers;
 using Xunit;
 

@@ -1,7 +1,8 @@
 using Strg.Application.Features.Files.Download;
 using Strg.Core;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Internal.Encryption;
 
 namespace Strg.Application.Features.Files.DownloadVersion;
 

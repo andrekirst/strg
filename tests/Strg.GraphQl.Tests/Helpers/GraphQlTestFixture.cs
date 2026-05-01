@@ -7,7 +7,7 @@ using Strg.Application.Abstractions;
 using Strg.Application.DependencyInjection;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.GraphQl.Errors;
 using Strg.Infrastructure.Auditing;
 using Strg.Infrastructure.Data;

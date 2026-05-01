@@ -1,4 +1,4 @@
-namespace Strg.Core.Storage;
+namespace Strg.Plugin.Abstractions.Storage;
 
 public interface IStorageProviderConfig
 {

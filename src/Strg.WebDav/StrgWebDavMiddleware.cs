@@ -12,7 +12,7 @@ using Strg.Core.Constants;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Identity;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 
 namespace Strg.WebDav;
 

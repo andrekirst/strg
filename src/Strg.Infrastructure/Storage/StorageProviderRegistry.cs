@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 
 namespace Strg.Infrastructure.Storage;
 

@@ -2,7 +2,7 @@ namespace Strg.Core.Domain;
 
 /// <summary>
 /// Per-<see cref="FileVersion"/> Data Encryption Key (DEK) envelope. Contains the DEK wrapped
-/// with the Key Encryption Key (KEK, held by <see cref="Storage.IKeyProvider"/>). Stored in a
+/// with the Key Encryption Key (KEK, held by <c>IKeyProvider</c>). Stored in a
 /// separate table — NOT alongside the file on disk — so an attacker who exfiltrates the storage
 /// volume does not also exfiltrate the keys needed to read it.
 ///

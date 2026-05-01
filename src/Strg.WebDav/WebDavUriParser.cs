@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Http;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 
 namespace Strg.WebDav;
 

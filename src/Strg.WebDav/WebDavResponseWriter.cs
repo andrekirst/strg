@@ -135,7 +135,7 @@ internal static class WebDavResponseWriter
     /// what we do. An unsatisfiable range (start past end of file) returns
     /// <c>416 Range Not Satisfiable</c> with an empty body.</para>
     ///
-    /// <para><b>Seek via provider.</b> <see cref="Core.Storage.IStorageProvider.ReadAsync"/>
+    /// <para><b>Seek via provider.</b> <see cref="Plugin.Abstractions.Storage.IStorageProvider.ReadAsync"/>
     /// accepts a byte offset so seeking is a provider-level concern — the local FS provider
     /// wraps <c>FileStream.Seek</c>, and S3 future providers will emit a ranged GET. The length
     /// is enforced here by wrapping the source in a byte counter so we stop copying when the

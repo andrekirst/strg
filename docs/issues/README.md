@@ -221,7 +221,8 @@ docs/issues/
     ├── STRG-067 through STRG-074   (WebDAV server)
     ├── STRG-082 through STRG-089   (security, plugin interfaces)
     ├── STRG-200 through STRG-203   (testing infrastructure)
-    └── STRG-300 through STRG-328   (inbox feature: v0.1 pipeline + v0.2 advanced)
+    ├── STRG-300 through STRG-328   (inbox feature: v0.1 pipeline + v0.2 advanced)
+    └── STRG-329 through STRG-344   (Phase 15 thumbnails — images only)
 ```
 
 ### Phase 14: Inbox Feature (v0.2 — advanced conditions + actions)
@@ -237,6 +238,29 @@ docs/issues/
 | STRG-326 | Bulk re-run inbox rules with filter | STRG-308, STRG-311 |
 | STRG-327 | simulateInboxRule dry-run mutation | STRG-306, STRG-302, STRG-320 |
 | STRG-328 | System-provided rule templates | STRG-302, STRG-310 |
+
+### Phase 15: Thumbnails (v0.2 — images only, document formats deferred to Phase 16)
+
+ADR: `docs/architecture/06-thumbnails.md`. Tranche proposal: GitHub issue #52.
+
+| Issue | Title | Depends On |
+|---|---|---|
+| STRG-329 | ThumbnailEntry entity + EF config + migration + repository | STRG-031, STRG-061 |
+| STRG-330 | IThumbnailService + IThumbnailGenerator + registry + MimeSniffer + key builder | STRG-329 |
+| STRG-334 | ThumbnailOptions configuration + startup validation | — |
+| STRG-335 | ADR — image library selection + quota policy + encrypted-drive carve-out | — |
+| STRG-336 | MagickNetImageThumbnailer (Magick.NET-Q8-x64) | STRG-330, STRG-334, STRG-335 |
+| STRG-337 | HEIC/HEIF + EXIF orientation + metadata stripping | STRG-336 |
+| STRG-338 | Resource safeguards — pixel cap + timeout + max-source-size | STRG-334, STRG-336 |
+| STRG-331 | ThumbnailGenerationConsumer + encrypted-drive guard + dead-letter observer | STRG-329, STRG-330, STRG-334, STRG-336, STRG-061 |
+| STRG-332 | ThumbnailCleanupConsumer + extend FileVersionStore.PruneVersionsAsync | STRG-329, STRG-331 |
+| STRG-333 | strg_thumbnails_* metrics extension to StrgMetrics | STRG-331 |
+| STRG-339 | REST GET /files/{fileId}/thumbnail with ETag/304/202-pending | STRG-329, STRG-331 |
+| STRG-341 | ThumbnailReadyEvent + GraphQlSubscriptionPublisher wiring | STRG-331 |
+| STRG-340 | GraphQL FileItem.thumbnail field + DataLoader + thumbnailReady subscription | STRG-339, STRG-341 |
+| STRG-342 | Admin-triggered backfill + ThumbnailGenerationRequestedEvent | STRG-331, STRG-340 |
+| STRG-343 | Integration tests — happy path, bomb, encrypted-drive, prune, extension-point | STRG-336, STRG-337, STRG-338, STRG-339, STRG-340, STRG-342 |
+| STRG-344 | Sandbox hardening follow-up — design-only | — |
 
 ---
 
@@ -259,6 +283,14 @@ docs/issues/
 | STRG-115 | Docker Compose deployment config |
 | STRG-116 | PostgreSQL migration support |
 | STRG-117 | Redis rate limiting (replace in-memory) |
+
+### Phase 16 — Document Thumbnails (reserved by Phase 15 / issue #52)
+
+| Planned ID | Title |
+|---|---|
+| STRG-345 | PDF thumbnails via PDFtoImage / Docnet.Core (PDFium) |
+| STRG-346 | Office thumbnails via LibreOffice headless (opt-in, feature-flagged) |
+| STRG-347 | IEncryptingFileReader extraction — unblocks encrypted-drive thumbnails AND encrypted download |
 
 ### v0.3 Milestone
 

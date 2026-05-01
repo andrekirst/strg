@@ -1,5 +1,6 @@
 using Mediator;
 using Strg.Api.Auth;
+using Strg.Api.Validators;
 using Strg.Application.Features.Files.Copy;
 using Strg.Core;
 using Strg.Core.Domain;
@@ -36,6 +37,7 @@ public static class FileCopyEndpoints
     {
         app.MapPost("/api/v1/drives/{driveId:guid}/files/{fileId:guid}/copy", CopyFileAsync)
             .RequireAuthorization(AuthPolicies.FilesWrite)
+            .AddEndpointFilter<ValidationProblemDetailsFilter<CopyFileRequest>>()
             .WithName("CopyFile")
             .WithTags("Files")
             .WithSummary("Copy a file to a new path, optionally across drives.")

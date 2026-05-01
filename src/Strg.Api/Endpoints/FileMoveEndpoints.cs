@@ -1,5 +1,6 @@
 using Mediator;
 using Strg.Api.Auth;
+using Strg.Api.Validators;
 using Strg.Application.Features.Files.Move;
 using Strg.Core.Domain;
 
@@ -28,6 +29,7 @@ public static class FileMoveEndpoints
     {
         app.MapPost("/api/v1/drives/{driveId:guid}/files/{fileId:guid}/move", MoveFileAsync)
             .RequireAuthorization(AuthPolicies.FilesWrite)
+            .AddEndpointFilter<ValidationProblemDetailsFilter<MoveFileRequest>>()
             .WithName("MoveFile")
             .WithTags("Files")
             .WithSummary("Move a file or directory to a new path, optionally across drives.")

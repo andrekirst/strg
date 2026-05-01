@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Strg.Core.Auditing;
+using Strg.Integration.Tests.Common;
 using Xunit;
 
 namespace Strg.Integration.Tests.Folders;
@@ -130,8 +131,14 @@ public sealed class FolderCreateTests(FolderCreateFixture fx) : IClassFixture<Fo
     }
 
     [Fact]
-    public async Task TC004_PathTraversal_Returns400()
+    public async Task TC004_PathTraversal_Returns400_AsValidationProblemDetails()
     {
+        // STRG-085: traversal is now blocked at the request-body validator
+        // (CreateFolderRequestValidator) BEFORE the handler runs, so the wire envelope is RFC 7807
+        // ValidationProblemDetails — not the legacy {code,message} shape that StoragePath.Parse
+        // would have produced inside the handler. The handler-side StoragePath.Parse check is
+        // retained as belt-and-suspenders for non-HTTP callers; this test pins the front-door
+        // contract that HTTP traversal attempts surface as the validation envelope.
         var token = await fx.AuthenticateAsync();
         using var client = fx.CreateAuthenticatedClient(token);
 
@@ -141,9 +148,32 @@ public sealed class FolderCreateTests(FolderCreateFixture fx) : IClassFixture<Fo
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var body = await response.Content.ReadFromJsonAsync<FolderErrorDto>();
-        body.Should().NotBeNull();
-        body!.Code.Should().Be("InvalidPath", "AC: traversal must surface as the InvalidPath error code, not a generic 400");
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDocument>();
+        problem.Should().NotBeNull();
+        problem!.Title.Should().Be("Validation failed");
+        problem.Status.Should().Be(400);
+        problem.Errors.Should().ContainKey("path");
+        problem.Errors!["path"].Should().ContainMatch("*'..'*");
+    }
+
+    [Fact]
+    public async Task TC001_EmptyPath_Returns400_AsValidationProblemDetails()
+    {
+        // STRG-085 TC-001 — POST /folders with empty path is now caught by the request-body
+        // validator (NotEmpty rule on Path). The handler never runs.
+        var token = await fx.AuthenticateAsync();
+        using var client = fx.CreateAuthenticatedClient(token);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/drives/{fx.DriveId}/folders",
+            new { path = "" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDocument>();
+        problem.Should().NotBeNull();
+        problem!.Errors.Should().ContainKey("path");
+        problem.Errors!["path"].Should().ContainMatch("*required*");
     }
 
     [Fact]

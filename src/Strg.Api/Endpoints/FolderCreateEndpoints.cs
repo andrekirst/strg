@@ -1,5 +1,6 @@
 using Mediator;
 using Strg.Api.Auth;
+using Strg.Api.Validators;
 using Strg.Application.Features.Folders.Create;
 using Strg.Core;
 using Strg.Core.Domain;
@@ -38,6 +39,7 @@ public static class FolderCreateEndpoints
     {
         app.MapPost("/api/v1/drives/{driveId:guid}/folders", CreateFolderAsync)
             .RequireAuthorization(AuthPolicies.FilesWrite)
+            .AddEndpointFilter<ValidationProblemDetailsFilter<CreateFolderRequest>>()
             .WithName("CreateFolder")
             .WithTags("Files")
             .WithSummary("Create a directory FileItem at a virtual path; auto-creates missing parent segments.")

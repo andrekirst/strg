@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Strg.Core.Auditing;
 using Strg.Core.Constants;
 using Strg.Core.Domain;
+using Strg.Integration.Tests.Common;
 using Xunit;
 
 namespace Strg.Integration.Tests.Copy;
@@ -176,8 +177,14 @@ public sealed class FileCopyTests(FileCopyFixture fx) : IClassFixture<FileCopyFi
     }
 
     [Fact]
-    public async Task TC005_PathTraversal_Returns400_InvalidPath()
+    public async Task TC005_PathTraversal_Returns400_AsValidationProblemDetails()
     {
+        // STRG-085: traversal is now blocked at the request-body validator
+        // (CopyFileRequestValidator) BEFORE the handler runs, so the wire envelope is RFC 7807
+        // ValidationProblemDetails — not the legacy {code,message} shape that StoragePath.Parse
+        // would have produced inside the handler. The handler-side StoragePath.Parse check is
+        // retained as belt-and-suspenders for non-HTTP callers; this test pins the front-door
+        // contract that HTTP traversal attempts surface as the validation envelope.
         var folder = $"tc005-{Guid.NewGuid():N}";
         var sourceId = await fx.SeedFileAsync($"{folder}/source.txt");
 
@@ -189,8 +196,13 @@ public sealed class FileCopyTests(FileCopyFixture fx) : IClassFixture<FileCopyFi
             new { targetPath = "../../etc/passwd", targetDriveId = (Guid?)null });
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var body = await response.Content.ReadFromJsonAsync<ErrorResponseDto>();
-        body!.Code.Should().Be("InvalidPath");
+
+        var problem = await response.Content.ReadFromJsonAsync<ValidationProblemDocument>();
+        problem.Should().NotBeNull();
+        problem!.Title.Should().Be("Validation failed");
+        problem.Status.Should().Be(400);
+        problem.Errors.Should().ContainKey("targetPath");
+        problem.Errors!["targetPath"].Should().ContainMatch("*'..'*");
     }
 
     [Fact]

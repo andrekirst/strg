@@ -18,7 +18,16 @@ internal sealed class RateLimitOptions
     /// to any endpoint-specific named policy — a token-endpoint request consumes both Auth and
     /// Global budgets for its IP partition.
     /// </summary>
-    public RateLimitPolicyOptions Global { get; set; } = new() { PermitLimit = 1000, WindowSeconds = 60 };
+    public RateLimitPolicyOptions Global { get; set; } = new() { PermitLimit = 300, WindowSeconds = 60 };
+
+    /// <summary>
+    /// Per-user budget for the <see cref="RateLimitPolicies.Upload"/> named policy. Partitioned
+    /// on the JWT <c>sub</c> claim (with IP fallback for unauthenticated callers). v0.1 does not
+    /// attach this policy to the TUS endpoint — STRG-082 explicitly excludes TUS chunk uploads
+    /// from rate limiting (large file uploads, not a brute-force target). The policy is
+    /// registered so future chunked-upload endpoints can opt in via <c>RequireRateLimiting</c>.
+    /// </summary>
+    public RateLimitPolicyOptions Upload { get; set; } = new() { PermitLimit = 100, WindowSeconds = 60 };
 }
 
 /// <summary>

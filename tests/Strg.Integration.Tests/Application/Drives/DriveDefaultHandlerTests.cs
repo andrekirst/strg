@@ -11,7 +11,7 @@ using Strg.Application.Features.Drives.SetDefault;
 using Strg.Core.Auditing;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.Infrastructure.Auditing;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Storage;

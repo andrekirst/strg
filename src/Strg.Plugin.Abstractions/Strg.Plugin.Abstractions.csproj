@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!--
+      Plugin contract surface needs IServiceCollection, IConfiguration, IEndpointRouteBuilder,
+      and HttpContext — all live in Microsoft.AspNetCore.App. Strg.Core stays at zero NuGet/
+      framework deps; this project sits BELOW Strg.Core in the dep graph (Core does not
+      reference back, verified: zero `using Strg.Core.Storage` in src/Strg.Core/Domain/).
+      ClaimsIdentity comes from System.Security.Claims in the BCL — no extra reference.
+    -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Strg.Architecture.Tests" />
+  </ItemGroup>
+
+</Project>

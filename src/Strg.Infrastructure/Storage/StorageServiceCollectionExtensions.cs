@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Storage.Encryption;
 using Strg.Infrastructure.Storage.Encryption;
 
 namespace Strg.Infrastructure.Storage;

@@ -9,7 +9,7 @@ namespace Strg.Api.Validators;
 /// dispatch; on failure the response is RFC 7807 <c>ValidationProblemDetails</c> (HTTP 400).
 ///
 /// <para>Path traversal (<c>..</c>) is blocked here AND inside the handler via
-/// <see cref="Strg.Core.Storage.StoragePath.Parse"/> — see the belt-and-suspenders rationale on
+/// <see cref="Strg.Plugin.Abstractions.Storage.StoragePath.Parse"/> — see the belt-and-suspenders rationale on
 /// <see cref="ValidationProblemDetailsFilter{TRequest}"/>.</para>
 /// </summary>
 public sealed class MoveFileRequestValidator : AbstractValidator<MoveFileRequest>

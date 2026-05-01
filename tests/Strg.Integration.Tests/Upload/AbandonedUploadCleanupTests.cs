@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Strg.Core.Constants;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.Infrastructure.BackgroundJobs;
 using Strg.Infrastructure.Storage;
 using Strg.Infrastructure.Upload;

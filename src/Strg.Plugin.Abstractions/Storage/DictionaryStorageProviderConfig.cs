@@ -1,26 +1,25 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace Strg.Core.Storage;
+namespace Strg.Plugin.Abstractions.Storage;
 
 /// <summary>
 /// In-memory <see cref="IStorageProviderConfig"/> backed by a string dictionary. Used by tests
-/// and by the bootstrap path that deserializes <see cref="Domain.Drive.ProviderConfig"/> JSON
-/// into a flat key/value view before handing it to the registry. Kept in Core because it has
-/// no external dependencies and provider factories register in Infrastructure need to accept
-/// it without a reverse reference.
+/// and by the bootstrap path that deserializes a drive's <c>ProviderConfig</c> JSON into a flat
+/// key/value view before handing it to the registry. Lives next to the abstractions so callers
+/// across every layer (Application, Infrastructure, WebDav) can construct it without dragging in
+/// implementation projects.
 /// </summary>
 public sealed class DictionaryStorageProviderConfig(IDictionary<string, string?> values) : IStorageProviderConfig
 {
     private readonly Dictionary<string, string?> _values = new(values, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Parses a <see cref="Domain.Drive.ProviderConfig"/> JSON blob into a flat
-    /// string→string? dictionary view. Empty input or <c>"{}"</c> yields an empty config; an
-    /// explicit JSON object is deserialized as-is. Canonical entry point for every caller that
-    /// reaches the storage-provider registry from a drive — used by the upload, download,
-    /// WebDAV, and abandoned-upload-cleanup paths in production plus the integration test
-    /// fixtures.
+    /// Parses a drive's <c>ProviderConfig</c> JSON blob into a flat string→string? dictionary
+    /// view. Empty input or <c>"{}"</c> yields an empty config; an explicit JSON object is
+    /// deserialized as-is. Canonical entry point for every caller that reaches the storage-
+    /// provider registry from a drive — used by the upload, download, WebDAV, and abandoned-
+    /// upload-cleanup paths in production plus the integration test fixtures.
     ///
     /// <para><b>Shape note.</b> This is the <em>strict</em> parser — non-string property
     /// values throw. <c>StorageHealthCheck</c> and <c>FileVersionStore.ResolveProvider</c>

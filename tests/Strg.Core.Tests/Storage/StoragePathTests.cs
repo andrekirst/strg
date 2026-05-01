@@ -1,7 +1,7 @@
 namespace Strg.Core.Tests.Storage;
 
 using FluentAssertions;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Xunit;
 
 public sealed class StoragePathTests

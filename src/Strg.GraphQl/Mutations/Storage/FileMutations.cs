@@ -3,7 +3,7 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Strg.Application.Features.Folders.Create;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.GraphQl.Inputs.File;
 using Strg.GraphQl.Payloads;
 using Strg.GraphQl.Payloads.File;

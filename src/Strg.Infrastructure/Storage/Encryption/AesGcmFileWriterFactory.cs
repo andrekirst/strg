@@ -1,4 +1,5 @@
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Storage.Encryption;
 
 namespace Strg.Infrastructure.Storage.Encryption;
 

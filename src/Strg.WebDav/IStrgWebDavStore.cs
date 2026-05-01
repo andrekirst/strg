@@ -4,7 +4,7 @@ namespace Strg.WebDav;
 
 /// <summary>
 /// Bridge from a resolved <see cref="Drive"/> + request path to an
-/// <see cref="IStrgWebDavStoreItem"/> backed by <see cref="Core.Storage.IStorageProvider"/>. The
+/// <see cref="IStrgWebDavStoreItem"/> backed by <see cref="Plugin.Abstractions.Storage.IStorageProvider"/>. The
 /// contract intentionally keeps NWebDav out of the signature surface: NWebDav 0.1.x ships an
 /// abandoned <c>IHttpContext</c> abstraction and a transitively vulnerable ASP.NET Core adapter,
 /// so this layer takes only the <c>NWebDav.Server</c> core package and exposes its own
@@ -12,7 +12,7 @@ namespace Strg.WebDav;
 ///
 /// <para><b>Path contract.</b> The in-drive resource path — everything after
 /// <c>/dav/{driveName}</c> — MUST have been validated through
-/// <see cref="Core.Storage.StoragePath.Parse"/> before reaching an implementation. The
+/// <see cref="Plugin.Abstractions.Storage.StoragePath.Parse"/> before reaching an implementation. The
 /// path-traversal defence is the caller's job; the store treats the path as trusted.</para>
 /// </summary>
 public interface IStrgWebDavStore
@@ -27,7 +27,7 @@ public interface IStrgWebDavStore
     /// <summary>
     /// STRG-070 — PUT handler. Writes <paramref name="content"/> to the blob store, computes its
     /// SHA-256 in-flight, and persists (or updates) the <see cref="FileItem"/> + <see cref="FileVersion"/>
-    /// rows. <paramref name="path"/> MUST already be through <see cref="Core.Storage.StoragePath.Parse"/>
+    /// rows. <paramref name="path"/> MUST already be through <see cref="Plugin.Abstractions.Storage.StoragePath.Parse"/>
     /// (the middleware runs <c>WebDavUriParser.ExtractValidatedPath</c> before reaching here, so the
     /// path-traversal defence is a caller obligation, not a store one).
     ///
@@ -132,7 +132,7 @@ public interface IStrgWebDavStoreCollection : IStrgWebDavStoreItem
 }
 
 /// <summary>
-/// A file — bridges to <see cref="Core.Storage.IStorageProvider.ReadAsync"/> for the GET body.
+/// A file — bridges to <see cref="Plugin.Abstractions.Storage.IStorageProvider.ReadAsync"/> for the GET body.
 /// The stream surface is load-bearing: a <see cref="MemoryStream"/> copy here would defeat
 /// <c>CLAUDE.md</c>'s "never buffer large files in memory" rule the moment a client requests a
 /// multi-GB file.
@@ -156,7 +156,7 @@ public interface IStrgWebDavStoreDocument : IStrgWebDavStoreItem
     /// <summary>
     /// Current version number for the <c>strg:version</c> custom property. Mirrors
     /// <see cref="Core.Domain.FileItem.VersionCount"/>, which is incremented by
-    /// <see cref="Core.Storage.IFileVersionStore"/> on each write. Exposed so clients that support
+    /// <see cref="Plugin.Abstractions.Storage.IFileVersionStore"/> on each write. Exposed so clients that support
     /// versioned conflict resolution can see the live version without a separate GraphQL query.
     /// </summary>
     int Version { get; }

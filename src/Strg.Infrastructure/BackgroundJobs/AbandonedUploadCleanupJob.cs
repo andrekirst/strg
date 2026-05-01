@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.Infrastructure.Data;
 using Strg.Infrastructure.Upload;
 

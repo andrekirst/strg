@@ -4,6 +4,7 @@ using Strg.Application.Behaviors;
 using Strg.Core.Domain;
 using Strg.GraphQl.Consumers;
 using Strg.Infrastructure.Data;
+using Strg.Plugin.Abstractions;
 using Strg.WebDav;
 
 namespace Strg.Architecture.Tests;
@@ -40,6 +41,7 @@ internal static class AssemblyLoader
             typeof(AuditBehavior<,>).Assembly,            // Strg.Application
             typeof(StrgDbContext).Assembly,               // Strg.Infrastructure
             typeof(GraphQlSubscriptionPublisher).Assembly, // Strg.GraphQl
+            typeof(IStrgPlugin).Assembly,                 // Strg.Plugin.Abstractions
             typeof(IStrgWebDavStore).Assembly,            // Strg.WebDav
             typeof(IConsumer<>).Assembly,                 // MassTransit (for IConsumer<T>)
         };

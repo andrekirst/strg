@@ -2,7 +2,7 @@ namespace Strg.Core.Constants;
 
 /// <summary>
 /// Algorithm names persisted on <see cref="Domain.FileKey.Algorithm"/> and round-tripped through
-/// the <see cref="Storage.IEncryptingFileWriter"/> port. Centralised so consumers across layers
+/// the <see cref="Strg.Plugin.Abstractions.Storage.Encryption.IEncryptingFileWriter"/> port. Centralised so consumers across layers
 /// (TUS upload pipeline in Strg.Infrastructure, cross-drive move handler in Strg.Application)
 /// share one canonical literal — drift between the writer's <c>AesGcmFileWriter.AlgorithmName</c>
 /// and a separately-typed FileKey row would silently route reads to <c>NotSupportedException</c>

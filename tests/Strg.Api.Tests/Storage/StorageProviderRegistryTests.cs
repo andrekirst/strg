@@ -2,7 +2,7 @@ namespace Strg.Api.Tests.Storage;
 
 using FluentAssertions;
 using NSubstitute;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Strg.Infrastructure.Storage;
 using Xunit;
 

@@ -1,4 +1,4 @@
-namespace Strg.Core.Storage;
+namespace Strg.Plugin.Abstractions.Storage;
 
 /// <summary>
 /// Abstraction over a storage backend (local filesystem, S3, etc.).
@@ -54,9 +54,8 @@ public interface IStorageProvider
     /// </summary>
     /// <remarks>
     /// <b>Idempotency is load-bearing, not a convenience.</b> Implementations MUST NOT throw when
-    /// the target path is absent. The per-version retry contract on
-    /// <see cref="Strg.Core.Services.IFileVersionStore.PruneVersionsAsync"/> — where a
-    /// mid-batch failure leaves the already-deleted blobs reachable by a resumed prune —
+    /// the target path is absent. The per-version retry contract on the host's file-version pruner
+    /// — where a mid-batch failure leaves the already-deleted blobs reachable by a resumed prune —
     /// requires this behavior: a second call targeting an already-absent blob must return
     /// silently so the retry can advance to the next un-pruned version instead of looping
     /// forever at iteration <c>k</c>. Any future provider that throws on missing would break

@@ -25,7 +25,7 @@ namespace Strg.Api.Validators;
 ///
 /// <para><b>Belt-and-suspenders.</b> This filter rejects shape-level violations (empty path,
 /// length cap, traversal token) BEFORE the handler runs, but path validation in the handler via
-/// <see cref="Strg.Core.Storage.StoragePath.Parse"/> is intentionally retained. A future
+/// <see cref="Strg.Plugin.Abstractions.Storage.StoragePath.Parse"/> is intentionally retained. A future
 /// non-HTTP caller (e.g. internal CLI, GraphQL mutation that bypasses this filter) still goes
 /// through <c>Parse</c>; the filter is the front-door enforcement, <c>Parse</c> is the
 /// last-line-of-defence guard.</para>

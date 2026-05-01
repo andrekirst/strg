@@ -2,7 +2,8 @@ using FluentAssertions;
 using NSubstitute;
 using Strg.Application.Features.Files.Download;
 using Strg.Core.Domain;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Storage.Encryption;
 using Xunit;
 
 namespace Strg.Application.Tests.Features.Files.Download;

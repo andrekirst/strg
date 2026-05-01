@@ -7,7 +7,7 @@ namespace Strg.WebDav;
 ///
 /// <para>The <see cref="StrgWebDavMiddleware"/> calls this before dispatching any WebDAV verb so
 /// an unknown drive short-circuits with 404 instead of reaching the per-verb handlers — the same
-/// "fail-closed at the edge" posture <see cref="Core.Storage.StoragePath"/> applies to file paths.
+/// "fail-closed at the edge" posture <see cref="Plugin.Abstractions.Storage.StoragePath"/> applies to file paths.
 /// </para>
 ///
 /// <para><b>driveName comes from the URL and is therefore untrusted.</b> The implementation MUST

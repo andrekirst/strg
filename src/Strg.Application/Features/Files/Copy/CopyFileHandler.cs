@@ -7,7 +7,8 @@ using Strg.Core.Constants;
 using Strg.Core.Domain;
 using Strg.Core.Events;
 using Strg.Core.Services;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Storage.Encryption;
 
 namespace Strg.Application.Features.Files.Copy;
 

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Strg.Core.Domain;
 using Strg.Core.Exceptions;
 using Strg.Core.Services;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using tusdotnet.Models.Configuration;
 
 namespace Strg.Infrastructure.Upload;

@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using FluentAssertions;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
+using Strg.Plugin.Abstractions.Storage.Encryption;
 using Strg.Infrastructure.Storage;
 using Strg.Infrastructure.Storage.Encryption;
 using Xunit;

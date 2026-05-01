@@ -5,7 +5,7 @@ namespace Strg.Infrastructure.Upload;
 /// <summary>
 /// Read-only stream wrapper that counts bytes read on the way through. Used by
 /// <see cref="StrgTusStore.AppendDataAsync"/> to know how many bytes the chunk write actually
-/// consumed from the request body — <see cref="Strg.Core.Storage.IStorageProvider.AppendAsync"/>
+/// consumed from the request body — <see cref="Strg.Plugin.Abstractions.Storage.IStorageProvider.AppendAsync"/>
 /// does not return a count, and the input stream's position is not always reliable for
 /// chunked-transfer-encoded request bodies.
 /// </summary>
@@ -58,7 +58,7 @@ internal sealed class CountingReadStream(Stream inner) : Stream
 /// <summary>
 /// Read-only stream wrapper that computes a SHA-256 hash incrementally over the bytes that flow
 /// through it. The TUS finalize step pipes the assembled raw plaintext through this wrapper into
-/// <see cref="Strg.Core.Storage.IEncryptingFileWriter.WriteAsync"/> so the
+/// <see cref="Strg.Plugin.Abstractions.Storage.Encryption.IEncryptingFileWriter.WriteAsync"/> so the
 /// <see cref="Strg.Core.Domain.FileVersion.ContentHash"/> reflects the plaintext (NOT the
 /// envelope) without a second pass over the bytes.
 ///

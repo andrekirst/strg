@@ -3,7 +3,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Strg.Core.Constants;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 using Xunit;
 
 namespace Strg.Integration.Tests.Upload;

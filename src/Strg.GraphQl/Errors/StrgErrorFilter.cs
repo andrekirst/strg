@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Strg.Core.Exceptions;
-using Strg.Core.Storage;
+using Strg.Plugin.Abstractions.Storage;
 
 namespace Strg.GraphQl.Errors;
 
